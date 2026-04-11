@@ -9,10 +9,11 @@
   "main": "./dist/server/index.js",
   "types": "./dist/server/index.d.ts",
   "bin": {
-    "tokendash": "./dist/server/index.js"
+    "tokendash": "./bin/tokendash.js"
   },
   "files": [
-    "dist"
+    "dist",
+    "bin"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",

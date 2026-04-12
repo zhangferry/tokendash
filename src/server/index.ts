@@ -1,4 +1,7 @@
 import express from 'express';
+import type { Express } from 'express';
+import { readFileSync } from 'node:fs';
+import type { Server } from 'node:http';
 import { registerApiRoutes } from './routes/api.js';
 import { ensureUsageToolsReady } from './ccusage.js';
 import open from 'open';
@@ -6,19 +9,59 @@ import open from 'open';
 interface CliArgs {
   port?: number;
   noOpen?: boolean;
+  showVersion?: boolean;
+}
+
+const CLI_USAGE = [
+  'Usage:',
+  '  tokendash',
+  '  tokendash --version',
+  '  tokendash --port <number> [--no-open]',
+].join('\n');
+
+function getPackageVersion(): string {
+  const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version?: string };
+  return packageJson.version ?? 'unknown';
+}
+
+function exitWithCliError(message: string): never {
+  console.error(message);
+  console.error(`\n${CLI_USAGE}`);
+  process.exit(1);
 }
 
 function parseCliArgs(): CliArgs {
   const args = process.argv.slice(2);
   const result: CliArgs = {};
 
+  if (args.length === 1 && (args[0] === '--version' || args[0] === '-v')) {
+    result.showVersion = true;
+    return result;
+  }
+
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
-    if (arg === '--port' && i + 1 < args.length) {
-      result.port = parseInt(args[i + 1], 10);
+
+    if (arg === '--version' || arg === '-v') {
+      exitWithCliError('The --version flag must be used by itself.');
+    }
+
+    if (arg === '--port') {
+      if (i + 1 >= args.length) {
+        exitWithCliError('Missing value for --port.');
+      }
+
+      const value = parseInt(args[i + 1], 10);
+      if (!Number.isInteger(value) || value <= 0) {
+        exitWithCliError(`Invalid port value: ${args[i + 1]}`);
+      }
+
+      result.port = value;
       i++;
     } else if (arg === '--no-open') {
       result.noOpen = true;
+    } else {
+      exitWithCliError(`Unsupported argument: ${arg}`);
     }
   }
 
@@ -36,10 +79,65 @@ async function ensureUsageSupportAvailable(): Promise<boolean> {
   }
 }
 
+function resolvePort(value?: number): number {
+  return Number.isInteger(value) && value && value > 0 ? value : 3456;
+}
+
+function listen(app: Express, port: number): Promise<Server> {
+  return new Promise((resolve, reject) => {
+    const server = app.listen(port);
+
+    const handleListening = () => {
+      cleanup();
+      resolve(server);
+    };
+
+    const handleError = (error: Error) => {
+      cleanup();
+      reject(error);
+    };
+
+    const cleanup = () => {
+      server.off('listening', handleListening);
+      server.off('error', handleError);
+    };
+
+    server.once('listening', handleListening);
+    server.once('error', handleError);
+  });
+}
+
+async function listenWithPortFallback(app: Express, preferredPort: number): Promise<{ server: Server; port: number; usedFallback: boolean }> {
+  let port = preferredPort;
+
+  for (let attempt = 0; attempt < 20; attempt++, port++) {
+    try {
+      const server = await listen(app, port);
+      return { server, port, usedFallback: port !== preferredPort };
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code !== 'EADDRINUSE') {
+        throw error;
+      }
+    }
+  }
+
+  throw new Error(`Could not find an available port starting from ${preferredPort}`);
+}
+
 async function main() {
   const args = parseCliArgs();
-  const port = args.port ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : 3456);
+  if (args.showVersion) {
+    console.log(getPackageVersion());
+    return;
+  }
+
+  const version = getPackageVersion();
+  const preferredPort = resolvePort(args.port ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : undefined));
   const shouldOpenBrowser = !args.noOpen;
+
+  console.log(`Starting tokendash v${version}...`);
+  console.log(`Checking local usage data sources...`);
 
   const isUsageSupportAvailable = await ensureUsageSupportAvailable();
   if (!isUsageSupportAvailable) {
@@ -69,23 +167,31 @@ async function main() {
     });
   }
 
-  const server = app.listen(port, () => {
-    console.log(`ccusage-dashboard running on http://localhost:${port}`);
-    if (isProduction) {
-      console.log('Serving production build');
-    } else {
-      console.log('Development mode - use "npm run dev" for full dev experience');
-    }
-  });
+  const { server, port, usedFallback } = await listenWithPortFallback(app, preferredPort);
+
+  if (usedFallback) {
+    console.warn(`tokendash detected that port ${preferredPort} is already in use, switched to http://localhost:${port}`);
+  }
+
+  console.log(`tokendash running on http://localhost:${port}`);
+  console.log(`API available at http://localhost:${port}/api`);
+  if (isProduction) {
+    console.log('Serving production build');
+  } else {
+    console.log('Development mode - use "npm run dev" for full dev experience');
+  }
 
   // Open browser if requested
   if (shouldOpenBrowser) {
     // Small delay to ensure server is ready
     setTimeout(() => {
+      console.log('Opening dashboard in your browser...');
       open(`http://localhost:${port}`).catch((err) => {
         console.warn('Could not open browser:', err.message);
       });
     }, 100);
+  } else {
+    console.log('Browser auto-open disabled (--no-open)');
   }
 
   // Graceful shutdown

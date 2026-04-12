@@ -318,7 +318,7 @@ export function Dashboard() {
       <div className="max-w-[1440px] mx-auto px-6 py-10">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
           <div className="flex flex-col gap-1.5">
-            <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">Tokens Dashboard</h1>
+            <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">TokenDash</h1>
           </div>
           {renderAgentSwitcher()}
         </div>
@@ -334,7 +334,7 @@ export function Dashboard() {
     <div className="max-w-[1440px] mx-auto px-6 py-10">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
         <div className="flex flex-col gap-1.5">
-          <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">Tokens Dashboard</h1>
+          <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">TokenDash</h1>
         </div>
         {renderAgentSwitcher()}
       </div>
@@ -350,7 +350,7 @@ export function Dashboard() {
       <div className="mb-8">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-6">
           <div className="flex flex-col gap-1.5">
-            <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">Tokens Dashboard</h1>
+            <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">TokenDash</h1>
             <p className="text-[14px] font-medium text-stone-500 leading-relaxed">
               Monitor token consumption, costs, and cache efficiency for your AI coding assistants.
             </p>

@@ -3,13 +3,13 @@ import { runCcusage } from '../ccusage.js';
 import { cache } from '../cache.js';
 import { validateBlocks } from '../../shared/schemas.js';
 import { getBlocksResponse } from '../codexParser.js';
+import { getClaudeBlocksByProject } from '../claudeBlocksParser.js';
 
 export async function getBlocks(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
-  const cacheKey = `blocks:${agent}`;
+  const project = req.query.project as string || undefined;
   try {
     if (agent === 'codex') {
-      const project = req.query.project as string || undefined;
       const projectCacheKey = `blocks:${agent}:${project || 'all'}`;
       const cached = cache.get(projectCacheKey);
       if (cached) {
@@ -23,6 +23,24 @@ export async function getBlocks(req: Request, res: Response): Promise<void> {
       return;
     }
 
+    // Claude Code with project filter: use custom JSONL parser
+    if (project) {
+      const projectCacheKey = `blocks:claude:${project}`;
+      const cached = cache.get(projectCacheKey);
+      if (cached) {
+        res.json(cached);
+        return;
+      }
+
+      const blocks = getClaudeBlocksByProject(project);
+      const data = { blocks };
+      cache.set(projectCacheKey, data);
+      res.json(data);
+      return;
+    }
+
+    // Claude Code without project filter: use ccusage blocks
+    const cacheKey = `blocks:${agent}`;
     const cached = cache.get(cacheKey);
     if (cached) {
       res.json(cached);

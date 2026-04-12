@@ -161,9 +161,7 @@ export function Dashboard() {
 
   const dailyData = useCcusageData(useCallback(() => fetchDaily(agent), [agent]));
   const projectsData = useCcusageData(useCallback(() => fetchProjects(agent), [agent]));
-  // Claude blocks don't support project filter (ccusage limitation), only Codex does
-  const blocksProject = isCodex ? project : '';
-  const blocksData = useCcusageData(useCallback(() => fetchBlocks(agent, blocksProject), [agent, blocksProject]));
+  const blocksData = useCcusageData(useCallback(() => fetchBlocks(agent, project), [agent, project]));
   const [metric, setMetric] = useLocalStorageState<MetricMode>('dashboard_metric', 'tokens');
 
   const handleAgentChange = (a: 'claude' | 'codex') => {

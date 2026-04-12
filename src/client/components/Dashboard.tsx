@@ -461,7 +461,7 @@ export function Dashboard() {
       </div>
 
       {/* Row 2: Heatmap Row */}
-      <Panel title="24-Hour Activity Heatmap" subtitle={`Activity distribution by hour and day of week (based on ${isTokens ? 'tokens' : 'cost'})`} className="mb-4">
+      <Panel title="24-Hour Activity Heatmap" subtitle="Activity distribution by hour and day of week" className="mb-4">
         {heatmapData ? (
           <div className="flex flex-col w-full pt-1 pb-2">
             <div className="flex w-full gap-2">

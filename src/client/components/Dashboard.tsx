@@ -157,7 +157,7 @@ export function Dashboard() {
   const [agentsInfo, setAgentsInfo] = useState<AgentsResponse | null>(null);
   const [agentsLoading, setAgentsLoading] = useState(true);
 
-  const [agent, setAgent] = useLocalStorageState<'claude' | 'codex'>('dashboard_agent', 'claude');
+  const [agent, setAgent] = useLocalStorageState<'claude' | 'codex' | 'openclaw'>('dashboard_agent', 'claude');
   const isCodex = agent === 'codex';
 
   const [timeRange, setTimeRange] = useLocalStorageState<TimeRangeKey>('dashboard_timeRange', '30d');
@@ -170,7 +170,7 @@ export function Dashboard() {
         setAgentsInfo(info);
         // Fallback stored agent if unavailable
         if (info.available.length > 0 && !info.available.includes(agent)) {
-          setAgent(info.default as 'claude' | 'codex');
+          setAgent(info.default as 'claude' | 'codex' | 'openclaw');
         }
       })
       .catch(() => {})
@@ -184,7 +184,7 @@ export function Dashboard() {
   const blocksData = useCcusageData(useCallback(() => fetchBlocks(agent, project), [agent, project]));
   const [metric, setMetric] = useLocalStorageState<MetricMode>('dashboard_metric', 'tokens');
 
-  const handleAgentChange = (a: 'claude' | 'codex') => {
+  const handleAgentChange = (a: 'claude' | 'codex' | 'openclaw') => {
     setAgent(a);
     setProject('');
   };
@@ -329,6 +329,16 @@ export function Dashboard() {
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
         Codex
+      </button>
+      <button
+        onClick={() => handleAgentChange('openclaw')}
+        className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-bold tracking-wide transition-all duration-200 ${agent === 'openclaw'
+          ? 'bg-white text-orange-600 shadow-[0_1px_3px_rgba(0,0,0,0.1)] ring-1 ring-stone-900/5'
+          : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
+          }`}
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
+        OpenClaw
       </button>
     </div>
   );

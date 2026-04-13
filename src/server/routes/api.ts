@@ -5,6 +5,7 @@ import { getSession } from './session.js';
 import { getProjects } from './projects.js';
 import { getBlocks } from './blocks.js';
 import { detectAvailableAgents } from '../ccusage.js';
+import { isOpenClawAccessible } from '../openclawParser.js';
 
 async function getAgents(_req: Request, res: Response): Promise<void> {
   try {
@@ -12,6 +13,7 @@ async function getAgents(_req: Request, res: Response): Promise<void> {
     const available: string[] = [];
     if (agents.claude) available.push('claude');
     if (agents.codex) available.push('codex');
+    if (isOpenClawAccessible()) available.push('openclaw');
     res.json({ available, default: available[0] || null });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

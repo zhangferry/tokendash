@@ -217,7 +217,7 @@ export function parseOpenClawSession(ref: SessionRef): OpenClawSession | null {
         outputTokens: Math.max(0, output),
         cacheReadTokens: Math.max(0, cacheRead),
         cacheWriteTokens: Math.max(0, cacheWrite),
-        totalTokens: Math.max(0, input + output),
+        totalTokens: Math.max(0, input + output + cacheRead),
         cost: Math.max(0, cost),
         model: `${provider}/${model}`,
       });

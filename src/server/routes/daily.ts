@@ -21,8 +21,9 @@ export async function getDaily(req: Request, res: Response): Promise<void> {
       res.json(data);
     } else if (agent === 'openclaw') {
       const data = getOpenClawDailyResponse();
-      cache.set(cacheKey, data);
-      res.json(data);
+      const validated = validateDaily(data);
+      cache.set(cacheKey, validated);
+      res.json(validated);
     } else {
       const stdout = await runCcusage(['daily', '--breakdown']);
       const data = JSON.parse(stdout);

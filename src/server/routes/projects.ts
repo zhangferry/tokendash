@@ -21,8 +21,9 @@ export async function getProjects(req: Request, res: Response): Promise<void> {
       res.json(data);
     } else if (agent === 'openclaw') {
       const data = getOpenClawProjectsResponse();
-      cache.set(cacheKey, data);
-      res.json(data);
+      const validated = validateProjects(data);
+      cache.set(cacheKey, validated);
+      res.json(validated);
     } else {
       const stdout = await runCcusage(['daily', '--instances', '--breakdown']);
       const data = JSON.parse(stdout);

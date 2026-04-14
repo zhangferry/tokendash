@@ -3,7 +3,7 @@ import type { Express } from 'express';
 import { readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import { registerApiRoutes } from './routes/api.js';
-import { ensureUsageToolsReady } from './ccusage.js';
+import { detectAvailableAgents } from './ccusage.js';
 import open from 'open';
 
 interface CliArgs {
@@ -70,10 +70,18 @@ function parseCliArgs(): CliArgs {
 
 async function ensureUsageSupportAvailable(): Promise<boolean> {
   try {
-    await ensureUsageToolsReady();
+    const agents = await detectAvailableAgents();
+    if (!agents.claude && !agents.codex) {
+      console.error('Error: No AI coding assistant data found.');
+      console.error('\nDetails: Could not find Claude Code (ccusage CLI) or Codex (~/.codex/sessions/) data.');
+      console.error('Please install at least one of: Claude Code or Codex CLI.');
+      return false;
+    }
+    if (agents.claude) console.log('  ✓ Claude Code detected');
+    if (agents.codex) console.log('  ✓ Codex detected');
     return true;
   } catch (error) {
-    console.error('Error: failed to prepare ccusage support for Claude Code or Codex');
+    console.error('Error: failed to detect available AI coding assistants');
     console.error('\nDetails:', error instanceof Error ? error.message : error);
     return false;
   }

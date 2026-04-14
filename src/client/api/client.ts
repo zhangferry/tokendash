@@ -2,6 +2,19 @@ import type { DailyResponse, MonthlyResponse, SessionResponse, ProjectsResponse,
 
 const BASE = '/api';
 
+export interface AgentsResponse {
+  available: string[];
+  default: string | null;
+}
+
+export async function fetchAgents(): Promise<AgentsResponse> {
+  const res = await fetch(`${BASE}/agents`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch agents: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
 function qs(agent: string, extra?: Record<string, string>): string {
   const parts: string[] = [];
   if (agent === 'codex') parts.push('agent=codex');

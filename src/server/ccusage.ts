@@ -70,3 +70,20 @@ export async function ensureUsageToolsReady(): Promise<void> {
     throw new Error('Codex sessions directory not found at ~/.codex/sessions/');
   }
 }
+
+export async function isClaudeCodeAvailable(): Promise<boolean> {
+  try {
+    await runCcusageCommand(['--version'], 120_000, false);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function detectAvailableAgents(): Promise<{ claude: boolean; codex: boolean }> {
+  const [claude, codex] = await Promise.all([
+    isClaudeCodeAvailable(),
+    Promise.resolve(isSessionsDirAccessible()),
+  ]);
+  return { claude, codex };
+}

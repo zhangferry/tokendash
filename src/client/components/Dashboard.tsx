@@ -1,10 +1,11 @@
-import { useState, useMemo, useCallback } from 'react';
+import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   BarChart, Bar, Cell, LineChart, Line,
   ComposedChart, Area, PieChart, Pie,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { fetchDaily, fetchProjects, fetchBlocks } from '../api/client.js';
+import { fetchDaily, fetchProjects, fetchBlocks, fetchAgents } from '../api/client.js';
+import type { AgentsResponse } from '../api/client.js';
 import { useCcusageData } from '../hooks/useCcusageData.js';
 import { useLocalStorageState } from '../hooks/useLocalStorageState.js';
 import { formatDate, formatTokens, formatUSD, formatPercent, formatProjectName } from '../utils/formatters.js';
@@ -153,11 +154,30 @@ function filterProjectDaily(projects: Record<string, DailyEntry[]>, project: str
 /* ---- Main Dashboard ---- */
 
 export function Dashboard() {
+  const [agentsInfo, setAgentsInfo] = useState<AgentsResponse | null>(null);
+  const [agentsLoading, setAgentsLoading] = useState(true);
+
   const [agent, setAgent] = useLocalStorageState<'claude' | 'codex'>('dashboard_agent', 'claude');
   const isCodex = agent === 'codex';
 
   const [timeRange, setTimeRange] = useLocalStorageState<TimeRangeKey>('dashboard_timeRange', '30d');
   const [project, setProject] = useLocalStorageState('dashboard_project', '');
+
+  // Detect available agents on mount
+  useEffect(() => {
+    fetchAgents()
+      .then((info) => {
+        setAgentsInfo(info);
+        // Fallback stored agent if unavailable
+        if (info.available.length > 0 && !info.available.includes(agent)) {
+          setAgent(info.default as 'claude' | 'codex');
+        }
+      })
+      .catch(() => {})
+      .finally(() => setAgentsLoading(false));
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const showAgentSwitcher = (agentsInfo?.available.length ?? 0) > 1;
 
   const dailyData = useCcusageData(useCallback(() => fetchDaily(agent), [agent]));
   const projectsData = useCcusageData(useCallback(() => fetchProjects(agent), [agent]));
@@ -320,7 +340,7 @@ export function Dashboard() {
           <div className="flex flex-col gap-1.5">
             <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">TokenDash</h1>
           </div>
-          {renderAgentSwitcher()}
+          {showAgentSwitcher && renderAgentSwitcher()}
         </div>
         <div className="skeleton h-8 w-48 rounded-lg mb-2" />
         <div className="skeleton h-4 w-72 rounded-lg mb-8" />
@@ -336,7 +356,7 @@ export function Dashboard() {
         <div className="flex flex-col gap-1.5">
           <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">TokenDash</h1>
         </div>
-        {renderAgentSwitcher()}
+        {showAgentSwitcher && renderAgentSwitcher()}
       </div>
       <div className="rounded-2xl bg-red-50 border border-red-200/60 p-5"><div className="text-red-600 text-sm font-medium">{error}</div></div>
     </div>
@@ -355,7 +375,7 @@ export function Dashboard() {
               Monitor token consumption, costs, and cache efficiency for your AI coding assistants.
             </p>
           </div>
-          {renderAgentSwitcher()}
+          {showAgentSwitcher && renderAgentSwitcher()}
         </div>
 
         <div className="flex flex-col gap-4">

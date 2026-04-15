@@ -3,12 +3,26 @@ import { runCcusage } from '../ccusage.js';
 import { cache } from '../cache.js';
 import { validateBlocks } from '../../shared/schemas.js';
 import { getBlocksResponse } from '../codexParser.js';
+import { getBlocksResponse as getOpenClawBlocksResponse } from '../openclawParser.js';
 import { getClaudeBlocksByProject } from '../claudeBlocksParser.js';
 
 export async function getBlocks(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
   const project = req.query.project as string || undefined;
   try {
+    if (agent === 'openclaw') {
+      const projectCacheKey = `blocks:${agent}:${project || 'all'}`;
+      const cached = cache.get(projectCacheKey);
+      if (cached) {
+        res.json(cached);
+        return;
+      }
+      const data = getOpenClawBlocksResponse({ project: project || null });
+      cache.set(projectCacheKey, data);
+      res.json(data);
+      return;
+    }
+
     if (agent === 'codex') {
       const projectCacheKey = `blocks:${agent}:${project || 'all'}`;
       const cached = cache.get(projectCacheKey);

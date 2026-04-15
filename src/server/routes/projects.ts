@@ -3,6 +3,7 @@ import { runCcusage } from '../ccusage.js';
 import { cache } from '../cache.js';
 import { validateProjects } from '../../shared/schemas.js';
 import { getProjectsResponse } from '../codexParser.js';
+import { getProjectsResponse as getOpenClawProjectsResponse } from '../openclawParser.js';
 
 export async function getProjects(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
@@ -18,6 +19,11 @@ export async function getProjects(req: Request, res: Response): Promise<void> {
       const data = getProjectsResponse();
       cache.set(cacheKey, data);
       res.json(data);
+    } else if (agent === 'openclaw') {
+      const data = getOpenClawProjectsResponse();
+      const validated = validateProjects(data);
+      cache.set(cacheKey, validated);
+      res.json(validated);
     } else {
       const stdout = await runCcusage(['daily', '--instances', '--breakdown']);
       const data = JSON.parse(stdout);

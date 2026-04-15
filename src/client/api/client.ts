@@ -17,7 +17,7 @@ export async function fetchAgents(): Promise<AgentsResponse> {
 
 function qs(agent: string, extra?: Record<string, string>): string {
   const parts: string[] = [];
-  if (agent === 'codex') parts.push('agent=codex');
+  if (agent !== 'claude') parts.push(`agent=${agent}`);
   if (extra) {
     const keys = Object.keys(extra);
     for (let i = 0; i < keys.length; i++) {

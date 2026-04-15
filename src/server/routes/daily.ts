@@ -3,6 +3,7 @@ import { runCcusage } from '../ccusage.js';
 import { cache } from '../cache.js';
 import { validateDaily } from '../../shared/schemas.js';
 import { getDailyResponse } from '../codexParser.js';
+import { getDailyResponse as getOpenClawDailyResponse } from '../openclawParser.js';
 
 export async function getDaily(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
@@ -18,6 +19,11 @@ export async function getDaily(req: Request, res: Response): Promise<void> {
       const data = getDailyResponse();
       cache.set(cacheKey, data);
       res.json(data);
+    } else if (agent === 'openclaw') {
+      const data = getOpenClawDailyResponse();
+      const validated = validateDaily(data);
+      cache.set(cacheKey, validated);
+      res.json(validated);
     } else {
       const stdout = await runCcusage(['daily', '--breakdown']);
       const data = JSON.parse(stdout);

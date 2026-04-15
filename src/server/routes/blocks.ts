@@ -18,8 +18,9 @@ export async function getBlocks(req: Request, res: Response): Promise<void> {
         return;
       }
       const data = getOpenClawBlocksResponse({ project: project || null });
-      cache.set(projectCacheKey, data);
-      res.json(data);
+      const validated = validateBlocks(data);
+      cache.set(projectCacheKey, validated);
+      res.json(validated);
       return;
     }
 
@@ -32,8 +33,9 @@ export async function getBlocks(req: Request, res: Response): Promise<void> {
       }
 
       const data = getBlocksResponse({ project: project || null });
-      cache.set(projectCacheKey, data);
-      res.json(data);
+      const validated = validateBlocks(data);
+      cache.set(projectCacheKey, validated);
+      res.json(validated);
       return;
     }
 

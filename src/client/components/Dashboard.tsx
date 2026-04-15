@@ -18,6 +18,7 @@ const TIME_RANGES = [
   { key: '7d', label: '7D', days: 7 },
   { key: '30d', label: '30D', days: 30 },
   { key: '60d', label: '60D', days: 60 },
+  { key: 'all', label: 'ALL', days: 0 },
 ] as const;
 
 type TimeRangeKey = typeof TIME_RANGES[number]['key'];
@@ -105,6 +106,7 @@ function ProjectSelect({ projects, value, onChange }: { projects: string[]; valu
 /* ---- Aggregation helpers ---- */
 
 function filterByTime<T extends { date?: string; startTime?: string }>(data: T[], rangeKey: TimeRangeKey): T[] {
+  if (rangeKey === 'all') return data;
   const range = TIME_RANGES.find(t => t.key === rangeKey);
   const days = range ? range.days : 30;
   const cutoff = new Date();
@@ -496,7 +498,7 @@ export function Dashboard() {
           <div className="flex flex-col w-full pt-1 pb-2">
             <div className="flex w-full gap-2">
               <div className="w-8 shrink-0 flex flex-col justify-around text-[10px] font-medium text-stone-400 pt-0.5 pb-0.5">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(d => <div key={d} className="h-[22px] flex items-center">{d}</div>)}
+                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => <div key={d} className={`h-[22px] flex items-center justify-center rounded ${i === new Date().getDay() ? 'bg-stone-800 text-white font-bold' : ''}`}>{d}</div>)}
               </div>
               <div className="flex-1 flex flex-col gap-1">
                 {heatmapData.grid.map((dayRow, dayIdx) => (

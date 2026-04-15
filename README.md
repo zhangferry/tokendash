@@ -1,8 +1,8 @@
 # tokendash
 
-A beautiful, local web dashboard for visualizing your Claude Code and Codex token usage statistics.
+A beautiful, local web dashboard for visualizing your Claude Code, Codex, and OpenClaw token usage statistics.
 
-It runs locally, fetches your data via the `ccusage` and `@ccusage/codex` CLI tools, and presents it in a clean, interactive React dashboard.
+It runs locally and parses token usage data directly from local session files, presenting it in a clean, interactive React dashboard. Claude Code partially relies on the `ccusage` CLI for some data.
 
 ![Product Screenshoot](resources/product_screenshoot.png)
 
@@ -83,7 +83,7 @@ If you want to contribute or modify the dashboard locally:
 
 - **Frontend:** React 19, Recharts, Tailwind CSS (via Vite plugin), built with Vite.
 - **Backend:** Express, TypeScript.
-- **Data Source:** Spawns child processes to run `ccusage --json` and parses the output. Uses a short-lived in-memory cache to ensure snappy UI updates when toggling filters.
+- **Data Source:** Codex and OpenClaw data is parsed directly from local session files. Claude Code data partially uses `ccusage --json` CLI. Uses a short-lived in-memory cache to ensure snappy UI updates when toggling filters.
 
 ## License
 

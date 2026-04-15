@@ -97,6 +97,7 @@ export function scanOpenClawSessions(): SessionRef[] {
 
     for (const agentEntry of agentEntries) {
       const sessionsDir = join(agentsDir, agentEntry, 'sessions');
+      const indexedPaths = new Set<string>();
 
       // Try sessions.json index first
       const indexPath = join(sessionsDir, 'sessions.json');
@@ -107,31 +108,37 @@ export function scanOpenClawSessions(): SessionRef[] {
           if (!entry.sessionId) continue;
           let sessionPath: string;
           if (entry.sessionFile) {
-            sessionPath = entry.sessionFile.startsWith('/')
-              ? entry.sessionFile
-              : join(sessionsDir, entry.sessionFile);
+            const filePath = entry.sessionFile;
+            if (filePath.startsWith('/')) {
+              // Validate absolute path stays within an OpenClaw directory
+              if (!getOpenClawDirs().some(dir => filePath.startsWith(dir))) continue;
+              sessionPath = filePath;
+            } else {
+              sessionPath = join(sessionsDir, filePath);
+            }
           } else {
             sessionPath = join(sessionsDir, `${entry.sessionId}.jsonl`);
           }
+          indexedPaths.add(sessionPath);
           refs.push({ sessionId: entry.sessionId, sessionFile: sessionPath, agentId: agentEntry });
         }
       } catch {
-        // No sessions.json — fall back to scanning .jsonl files directly
-        let files: string[];
-        try {
-          files = readdirSync(sessionsDir);
-        } catch {
-          continue;
-        }
-        for (const f of files) {
-          if (!f.endsWith('.jsonl')) continue;
-          const sessionId = f.replace(/\.jsonl.*$/, ''); // strip .jsonl and any suffixes
-          refs.push({
-            sessionId,
-            sessionFile: join(sessionsDir, f),
-            agentId: agentEntry,
-          });
-        }
+        // No sessions.json — will scan .jsonl files below
+      }
+
+      // Scan for .jsonl files not already covered by the index
+      let files: string[];
+      try {
+        files = readdirSync(sessionsDir);
+      } catch {
+        continue;
+      }
+      for (const f of files) {
+        if (!f.endsWith('.jsonl')) continue;
+        const fullPath = join(sessionsDir, f);
+        if (indexedPaths.has(fullPath)) continue;
+        const sessionId = f.replace(/\.jsonl.*$/, '');
+        refs.push({ sessionId, sessionFile: fullPath, agentId: agentEntry });
       }
     }
   }
@@ -140,22 +147,33 @@ export function scanOpenClawSessions(): SessionRef[] {
 }
 
 // ---------------------------------------------------------------------------
+// Session-level cache (mtime-based invalidation)
+// ---------------------------------------------------------------------------
+
+const sessionCache = new Map<string, { mtime: number; result: OpenClawSession | null }>();
+
+// ---------------------------------------------------------------------------
 // JSONL parser
 // ---------------------------------------------------------------------------
 
 export function parseOpenClawSession(ref: SessionRef): OpenClawSession | null {
+  let fileMtimeMs = 0;
+  try {
+    fileMtimeMs = statSync(ref.sessionFile).mtimeMs;
+  } catch { /* ok */ }
+
+  // Return cached result if file hasn't changed
+  const cached = sessionCache.get(ref.sessionFile);
+  if (cached && cached.mtime === fileMtimeMs) {
+    return cached.result;
+  }
+
   let content: string;
   try {
     content = readFileSync(ref.sessionFile, 'utf-8');
   } catch {
     return null;
   }
-
-  // Fallback timestamp: file mtime
-  let fileMtimeMs = 0;
-  try {
-    fileMtimeMs = statSync(ref.sessionFile).mtimeMs;
-  } catch { /* ok */ }
 
   const tokenEvents: OpenClawTokenEvent[] = [];
   let currentModel = '';
@@ -224,9 +242,14 @@ export function parseOpenClawSession(ref: SessionRef): OpenClawSession | null {
     }
   }
 
-  if (tokenEvents.length === 0) return null;
+  if (tokenEvents.length === 0) {
+    sessionCache.set(ref.sessionFile, { mtime: fileMtimeMs, result: null });
+    return null;
+  }
 
-  return { id: ref.sessionId, agentId: ref.agentId, tokenEvents };
+  const result: OpenClawSession = { id: ref.sessionId, agentId: ref.agentId, tokenEvents };
+  sessionCache.set(ref.sessionFile, { mtime: fileMtimeMs, result });
+  return result;
 }
 
 export function parseAllOpenClawSessions(): OpenClawSession[] {
@@ -335,7 +358,6 @@ export function getDailyResponse(options?: OpenClawAggregateOptions): DailyRespo
   const tz = options?.timezone || 'Asia/Shanghai';
 
   const grouped = new Map<string, { acc: TokenAccumulator; models: Set<string> }>();
-  const allModels = new Set<string>();
   const totalsAcc = emptyAcc();
 
   for (const session of sessions) {
@@ -350,7 +372,6 @@ export function getDailyResponse(options?: OpenClawAggregateOptions): DailyRespo
       const entry = grouped.get(key)!;
       addEvent(entry.acc, ev);
       entry.models.add(ev.model);
-      allModels.add(ev.model);
     }
   }
 

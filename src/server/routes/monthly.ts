@@ -1,27 +1,43 @@
 import { type Request, type Response } from 'express';
-import { runCcusage } from '../ccusage.js';
 import { cache } from '../cache.js';
 import { validateDaily } from '../../shared/schemas.js';
+import { getDailyResponse as getClaudeDailyResponse } from '../claudeJsonlParser.js';
+import { getDailyResponse as getCodexDailyResponse } from '../codexParser.js';
+import { getDailyResponse as getOpenClawDailyResponse } from '../openclawParser.js';
 
-export async function getMonthly(_req: Request, res: Response): Promise<void> {
+export async function getMonthly(req: Request, res: Response): Promise<void> {
+  const agent = req.query.agent as string || 'claude';
+  const cacheKey = `monthly:${agent}`;
   try {
-    const cached = cache.get('monthly');
+    const cached = cache.get(cacheKey);
     if (cached) {
       res.json(cached);
       return;
     }
 
-    const stdout = await runCcusage(['monthly', '--breakdown']);
-    const data = JSON.parse(stdout);
-    const validated = validateDaily(data);
+    const stale = cache.getStale(cacheKey);
+    if (stale) {
+      res.json(stale);
+      return;
+    }
 
-    cache.set('monthly', validated);
-    res.json(validated);
+    // Monthly is same as daily for our parser (aggregated by date already)
+    let data;
+    if (agent === 'codex') {
+      data = validateDaily(getCodexDailyResponse());
+    } else if (agent === 'openclaw') {
+      data = validateDaily(getOpenClawDailyResponse());
+    } else {
+      data = validateDaily(getClaudeDailyResponse());
+    }
+
+    cache.set(cacheKey, data);
+    res.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error fetching monthly data:', error);
     res.status(502).json({
-      error: 'Failed to fetch monthly data from ccusage',
+      error: 'Failed to fetch monthly data',
       hint: message,
     });
   }

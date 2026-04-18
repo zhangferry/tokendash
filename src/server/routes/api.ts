@@ -4,12 +4,13 @@ import { getMonthly } from './monthly.js';
 import { getSession } from './session.js';
 import { getProjects } from './projects.js';
 import { getBlocks } from './blocks.js';
-import { detectAvailableAgents } from '../ccusage.js';
+import { getAnalytics } from './analytics.js';
+import { detectAvailableAgents } from '../agentDetection.js';
 import { isOpenClawAccessible } from '../openclawParser.js';
 
-async function getAgents(_req: Request, res: Response): Promise<void> {
+function getAgents(_req: Request, res: Response): void {
   try {
-    const agents = await detectAvailableAgents();
+    const agents = detectAvailableAgents();
     const available: string[] = [];
     if (agents.claude) available.push('claude');
     if (agents.codex) available.push('codex');
@@ -28,4 +29,5 @@ export function registerApiRoutes(router: Router): void {
   router.get('/session', getSession);
   router.get('/projects', getProjects);
   router.get('/blocks', getBlocks);
+  router.get('/analytics', getAnalytics);
 }

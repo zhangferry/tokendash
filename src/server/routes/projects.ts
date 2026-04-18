@@ -1,9 +1,9 @@
 import { type Request, type Response } from 'express';
-import { runCcusage } from '../ccusage.js';
 import { cache } from '../cache.js';
 import { validateProjects } from '../../shared/schemas.js';
-import { getProjectsResponse } from '../codexParser.js';
+import { getProjectsResponse as getCodexProjectsResponse } from '../codexParser.js';
 import { getProjectsResponse as getOpenClawProjectsResponse } from '../openclawParser.js';
+import { getProjectsResponse as getClaudeProjectsResponse } from '../claudeJsonlParser.js';
 
 export async function getProjects(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
@@ -15,22 +15,17 @@ export async function getProjects(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    if (agent === 'codex') {
-      const data = getProjectsResponse();
-      cache.set(cacheKey, data);
-      res.json(data);
-    } else if (agent === 'openclaw') {
-      const data = getOpenClawProjectsResponse();
-      const validated = validateProjects(data);
-      cache.set(cacheKey, validated);
-      res.json(validated);
-    } else {
-      const stdout = await runCcusage(['daily', '--instances', '--breakdown']);
-      const data = JSON.parse(stdout);
-      const validated = validateProjects(data);
-      cache.set(cacheKey, validated);
-      res.json(validated);
+    // Stale-while-revalidate
+    const stale = cache.getStale(cacheKey);
+    if (stale) {
+      refreshProjectsCache(agent, cacheKey);
+      res.json(stale);
+      return;
     }
+
+    const data = fetchProjectsData(agent);
+    cache.set(cacheKey, data);
+    res.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error fetching projects data:', error);
@@ -39,4 +34,21 @@ export async function getProjects(req: Request, res: Response): Promise<void> {
       hint: message,
     });
   }
+}
+
+function fetchProjectsData(agent: string) {
+  if (agent === 'codex') {
+    return getCodexProjectsResponse();
+  } else if (agent === 'openclaw') {
+    return validateProjects(getOpenClawProjectsResponse());
+  } else {
+    // Claude Code: parse JSONL directly (fast, no CLI)
+    return validateProjects(getClaudeProjectsResponse());
+  }
+}
+
+function refreshProjectsCache(agent: string, cacheKey: string): void {
+  Promise.resolve()
+    .then(() => { const data = fetchProjectsData(agent); cache.set(cacheKey, data); })
+    .catch(err => console.error('Background refresh failed (projects):', err));
 }

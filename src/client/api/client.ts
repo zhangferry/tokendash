@@ -1,4 +1,4 @@
-import type { DailyResponse, MonthlyResponse, SessionResponse, ProjectsResponse, BlocksResponse } from '../../shared/types.js';
+import type { DailyResponse, MonthlyResponse, SessionResponse, ProjectsResponse, BlocksResponse, AnalyticsResponse } from '../../shared/types.js';
 
 const BASE = '/api';
 
@@ -64,6 +64,14 @@ export async function fetchBlocks(agent = 'claude', project = ''): Promise<Block
   const res = await fetch(`${BASE}/blocks${qs(agent, project ? { project } : undefined)}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch blocks data: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function fetchAnalytics(agent = 'claude', project = ''): Promise<AnalyticsResponse> {
+  const res = await fetch(`${BASE}/analytics${qs(agent, project ? { project } : undefined)}`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch analytics: ${res.status} ${res.statusText}`);
   }
   return res.json();
 }

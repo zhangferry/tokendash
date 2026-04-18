@@ -1,19 +1,33 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
 import {
   BarChart, Bar, Cell, LineChart, Line,
-  ComposedChart, Area, PieChart, Pie,
+  ComposedChart, AreaChart, Area, PieChart, Pie,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
-import { fetchDaily, fetchProjects, fetchBlocks, fetchAgents } from '../api/client.js';
+import { fetchDaily, fetchProjects, fetchBlocks, fetchAgents, fetchAnalytics } from '../api/client.js';
 import type { AgentsResponse } from '../api/client.js';
 import { useCcusageData } from '../hooks/useCcusageData.js';
 import { useLocalStorageState } from '../hooks/useLocalStorageState.js';
 import { formatDate, formatTokens, formatUSD, formatPercent, formatProjectName } from '../utils/formatters.js';
 import { costSavedByCache } from '../utils/cacheCalculations.js';
 import { shortModelName } from '../utils/modelNames.js';
+import { AnalyticsSection } from './AnalyticsSection.js';
 import type { DailyEntry, MetricMode, BlockEntry } from '../../shared/types.js';
 
 const C = ['#4f46e5', '#10b981', '#f59e0b', '#ec4899', '#0ea5e9', '#8b5cf6', '#ef4444', '#14b8a6'];
+
+// Model pricing display (USD per 1M tokens) — keep in sync with claudeJsonlParser.ts
+const MODEL_PRICING_DISPLAY: Record<string, { input: string; cache: string; output: string }> = {
+  'Opus 4.6': { input: '15.00', cache: '1.50', output: '75.00' },
+  'Sonnet 4.6': { input: '3.00', cache: '0.30', output: '15.00' },
+  'Sonnet 4.5': { input: '3.00', cache: '0.30', output: '15.00' },
+  'Haiku 4.5': { input: '0.80', cache: '0.08', output: '4.00' },
+  'Opus 3': { input: '15.00', cache: '1.50', output: '75.00' },
+  'Sonnet 3.5': { input: '3.00', cache: '0.30', output: '15.00' },
+  'Haiku 3.5': { input: '0.80', cache: '0.08', output: '4.00' },
+  'Haiku 3': { input: '0.25', cache: '0.03', output: '1.25' },
+  'default': { input: '3.00', cache: '0.30', output: '15.00' },
+};
 const TIME_RANGES = [
   { key: '7d', label: '7D', days: 7 },
   { key: '30d', label: '30D', days: 30 },
@@ -164,6 +178,15 @@ export function Dashboard() {
 
   const [timeRange, setTimeRange] = useLocalStorageState<TimeRangeKey>('dashboard_timeRange', '30d');
   const [project, setProject] = useLocalStorageState('dashboard_project', '');
+  const [showPricing, setShowPricing] = useState(false);
+
+  // Close pricing popup on outside click
+  useEffect(() => {
+    if (!showPricing) return;
+    const close = () => setShowPricing(false);
+    document.addEventListener('click', close);
+    return () => document.removeEventListener('click', close);
+  }, [showPricing]);
 
   // Detect available agents on mount
   useEffect(() => {
@@ -184,6 +207,7 @@ export function Dashboard() {
   const dailyData = useCcusageData(useCallback(() => fetchDaily(agent), [agent]));
   const projectsData = useCcusageData(useCallback(() => fetchProjects(agent), [agent]));
   const blocksData = useCcusageData(useCallback(() => fetchBlocks(agent, project), [agent, project]));
+  const analyticsData = useCcusageData(useCallback(() => fetchAnalytics(agent, project), [agent, project]));
   const [metric, setMetric] = useLocalStorageState<MetricMode>('dashboard_metric', 'tokens');
 
   const handleAgentChange = (a: 'claude' | 'codex' | 'openclaw') => {
@@ -191,18 +215,25 @@ export function Dashboard() {
     setProject('');
   };
 
-  const isLoading = dailyData.loading || projectsData.loading || blocksData.loading;
-  const error = dailyData.error || projectsData.error || blocksData.error;
+  // Progressive loading: only wait for daily data to show the page shell
+  const coreLoading = dailyData.loading && !dailyData.data;
+  const coreError = dailyData.error && !dailyData.data;
   const isTokens = metric === 'tokens';
   const dataKey = isTokens ? 'tokens' : 'cost';
 
   const projectList = useMemo(() => Object.keys(projectsData.data?.projects || {}).sort(), [projectsData.data]);
 
-  // Filtered daily data for the selected project & time range
+  // Filtered daily data: use projectsData for per-project filtering, fallback to dailyData
   const filteredDaily = useMemo(() => {
-    if (!projectsData.data) return [];
-    return filterProjectDaily(projectsData.data.projects, project, timeRange);
-  }, [projectsData.data, project, timeRange]);
+    if (projectsData.data) {
+      return filterProjectDaily(projectsData.data.projects, project, timeRange);
+    }
+    // Fallback while projectsData is loading: use dailyData flat entries
+    if (dailyData.data) {
+      return filterByTime(dailyData.data.daily, timeRange);
+    }
+    return [];
+  }, [projectsData.data, dailyData.data, project, timeRange]);
 
   // Totals from filtered data
   const totals = useMemo(() => {
@@ -217,11 +248,13 @@ export function Dashboard() {
   }, [filteredDaily]);
 
   const activeDays = useMemo(() => filteredDaily.filter(d => d.totalTokens > 0).length, [filteredDaily]);
-  const peakDay = useMemo(() => {
-    if (!filteredDaily.length) return { date: '-', tokens: 0 };
-    const top = filteredDaily.reduce((a, b) => b.totalTokens > a.totalTokens ? b : a, filteredDaily[0]);
-    return { date: top.date, tokens: top.totalTokens };
-  }, [filteredDaily]);
+  // Avg daily code changes from analytics
+  const avgDailyChanges = useMemo(() => {
+    if (!analyticsData.data || analyticsData.data.codeChangeTrend.length === 0) return null;
+    const trend = analyticsData.data.codeChangeTrend;
+    const totalLines = trend.reduce((s, d) => s + d.linesAdded + d.linesDeleted, 0);
+    return Math.round(totalLines / trend.length);
+  }, [analyticsData.data]);
   const cacheHitRate = totals.inputTokens > 0 ? (totals.cacheReadTokens / (totals.cacheReadTokens + totals.inputTokens)) * 100 : 0;
   const outputRatio = totals.inputTokens > 0 ? (totals.outputTokens / totals.inputTokens) * 100 : 0;
 
@@ -288,10 +321,33 @@ export function Dashboard() {
     hitRate: d.inputTokens > 0 ? (d.cacheReadTokens / (d.cacheReadTokens + d.inputTokens)) * 100 : 0,
   })), [filteredDaily]);
 
-  // Heatmap Data (24h x 7days)
+  // Output/Input trend data (for single project view)
+  const outputInputTrend = useMemo(() => {
+    return filteredDaily.map(d => ({
+      date: formatDate(d.date),
+      output: d.outputTokens,
+      input: d.inputTokens,
+      ratio: d.inputTokens > 0 ? (d.outputTokens / d.inputTokens) * 100 : 0,
+    }));
+  }, [filteredDaily]);
+
+  // Heatmap Data (24h x 7days) — cutoff at day boundary, today only shows past hours
   const heatmapData = useMemo(() => {
     if (!blocksData.data) return null;
-    const filteredBlocks = filterByTime(blocksData.data.blocks, timeRange);
+
+    // Day-level cutoff: 7D = today + past 6 days, 30D = today + past 29 days
+    const now = new Date();
+    const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    let cutoffDate: Date;
+    if (timeRange === 'all') {
+      cutoffDate = new Date(0); // include everything
+    } else {
+      const range = TIME_RANGES.find(t => t.key === timeRange);
+      const daysBack = range ? range.days - 1 : 29;
+      cutoffDate = new Date(now.getFullYear(), now.getMonth(), now.getDate() - daysBack);
+    }
+
+    const filteredBlocks = blocksData.data.blocks.filter(b => new Date(b.startTime) >= cutoffDate);
 
     // Create 7x24 grid
     const grid: number[][] = Array(7).fill(0).map(() => Array(24).fill(0));
@@ -300,9 +356,13 @@ export function Dashboard() {
     for (const b of filteredBlocks) {
       if (b.isGap) continue;
       const date = new Date(b.startTime);
-      // 0 = Sunday, 1 = Monday... We want Monday = 0 for display usually, but let's stick to standard 0-6
       const day = date.getDay();
       const hour = date.getHours();
+
+      // For today, skip hours that haven't happened yet
+      const blockDate = date.getFullYear() + '-' + String(date.getMonth() + 1).padStart(2, '0') + '-' + String(date.getDate()).padStart(2, '0');
+      if (blockDate === todayStr && hour > now.getHours()) continue;
+
       const val = isTokens ? b.totalTokens : b.costUSD;
       grid[day][hour] += val;
       if (grid[day][hour] > maxVal) maxVal = grid[day][hour];
@@ -345,7 +405,7 @@ export function Dashboard() {
     </div>
   );
 
-  if (isLoading) {
+  if (coreLoading) {
     return (
       <div className="max-w-[1440px] mx-auto px-6 py-10">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
@@ -362,7 +422,7 @@ export function Dashboard() {
     );
   }
 
-  if (error) return (
+  if (coreError) return (
     <div className="max-w-[1440px] mx-auto px-6 py-10">
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
         <div className="flex flex-col gap-1.5">
@@ -370,11 +430,11 @@ export function Dashboard() {
         </div>
         {showAgentSwitcher && renderAgentSwitcher()}
       </div>
-      <div className="rounded-2xl bg-red-50 border border-red-200/60 p-5"><div className="text-red-600 text-sm font-medium">{error}</div></div>
+      <div className="rounded-2xl bg-red-50 border border-red-200/60 p-5"><div className="text-red-600 text-sm font-medium">{dailyData.error}</div></div>
     </div>
   );
 
-  if (!dailyData.data || !projectsData.data) return null;
+  if (!dailyData.data) return null;
 
   return (
     <div className="max-w-[1440px] mx-auto px-6 py-10">
@@ -410,26 +470,78 @@ export function Dashboard() {
             <div className="w-px h-10 bg-stone-200/60 hidden sm:block"></div>
             <div className="flex flex-col gap-2">
               <span className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">Metric</span>
-              <FilterTab options={[{ key: 'tokens', label: 'Tokens' }, { key: 'usd', label: 'Cost' }]} value={metric} onChange={v => setMetric(v as MetricMode)} />
+              <div className="flex items-center gap-1.5">
+                <FilterTab options={[{ key: 'tokens', label: 'Tokens' }, { key: 'usd', label: 'Cost' }]} value={metric} onChange={v => setMetric(v as MetricMode)} />
+                {!isTokens && modelAgg.length > 0 && (
+                  <div className="relative">
+                    <button
+                      onClick={e => { e.stopPropagation(); setShowPricing(v => !v); }}
+                      className="w-6 h-6 rounded-full flex items-center justify-center text-stone-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                    >
+                      <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                    </button>
+                    {showPricing && (
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 mt-2 z-50 w-[320px] bg-white rounded-xl shadow-[0_8px_30px_rgba(120,113,108,0.15)] border border-stone-200/60 p-4">
+                        <div className="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white border-l border-t border-stone-200/60 rotate-45" />
+                        <div className="flex items-center gap-2 mb-2">
+                          <span className="text-[11px] font-bold text-stone-500 uppercase tracking-wider">Pricing Formula</span>
+                        </div>
+                        <div className="text-[10px] font-mono text-stone-400 bg-stone-50 rounded-lg px-2.5 py-1.5 mb-2.5 leading-relaxed">
+                          Cost = (input - cached) x in_price + cached x cache_price + output x out_price
+                        </div>
+                        <div className="text-[10px] text-stone-400 mb-1.5 font-semibold">Per 1M tokens (USD)</div>
+                        <div className="space-y-1">
+                          {modelAgg.slice(0, 4).map((m, i) => {
+                            const pricing = MODEL_PRICING_DISPLAY[m.name] || MODEL_PRICING_DISPLAY.default;
+                            return (
+                              <div key={m.name} className="flex items-center gap-1.5 text-[10px]">
+                                <span className="w-1.5 h-1.5 rounded-full shrink-0" style={{ backgroundColor: C[i % C.length] }} />
+                                <span className="font-semibold text-stone-600 w-20 truncate">{m.name}</span>
+                                <span className="text-stone-400 font-mono">in ${pricing.input}</span>
+                                <span className="text-emerald-500 font-mono">ca ${pricing.cache}</span>
+                                <span className="text-stone-400 font-mono">out ${pricing.output}</span>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       {/* KPI Row */}
-      <div className="grid grid-cols-2 md:grid-cols-6 gap-4 mb-6">
+      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <KPICard label="Total tokens" value={formatTokens(totals.totalTokens)} accent insight="The primary volume indicator for the selected period." />
-        <KPICard label="Total cost" value={formatUSD(totals.totalCost)} insight="Estimated spend based on current pricing." />
         <KPICard label="Daily avg" value={formatTokens(activeDays > 0 ? totals.totalTokens / activeDays : 0)} sub={`${activeDays} active days`} insight="Baseline for typical daily volume." />
-        <KPICard label="Peak day" value={formatTokens(peakDay.tokens)} sub={peakDay.date !== '-' ? formatDate(peakDay.date) : undefined} insight="Highest single day usage." />
+        <KPICard label="Avg daily changes" value={avgDailyChanges !== null ? avgDailyChanges.toLocaleString() + ' lines' : '-'} insight="Average lines changed per active day." />
         <KPICard label="Cache hit" value={formatPercent(cacheHitRate)} insight="Higher hit rate reduces cost." />
         <KPICard label="Output/Input" value={formatPercent(outputRatio)} insight="Ratio of generation to context." />
       </div>
 
-      {/* Row 1: Cache Efficiency (left) + Project Pie (right) */}
+      {/* Model Trend (bar) + Cache Efficiency */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <Panel title="Model trend" subtitle="Showing top 6 models to maintain readability">
+          <ResponsiveContainer width="100%" height={260}>
+            <BarChart data={modelTrendData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" vertical={false} />
+              <XAxis dataKey="date" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => isTokens ? formatTokens(v) : formatUSD(v)} />
+              <Tooltip content={<TooltipBox fmt={isTokens ? formatTokens : formatUSD} />} />
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} />
+              {modelAgg.slice(0, 6).map((m, i) => (
+                <Bar key={m.name} dataKey={m.name} stackId="1" fill={C[i % C.length]} fillOpacity={0.85} />
+              ))}
+            </BarChart>
+          </ResponsiveContainer>
+        </Panel>
+
         <Panel title="Cache efficiency & savings">
-          <div className="flex items-center gap-6 mb-6 px-4 py-3 bg-emerald-50/50 rounded-xl border border-emerald-100/50">
+          <div className="flex items-center gap-6 mb-4 px-4 py-3 bg-emerald-50/50 rounded-xl border border-emerald-100/50">
             <div className="flex flex-col">
               <span className="text-[11px] font-bold text-emerald-600/70 uppercase tracking-wider mb-0.5">Est. Cost Saved</span>
               <span className="text-2xl font-black text-emerald-600 tracking-tight">{formatUSD(cacheSavings.costSaved)}</span>
@@ -445,48 +557,95 @@ export function Dashboard() {
               <span className="text-lg font-extrabold text-emerald-700/80 tracking-tight font-mono">{formatPercent(cacheSavings.hitRate)}</span>
             </div>
           </div>
-          <ResponsiveContainer width="100%" height={210}>
+          <ResponsiveContainer width="100%" height={180}>
             <ComposedChart data={cacheTrendData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" vertical={false} />
               <XAxis dataKey="date" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} />
               <YAxis yAxisId="left" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => formatTokens(v)} />
               <YAxis yAxisId="right" orientation="right" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v.toFixed(0)}%`} />
               <Tooltip content={<TooltipBox />} />
-              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} />
+              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 8 }} />
               <Area yAxisId="left" type="monotone" dataKey="cacheRead" stroke={C[5]} fill={C[5]} fillOpacity={0.08} name="Cache Read" strokeWidth={1.5} />
               <Line yAxisId="right" type="monotone" dataKey="hitRate" stroke={C[3]} strokeWidth={2} dot={false} name="Hit Rate (%)" />
             </ComposedChart>
           </ResponsiveContainer>
         </Panel>
+      </div>
+
+      {/* Non-critical request warnings */}
+      {(projectsData.error || blocksData.error) && (
+        <div className="mb-4 rounded-xl bg-amber-50 border border-amber-200/60 px-4 py-2.5 flex items-center gap-2 text-[12px] text-amber-700 font-medium">
+          <svg className="w-4 h-4 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z" /></svg>
+          {projectsData.error && <span>Projects data unavailable</span>}
+          {projectsData.error && blocksData.error && <span className="text-amber-400">·</span>}
+          {blocksData.error && <span>Session data unavailable</span>}
+        </div>
+      )}
+
+      {/* Model Distribution + Project Distribution */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
+        <Panel title="Model distribution" subtitle="Ranked by total volume">
+          <ResponsiveContainer width="100%" height={260}>
+            <PieChart margin={{ left: 0, right: 0, top: 0, bottom: 0 }}>
+              <Pie
+                data={modelAgg.slice(0, 6)}
+                dataKey={dataKey}
+                nameKey="name"
+                cx="50%"
+                cy="50%"
+                innerRadius={60}
+                outerRadius={90}
+                paddingAngle={2}
+              >
+                {modelAgg.slice(0, 6).map((_, index) => (
+                  <Cell key={index} fill={C[index % C.length]} fillOpacity={0.85} stroke="transparent" />
+                ))}
+              </Pie>
+              <Tooltip content={<TooltipBox fmt={isTokens ? formatTokens : formatUSD} />} />
+              <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: 11 }} />
+            </PieChart>
+          </ResponsiveContainer>
+        </Panel>
 
         {!project ? (
-          <Panel title="Project distribution" subtitle={`Top 8 projects by ${isTokens ? 'tokens' : 'cost'}`}>
-            <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={projectPieData.slice(0, 8)} layout="vertical" margin={{ left: 8, right: 8, top: 0, bottom: 0 }}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" horizontal={false} />
-                <XAxis type="number" tick={{ fill: '#78716c', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => isTokens ? formatTokens(v) : formatUSD(v)} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#57534e', fontSize: 11 }} axisLine={false} tickLine={false} width={110} />
-                <Tooltip content={<TooltipBox fmt={isTokens ? formatTokens : formatUSD} />} />
-                <Bar dataKey={dataKey} radius={[0, 6, 6, 0]} maxBarSize={24}>
-                  {projectPieData.slice(0, 8).map((_, index) => (
-                    <Cell key={index} fill={C[index % C.length]} fillOpacity={0.85} />
-                  ))}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </Panel>
+          projectsData.loading && !projectsData.data ? (
+            <Panel title="Project distribution">
+              <div className="flex items-center justify-center h-64 text-stone-400 text-[13px]">
+                <svg className="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+                Loading project data...
+              </div>
+            </Panel>
+          ) : (
+            <Panel title="Project distribution" subtitle={`Top 8 projects by ${isTokens ? 'tokens' : 'cost'}`}>
+              <ResponsiveContainer width="100%" height={280}>
+                <BarChart data={projectPieData.slice(0, 8)} layout="vertical" margin={{ left: 8, right: 8, top: 0, bottom: 0 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" horizontal={false} />
+                  <XAxis type="number" tick={{ fill: '#78716c', fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => isTokens ? formatTokens(v) : formatUSD(v)} />
+                  <YAxis type="category" dataKey="name" tick={{ fill: '#57534e', fontSize: 11 }} axisLine={false} tickLine={false} width={110} />
+                  <Tooltip content={<TooltipBox fmt={isTokens ? formatTokens : formatUSD} />} />
+                  <Bar dataKey={dataKey} radius={[0, 6, 6, 0]} maxBarSize={24}>
+                    {projectPieData.slice(0, 8).map((_, index) => (
+                      <Cell key={index} fill={C[index % C.length]} fillOpacity={0.85} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </Panel>
+          )
         ) : project ? (
-          <Panel title="Per-model breakdown">
+          <Panel title="Output / Input ratio" subtitle="Daily generation vs context ratio">
             <ResponsiveContainer width="100%" height={280}>
-              <BarChart data={modelAgg} layout="vertical">
-                <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" horizontal={false} />
-                <XAxis type="number" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => formatTokens(v)} />
-                <YAxis type="category" dataKey="name" tick={{ fill: '#57534e', fontSize: 11 }} axisLine={false} tickLine={false} width={80} />
+              <LineChart data={outputInputTrend}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" vertical={false} />
+                <XAxis dataKey="date" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} />
+                <YAxis yAxisId="tokens" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => formatTokens(v)} />
+                <YAxis yAxisId="ratio" orientation="right" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v.toFixed(0)}%`} />
                 <Tooltip content={<TooltipBox />} />
-                <Bar dataKey="cacheRead" stackId="a" fill={C[0]} fillOpacity={0.7} name="Cache Read" maxBarSize={20} />
-                <Bar dataKey="input" stackId="a" fill={C[1]} fillOpacity={0.7} name="Input" maxBarSize={20} />
-                <Bar dataKey="output" stackId="a" fill={C[2]} fillOpacity={0.7} name="Output" maxBarSize={20} />
-              </BarChart>
+                <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} />
+                <Line yAxisId="tokens" type="monotone" dataKey="output" stroke={C[1]} strokeWidth={2} dot={false} name="Output" />
+                <Line yAxisId="tokens" type="monotone" dataKey="input" stroke={C[0]} strokeWidth={2} dot={false} name="Input" />
+                <Line yAxisId="ratio" type="monotone" dataKey="ratio" stroke={C[3]} strokeWidth={2} strokeDasharray="4 2" dot={false} name="Ratio (%)" />
+              </LineChart>
             </ResponsiveContainer>
           </Panel>
         ) : null}
@@ -494,7 +653,12 @@ export function Dashboard() {
 
       {/* Row 2: Heatmap Row */}
       <Panel title="24-Hour Activity Heatmap" subtitle="Activity distribution by hour and day of week" className="mb-4">
-        {heatmapData ? (
+        {blocksData.loading && !blocksData.data ? (
+          <div className="flex items-center justify-center h-48 text-stone-400 text-[13px]">
+            <svg className="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+            Loading session data...
+          </div>
+        ) : heatmapData ? (
           <div className="flex flex-col w-full pt-1 pb-2">
             <div className="flex w-full gap-2">
               <div className="w-8 shrink-0 flex flex-col justify-around text-[10px] font-medium text-stone-400 pt-0.5 pb-0.5">
@@ -534,48 +698,12 @@ export function Dashboard() {
         )}
       </Panel>
 
-      {/* Row 3: Model Trend (left 60%) + Model Distribution (right 40%) */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-4 mb-4">
-        <Panel title="Model trend" subtitle="Showing top 6 models to maintain readability" className="lg:col-span-3">
-          <ResponsiveContainer width="100%" height={260}>
-            <LineChart data={modelTrendData}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => isTokens ? formatTokens(v) : formatUSD(v)} />
-              <Tooltip content={<TooltipBox fmt={isTokens ? formatTokens : formatUSD} />} />
-              <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} />
-              {modelAgg.slice(0, 6).map((m, i) => (
-                <Line key={m.name} type="monotone" dataKey={m.name} stroke={C[i % C.length]} strokeWidth={1.5} dot={false} />
-              ))}
-            </LineChart>
-          </ResponsiveContainer>
-        </Panel>
+      {/* Section: Code Analytics (Claude Code & OpenClaw only) */}
+      {!isCodex && analyticsData.data && (
+        <AnalyticsSection analytics={analyticsData.data} timeRange={timeRange} />
+      )}
 
-        <Panel title="Model distribution" subtitle="Ranked by total volume" className="lg:col-span-2">
-          <ResponsiveContainer width="100%" height={260}>
-            <PieChart margin={{ left: 0, right: 0, top: 0, bottom: 0 }}>
-              <Pie
-                data={modelAgg.slice(0, 6)}
-                dataKey={dataKey}
-                nameKey="name"
-                cx="50%"
-                cy="50%"
-                innerRadius={60}
-                outerRadius={90}
-                paddingAngle={2}
-              >
-                {modelAgg.slice(0, 6).map((_, index) => (
-                  <Cell key={index} fill={C[index % C.length]} fillOpacity={0.85} stroke="transparent" />
-                ))}
-              </Pie>
-              <Tooltip content={<TooltipBox fmt={isTokens ? formatTokens : formatUSD} />} />
-              <Legend layout="vertical" verticalAlign="middle" align="right" wrapperStyle={{ fontSize: 11 }} />
-            </PieChart>
-          </ResponsiveContainer>
-        </Panel>
-      </div>
-
-      {/* Row 4: Detail Table */}
+      {/* Daily Detail Table */}
       <Panel title="Daily detail" subtitle="Recent 30 days of usage breakdown">
         <div className="overflow-x-auto">
           <table className="w-full text-[11px] whitespace-nowrap">

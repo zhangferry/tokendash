@@ -1,6 +1,6 @@
 {
   "name": "@zhangferry-dev/tokendash",
-  "version": "1.1.4",
+  "version": "1.2.0",
   "type": "module",
   "description": "Token Usage Analytics Dashboard",
   "publishConfig": {
@@ -22,6 +22,9 @@
     "build": "vite build && tsc -p tsconfig.json",
     "start": "node dist/server/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.frontend.json --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:e2e": "playwright test",
     "prepack": "npm run build"
   },
   "dependencies": {
@@ -33,6 +36,7 @@
     "zod": "^3.24.3"
   },
   "devDependencies": {
+    "@playwright/test": "^1.59.1",
     "@types/express": "^5.0.2",
     "@types/node": "^22.15.2",
     "@types/react": "^19.1.2",
@@ -41,6 +45,7 @@
     "concurrently": "^9.1.2",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",
-    "vite": "^6.3.3"
+    "vite": "^6.3.3",
+    "vitest": "^4.1.4"
   }
 }

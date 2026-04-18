@@ -1,9 +1,9 @@
 import { type Request, type Response } from 'express';
-import { runCcusage } from '../ccusage.js';
 import { cache } from '../cache.js';
 import { validateDaily } from '../../shared/schemas.js';
-import { getDailyResponse } from '../codexParser.js';
+import { getDailyResponse as getCodexDailyResponse } from '../codexParser.js';
 import { getDailyResponse as getOpenClawDailyResponse } from '../openclawParser.js';
+import { getDailyResponse as getClaudeDailyResponse } from '../claudeJsonlParser.js';
 
 export async function getDaily(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
@@ -15,22 +15,17 @@ export async function getDaily(req: Request, res: Response): Promise<void> {
       return;
     }
 
-    if (agent === 'codex') {
-      const data = getDailyResponse();
-      cache.set(cacheKey, data);
-      res.json(data);
-    } else if (agent === 'openclaw') {
-      const data = getOpenClawDailyResponse();
-      const validated = validateDaily(data);
-      cache.set(cacheKey, validated);
-      res.json(validated);
-    } else {
-      const stdout = await runCcusage(['daily', '--breakdown']);
-      const data = JSON.parse(stdout);
-      const validated = validateDaily(data);
-      cache.set(cacheKey, validated);
-      res.json(validated);
+    // Stale-while-revalidate: return stale data, refresh in background
+    const stale = cache.getStale(cacheKey);
+    if (stale) {
+      refreshDailyCache(agent, cacheKey);
+      res.json(stale);
+      return;
     }
+
+    const data = await fetchDailyData(agent);
+    cache.set(cacheKey, data);
+    res.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error fetching daily data:', error);
@@ -39,4 +34,21 @@ export async function getDaily(req: Request, res: Response): Promise<void> {
       hint: message,
     });
   }
+}
+
+function fetchDailyData(agent: string) {
+  if (agent === 'codex') {
+    return Promise.resolve(getCodexDailyResponse());
+  } else if (agent === 'openclaw') {
+    return Promise.resolve(validateDaily(getOpenClawDailyResponse()));
+  } else {
+    // Claude Code: parse JSONL directly (fast, no CLI)
+    return Promise.resolve(validateDaily(getClaudeDailyResponse()));
+  }
+}
+
+function refreshDailyCache(agent: string, cacheKey: string): void {
+  fetchDailyData(agent)
+    .then(data => cache.set(cacheKey, data))
+    .catch(err => console.error('Background refresh failed (daily):', err));
 }

@@ -78,3 +78,38 @@ export const BlocksResponseSchema = z.object({
 export function validateBlocks(data: unknown) {
   return BlocksResponseSchema.parse(data);
 }
+
+// --- Analytics schemas ---
+
+const DailyCodeChangeSchema = z.object({
+  date: z.string(),
+  linesAdded: z.number().default(0),
+  linesDeleted: z.number().default(0),
+  netChange: z.number().default(0),
+  filesModified: z.number().default(0),
+});
+
+const ToolUsageEntrySchema = z.object({
+  name: z.string(),
+  count: z.number().default(0),
+});
+
+const ProductivityKPIsSchema = z.object({
+  avgLinesPerEdit: z.number().default(0),
+  filesModifiedPerDay: z.number().default(0),
+  addDeleteRatio: z.number().default(0),
+  totalEdits: z.number().default(0),
+  totalFilesModified: z.number().default(0),
+  activeDaysWithEdits: z.number().default(0),
+});
+
+const AnalyticsResponseSchema = z.object({
+  codeChangeTrend: z.array(DailyCodeChangeSchema).default([]),
+  toolUsageDistribution: z.array(ToolUsageEntrySchema).default([]),
+  productivityKPIs: ProductivityKPIsSchema,
+  toolCallTrend: z.array(z.record(z.union([z.string(), z.number()]))).default([]),
+});
+
+export function validateAnalytics(data: unknown) {
+  return AnalyticsResponseSchema.parse(data);
+}

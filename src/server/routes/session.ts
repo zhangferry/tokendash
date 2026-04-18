@@ -1,27 +1,43 @@
 import { type Request, type Response } from 'express';
-import { runCcusage } from '../ccusage.js';
 import { cache } from '../cache.js';
 import { validateDaily } from '../../shared/schemas.js';
+import { getDailyResponse as getClaudeDailyResponse } from '../claudeJsonlParser.js';
+import { getDailyResponse as getCodexDailyResponse } from '../codexParser.js';
+import { getDailyResponse as getOpenClawDailyResponse } from '../openclawParser.js';
 
-export async function getSession(_req: Request, res: Response): Promise<void> {
+export async function getSession(req: Request, res: Response): Promise<void> {
+  const agent = req.query.agent as string || 'claude';
+  const cacheKey = `session:${agent}`;
   try {
-    const cached = cache.get('session');
+    const cached = cache.get(cacheKey);
     if (cached) {
       res.json(cached);
       return;
     }
 
-    const stdout = await runCcusage(['session']);
-    const data = JSON.parse(stdout);
-    const validated = validateDaily(data);
+    const stale = cache.getStale(cacheKey);
+    if (stale) {
+      res.json(stale);
+      return;
+    }
 
-    cache.set('session', validated);
-    res.json(validated);
+    // Session data uses same daily aggregation
+    let data;
+    if (agent === 'codex') {
+      data = validateDaily(getCodexDailyResponse());
+    } else if (agent === 'openclaw') {
+      data = validateDaily(getOpenClawDailyResponse());
+    } else {
+      data = validateDaily(getClaudeDailyResponse());
+    }
+
+    cache.set(cacheKey, data);
+    res.json(data);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
     console.error('Error fetching session data:', error);
     res.status(502).json({
-      error: 'Failed to fetch session data from ccusage',
+      error: 'Failed to fetch session data',
       hint: message,
     });
   }

@@ -2,18 +2,22 @@
 
 A beautiful, local web dashboard for visualizing your Claude Code, Codex, and OpenClaw token usage statistics.
 
-It runs locally and parses token usage data directly from local session files, presenting it in a clean, interactive React dashboard. Claude Code partially relies on the `ccusage` CLI for some data.
+It runs locally and parses token usage data directly from local session files, presenting it in a clean, interactive React dashboard. No external CLI dependencies required.
 
 ![Product Screenshoot](resources/product_screenshoot.png)
 
 ## Features
 
-- **Multi-Agent Support:** View usage for both Claude Code and Codex.
-- **Detailed Metrics:** Track total tokens, cost (USD), active days, and cache hit rates.
-- **Interactive Charts:** Visualize usage trends over time with tooltips and breakdowns.
-- **Model Distribution:** See which models are driving your usage.
-- **Project Analysis:** (For Claude Code) Understand which projects consume the most tokens.
+- **Multi-Agent Support:** View usage for Claude Code, Codex, and OpenClaw.
+- **Direct JSONL Parsing:** Reads `~/.claude/projects/` JSONL files directly — no `ccusage` CLI dependency, 100x faster data loading.
+- **Detailed Metrics:** Track total tokens, cost (USD), active days, cache hit rates, and output/input ratio.
+- **Code Analytics:** Visualize code change trends, tool call frequency, and productivity KPIs (Claude Code & OpenClaw only).
+- **Pricing Transparency:** Toggle Cost metric to see per-model pricing formula and rates.
+- **Interactive Charts:** Bar/line/area charts with tooltips, model breakdowns, and time range filtering.
+- **24-Hour Heatmap:** Activity distribution by hour and day of week, with timezone awareness.
+- **Model & Project Distribution:** See which models and projects drive your usage.
 - **Persistent Filters:** Your selected time range, project, and metric mode are saved automatically.
+- **Test Coverage:** Unit tests (Vitest) and E2E tests (Playwright) for reliability.
 
 ## Requirements
 
@@ -83,7 +87,21 @@ If you want to contribute or modify the dashboard locally:
 
 - **Frontend:** React 19, Recharts, Tailwind CSS (via Vite plugin), built with Vite.
 - **Backend:** Express, TypeScript.
-- **Data Source:** Codex and OpenClaw data is parsed directly from local session files. Claude Code data partially uses `ccusage --json` CLI. Uses a short-lived in-memory cache to ensure snappy UI updates when toggling filters.
+- **Data Source:** All agent data is parsed directly from local session files (`~/.claude/projects/`, `~/.codex/sessions/`). No external CLI dependencies.
+- **Caching:** Persistent disk cache (`/tmp/tokendash-cache/`) with stale-while-revalidate pattern for snappy UI updates.
+- **Testing:** Vitest (unit), Playwright (E2E). Run with `npm test` and `npm run test:e2e`.
+
+## Changelog
+
+### v1.2.0
+- **Replaced `ccusage` CLI** with direct JSONL parser — data loads in 1-2ms instead of 12-30s
+- **Added code analytics** — code change trend, tool call trend, daily KPIs
+- **Added persistent disk cache** with stale-while-revalidate pattern
+- **Fixed heatmap** — cost metric now shows real data (was always $0)
+- **Fixed timezone handling** — correct date/hour grouping for non-UTC users
+- **Added pricing info popup** — shows per-model pricing formula in Cost mode
+- **Added test suite** — 49 unit tests + 6 E2E tests
+- **Layout improvements** — model trend bar chart, side-by-side analytics panels
 
 ## License
 

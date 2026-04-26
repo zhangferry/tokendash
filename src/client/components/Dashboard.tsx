@@ -274,7 +274,7 @@ export function Dashboard() {
       for (const b of d.modelBreakdowns) {
         const name = shortModelName(b.modelName);
         if (!map[name]) map[name] = { tokens: 0, cost: 0, input: 0, output: 0, cacheRead: 0 };
-        map[name].tokens += b.inputTokens + b.outputTokens;
+        map[name].tokens += b.inputTokens + b.outputTokens + b.cacheReadTokens;
         map[name].cost += b.cost;
         map[name].input += b.inputTokens;
         map[name].output += b.outputTokens;
@@ -290,7 +290,7 @@ export function Dashboard() {
       const entry: Record<string, string | number> = { date: formatDate(d.date) };
       for (const b of d.modelBreakdowns) {
         const name = shortModelName(b.modelName);
-        entry[name] = (entry[name] as number || 0) + (isTokens ? b.inputTokens + b.outputTokens : b.cost);
+        entry[name] = (entry[name] as number || 0) + (isTokens ? b.inputTokens + b.outputTokens + b.cacheReadTokens : b.cost);
       }
       return entry;
     });

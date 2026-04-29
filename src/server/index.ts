@@ -2,6 +2,8 @@ import express from 'express';
 import type { Express } from 'express';
 import { readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
+import { fileURLToPath } from 'node:url';
+import { dirname, join } from 'node:path';
 import { registerApiRoutes } from './routes/api.js';
 import { detectAvailableAgents } from './agentDetection.js';
 import open from 'open';
@@ -20,7 +22,9 @@ const CLI_USAGE = [
 ].join('\n');
 
 function getPackageVersion(): string {
-  const packageJson = JSON.parse(readFileSync(new URL('../../package.json', import.meta.url), 'utf8')) as { version?: string };
+  const __filename = fileURLToPath(import.meta.url);
+  const __dirname = dirname(__filename);
+  const packageJson = JSON.parse(readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf8')) as { version?: string };
   return packageJson.version ?? 'unknown';
 }
 
@@ -164,8 +168,9 @@ async function main() {
 
   if (isProduction) {
     // Serve static files from client build
-    const clientPath = new URL('../client', import.meta.url).pathname;
-    const clientIndexPath = new URL('../client/index.html', import.meta.url).pathname;
+    const __dirname = dirname(fileURLToPath(import.meta.url));
+    const clientPath = join(__dirname, '..', 'client');
+    const clientIndexPath = join(clientPath, 'index.html');
 
     app.use(express.static(clientPath));
 

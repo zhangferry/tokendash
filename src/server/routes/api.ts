@@ -7,6 +7,7 @@ import { getBlocks } from './blocks.js';
 import { getAnalytics } from './analytics.js';
 import { detectAvailableAgents } from '../agentDetection.js';
 import { isOpenClawAccessible } from '../openclawParser.js';
+import { isOpencodeAccessible } from '../opencodeParser.js';
 
 function getAgents(_req: Request, res: Response): void {
   try {
@@ -15,6 +16,7 @@ function getAgents(_req: Request, res: Response): void {
     if (agents.claude) available.push('claude');
     if (agents.codex) available.push('codex');
     if (isOpenClawAccessible()) available.push('openclaw');
+    if (isOpencodeAccessible()) available.push('opencode');
     res.json({ available, default: available[0] || null });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

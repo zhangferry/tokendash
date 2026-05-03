@@ -14,7 +14,7 @@ export async function getAnalytics(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
   const project = req.query.project as string || undefined;
 
-  if (agent === 'codex') {
+  if (agent === 'codex' || agent === 'opencode') {
     res.json(EMPTY_ANALYTICS);
     return;
   }

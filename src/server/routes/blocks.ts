@@ -3,6 +3,7 @@ import { cache } from '../cache.js';
 import { validateBlocks } from '../../shared/schemas.js';
 import { getBlocksResponse as getCodexBlocksResponse } from '../codexParser.js';
 import { getBlocksResponse as getOpenClawBlocksResponse } from '../openclawParser.js';
+import { getBlocksResponse as getOpencodeBlocksResponse } from '../opencodeParser.js';
 import { getBlocksResponse as getClaudeBlocksResponse } from '../claudeJsonlParser.js';
 
 export async function getBlocks(req: Request, res: Response): Promise<void> {
@@ -41,6 +42,8 @@ export async function getBlocks(req: Request, res: Response): Promise<void> {
 function fetchBlocksData(agent: string, project?: string) {
   if (agent === 'openclaw') {
     return validateBlocks(getOpenClawBlocksResponse({ project: project || null }));
+  } else if (agent === 'opencode') {
+    return validateBlocks(getOpencodeBlocksResponse({ project: project || null }));
   } else if (agent === 'codex') {
     return validateBlocks(getCodexBlocksResponse({ project: project || null }));
   } else {

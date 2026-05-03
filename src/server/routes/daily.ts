@@ -3,6 +3,7 @@ import { cache } from '../cache.js';
 import { validateDaily } from '../../shared/schemas.js';
 import { getDailyResponse as getCodexDailyResponse } from '../codexParser.js';
 import { getDailyResponse as getOpenClawDailyResponse } from '../openclawParser.js';
+import { getDailyResponse as getOpencodeDailyResponse } from '../opencodeParser.js';
 import { getDailyResponse as getClaudeDailyResponse } from '../claudeJsonlParser.js';
 
 export async function getDaily(req: Request, res: Response): Promise<void> {
@@ -41,6 +42,8 @@ function fetchDailyData(agent: string) {
     return Promise.resolve(getCodexDailyResponse());
   } else if (agent === 'openclaw') {
     return Promise.resolve(validateDaily(getOpenClawDailyResponse()));
+  } else if (agent === 'opencode') {
+    return Promise.resolve(validateDaily(getOpencodeDailyResponse()));
   } else {
     // Claude Code: parse JSONL directly (fast, no CLI)
     return Promise.resolve(validateDaily(getClaudeDailyResponse()));

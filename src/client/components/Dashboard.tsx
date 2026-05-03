@@ -10,7 +10,7 @@ import { useCcusageData } from '../hooks/useCcusageData.js';
 import { useLocalStorageState } from '../hooks/useLocalStorageState.js';
 import { formatDate, formatTokens, formatUSD, formatPercent, formatProjectName } from '../utils/formatters.js';
 import { costSavedByCache } from '../utils/cacheCalculations.js';
-import { buildHourlyConsumption } from '../utils/hourlyConsumption.js';
+
 import { shortModelName } from '../utils/modelNames.js';
 import { AnalyticsSection } from './AnalyticsSection.js';
 import type { DailyEntry, MetricMode } from '../../shared/types.js';
@@ -30,6 +30,7 @@ const MODEL_PRICING_DISPLAY: Record<string, { input: string; cache: string; outp
   'default': { input: '3.00', cache: '0.30', output: '15.00' },
 };
 const TIME_RANGES = [
+  { key: 'today', label: 'Today', days: 1 },
   { key: '7d', label: '7D', days: 7 },
   { key: '30d', label: '30D', days: 30 },
   { key: '60d', label: '60D', days: 60 },
@@ -122,6 +123,16 @@ function ProjectSelect({ projects, value, onChange }: { projects: string[]; valu
 
 function filterByTime<T extends { date?: string; startTime?: string }>(data: T[], rangeKey: TimeRangeKey): T[] {
   if (rangeKey === 'all') return data;
+  if (rangeKey === 'today') {
+    const now = new Date();
+    const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    return data.filter(d => {
+      const field = d.date || d.startTime || '';
+      const dt = new Date(field);
+      const fieldStr = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+      return fieldStr === todayStr;
+    });
+  }
   const range = TIME_RANGES.find(t => t.key === rangeKey);
   const days = range ? range.days : 30;
   const cutoff = new Date();
@@ -174,8 +185,8 @@ export function Dashboard() {
   const [agentsInfo, setAgentsInfo] = useState<AgentsResponse | null>(null);
   const [agentsLoading, setAgentsLoading] = useState(true);
 
-  const [agent, setAgent] = useLocalStorageState<'claude' | 'codex' | 'openclaw'>('dashboard_agent', 'claude');
-  const isCodex = agent === 'codex';
+  const [agent, setAgent] = useLocalStorageState<'claude' | 'codex' | 'openclaw' | 'opencode'>('dashboard_agent', 'claude');
+  const isCodex = agent === 'codex' || agent === 'opencode';
 
   const [timeRange, setTimeRange] = useLocalStorageState<TimeRangeKey>('dashboard_timeRange', '30d');
   const [project, setProject] = useLocalStorageState('dashboard_project', '');
@@ -196,7 +207,7 @@ export function Dashboard() {
         setAgentsInfo(info);
         // Fallback stored agent if unavailable
         if (info.available.length > 0 && !info.available.includes(agent)) {
-          setAgent(info.default as 'claude' | 'codex' | 'openclaw');
+          setAgent(info.default as 'claude' | 'codex' | 'openclaw' | 'opencode');
         }
       })
       .catch(() => {})
@@ -211,7 +222,7 @@ export function Dashboard() {
   const analyticsData = useCcusageData(useCallback(() => fetchAnalytics(agent, project), [agent, project]));
   const [metric, setMetric] = useLocalStorageState<MetricMode>('dashboard_metric', 'tokens');
 
-  const handleAgentChange = (a: 'claude' | 'codex' | 'openclaw') => {
+  const handleAgentChange = (a: 'claude' | 'codex' | 'openclaw' | 'opencode') => {
     setAgent(a);
     setProject('');
   };
@@ -235,6 +246,84 @@ export function Dashboard() {
     }
     return [];
   }, [projectsData.data, dailyData.data, project, timeRange]);
+
+  const isToday = timeRange === 'today';
+
+  // Hourly model trend data (for today view, built from session blocks)
+  const hourlyModelTrendData = useMemo(() => {
+    if (!isToday || !blocksData.data) return [];
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const currentHour = now.getHours();
+    const buckets: Record<number, Record<string, number>> = {};
+    for (let h = 0; h <= currentHour; h++) buckets[h] = {};
+
+    for (const block of blocksData.data.blocks) {
+      if (block.isGap) continue;
+      const start = new Date(block.startTime);
+      const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
+      if (startStr !== todayStr) continue;
+      const hour = start.getHours();
+      if (hour > currentHour) continue;
+      const value = isTokens ? block.totalTokens : block.costUSD;
+      const names = block.models.map(shortModelName);
+      if (names.length === 0) {
+        buckets[hour]['Other'] = (buckets[hour]['Other'] || 0) + value;
+      } else {
+        const perModel = value / names.length;
+        for (const name of names) {
+          buckets[hour][name] = (buckets[hour][name] || 0) + perModel;
+        }
+      }
+    }
+    return Object.entries(buckets)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([h, models]) => ({ hour: `${h.padStart(2, '0')}:00`, ...models }));
+  }, [isToday, blocksData.data, isTokens]);
+
+  // Hourly cache trend data (for today view)
+  const hourlyCacheTrendData = useMemo(() => {
+    if (!isToday || !blocksData.data) return [];
+    const now = new Date();
+    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+    const currentHour = now.getHours();
+    const buckets: Record<number, { cacheRead: number; input: number }> = {};
+    for (let h = 0; h <= currentHour; h++) buckets[h] = { cacheRead: 0, input: 0 };
+
+    for (const block of blocksData.data.blocks) {
+      if (block.isGap) continue;
+      const start = new Date(block.startTime);
+      const startStr = `${start.getFullYear()}-${String(start.getMonth() + 1).padStart(2, '0')}-${String(start.getDate()).padStart(2, '0')}`;
+      if (startStr !== todayStr) continue;
+      const hour = start.getHours();
+      if (hour > currentHour) continue;
+      buckets[hour].cacheRead += block.tokenCounts.cacheReadInputTokens;
+      buckets[hour].input += block.tokenCounts.inputTokens;
+    }
+    return Object.entries(buckets)
+      .sort(([a], [b]) => Number(a) - Number(b))
+      .map(([h, d]) => ({
+        hour: `${h.padStart(2, '0')}:00`,
+        cacheRead: d.cacheRead,
+        input: d.input,
+        hitRate: d.input > 0 ? (d.cacheRead / (d.cacheRead + d.input)) * 100 : 0,
+      }));
+  }, [isToday, blocksData.data]);
+
+  // Hourly model aggregation for bar definitions (today view)
+  const hourlyModelAgg = useMemo(() => {
+    if (!isToday) return [];
+    const map: Record<string, number> = {};
+    for (const entry of hourlyModelTrendData) {
+      for (const [key, val] of Object.entries(entry)) {
+        if (key === 'hour') continue;
+        map[key] = (map[key] || 0) + (val as number);
+      }
+    }
+    return Object.entries(map)
+      .map(([name, tokens]) => ({ name, tokens }))
+      .sort((a, b) => b.tokens - a.tokens);
+  }, [isToday, hourlyModelTrendData]);
 
   // Totals from filtered data
   const totals = useMemo(() => {
@@ -371,32 +460,6 @@ export function Dashboard() {
     return { grid, maxVal };
   }, [blocksData.data, timeRange, isTokens]);
 
-  const todayHourlyData = useMemo(() => {
-    if (!blocksData.data) return null;
-    return buildHourlyConsumption(blocksData.data.blocks);
-  }, [blocksData.data]);
-
-  const todayPeakBucket = useMemo(() => {
-    if (!todayHourlyData) return null;
-    return todayHourlyData.buckets.reduce((peak, bucket) => {
-      const peakValue = isTokens ? peak.tokens : peak.cost;
-      const nextValue = isTokens ? bucket.tokens : bucket.cost;
-      return nextValue > peakValue ? bucket : peak;
-    }, todayHourlyData.buckets[0]);
-  }, [todayHourlyData, isTokens]);
-
-  const todayHourlyMax = useMemo(() => {
-    if (!todayHourlyData) return 0;
-    return todayHourlyData.buckets.reduce((max, bucket) => {
-      const value = isTokens ? bucket.tokens : bucket.cost;
-      return Math.max(max, value);
-    }, 0);
-  }, [todayHourlyData, isTokens]);
-
-  const todayTotal = useMemo(() => {
-    if (!todayHourlyData) return 0;
-    return todayHourlyData.buckets.reduce((sum, bucket) => sum + (isTokens ? bucket.tokens : bucket.cost), 0);
-  }, [todayHourlyData, isTokens]);
 
   const renderAgentSwitcher = () => (
     <div className="flex items-center gap-1 p-1 bg-stone-200/50 rounded-xl w-fit shadow-inner border border-stone-200/50">
@@ -429,6 +492,16 @@ export function Dashboard() {
       >
         <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
         OpenClaw
+      </button>
+      <button
+        onClick={() => handleAgentChange('opencode')}
+        className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-bold tracking-wide transition-all duration-200 ${agent === 'opencode'
+          ? 'bg-white text-amber-600 shadow-[0_1px_3px_rgba(0,0,0,0.1)] ring-1 ring-stone-900/5'
+          : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
+          }`}
+      >
+        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
+        OpenCode
       </button>
     </div>
   );
@@ -553,15 +626,15 @@ export function Dashboard() {
 
       {/* Model Trend (bar) + Cache Efficiency */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mb-4">
-        <Panel title="Model trend" subtitle="Showing top 6 models to maintain readability">
+        <Panel title="Model trend" subtitle={isToday ? "Hourly breakdown from today's session blocks" : "Showing top 6 models to maintain readability"}>
           <ResponsiveContainer width="100%" height={260}>
-            <BarChart data={modelTrendData}>
+            <BarChart data={isToday ? hourlyModelTrendData : modelTrendData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <XAxis dataKey={isToday ? "hour" : "date"} tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => isTokens ? formatTokens(v) : formatUSD(v)} />
               <Tooltip content={<TooltipBox fmt={isTokens ? formatTokens : formatUSD} />} />
               <Legend wrapperStyle={{ fontSize: 11, paddingTop: 12 }} />
-              {modelAgg.slice(0, 6).map((m, i) => (
+              {(isToday ? hourlyModelAgg : modelAgg).slice(0, 6).map((m, i) => (
                 <Bar key={m.name} dataKey={m.name} stackId="1" fill={C[i % C.length]} fillOpacity={0.85} />
               ))}
             </BarChart>
@@ -586,9 +659,9 @@ export function Dashboard() {
             </div>
           </div>
           <ResponsiveContainer width="100%" height={180}>
-            <ComposedChart data={cacheTrendData}>
+            <ComposedChart data={isToday ? hourlyCacheTrendData : cacheTrendData}>
               <CartesianGrid strokeDasharray="3 3" stroke="#e7e5e4" vertical={false} />
-              <XAxis dataKey="date" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} />
+              <XAxis dataKey={isToday ? "hour" : "date"} tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} />
               <YAxis yAxisId="left" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => formatTokens(v)} />
               <YAxis yAxisId="right" orientation="right" tick={{ fill: '#78716c', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `${v.toFixed(0)}%`} />
               <Tooltip content={<TooltipBox />} />
@@ -679,72 +752,9 @@ export function Dashboard() {
         ) : null}
       </div>
 
-      {/* Row 2: Today by Hour + Heatmap */}
-      <div className="grid grid-cols-1 xl:grid-cols-[1.1fr,1fr] gap-4 mb-4">
-        <Panel title="Today by hour" subtitle="24 local-hour buckets built from the current day session blocks">
-          {blocksData.loading && !blocksData.data ? (
-            <div className="flex items-center justify-center h-48 text-stone-400 text-[13px]">
-              <svg className="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-              Loading session data...
-            </div>
-          ) : todayHourlyData && todayPeakBucket ? (
-            <div data-testid="today-by-hour-panel" data-metric={metric} className="flex h-full flex-col gap-4">
-              <div className="grid grid-cols-3 gap-3">
-                <div className="rounded-xl border border-stone-200/70 bg-stone-50/70 px-3 py-2.5">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Today total</div>
-                  <div className="mt-1 text-lg font-black tracking-tight text-stone-900">{isTokens ? formatTokens(todayTotal) : formatUSD(todayTotal)}</div>
-                </div>
-                <div className="rounded-xl border border-stone-200/70 bg-stone-50/70 px-3 py-2.5">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Peak hour</div>
-                  <div className="mt-1 text-lg font-black tracking-tight text-stone-900">{todayPeakBucket.label}</div>
-                </div>
-                <div className="rounded-xl border border-stone-200/70 bg-stone-50/70 px-3 py-2.5">
-                  <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Peak value</div>
-                  <div className="mt-1 text-lg font-black tracking-tight text-stone-900">
-                    {isTokens ? formatTokens(todayPeakBucket.tokens) : formatUSD(todayPeakBucket.cost)}
-                  </div>
-                </div>
-              </div>
-
-              <div data-testid="today-by-hour-bars" className="flex h-56 items-end gap-1 rounded-2xl border border-stone-200/70 bg-gradient-to-b from-stone-50 to-white px-3 py-4">
-                {todayHourlyData.buckets.map(bucket => {
-                  const value = isTokens ? bucket.tokens : bucket.cost;
-                  const height = todayHourlyMax > 0 ? `${Math.max((value / todayHourlyMax) * 100, value > 0 ? 10 : 4)}%` : '4%';
-                  const barClass = bucket.isFutureHour
-                    ? 'bg-stone-200'
-                    : bucket.isCurrentHour
-                      ? 'bg-indigo-500'
-                      : value > 0
-                        ? 'bg-emerald-500'
-                        : 'bg-stone-300';
-
-                  return (
-                    <div key={bucket.hour} className="flex h-full flex-1 flex-col justify-end">
-                      <div
-                        data-testid="today-hour-bar"
-                        data-hour={bucket.hour}
-                        data-value={String(value)}
-                        aria-label={`${bucket.label} ${isTokens ? formatTokens(bucket.tokens) : formatUSD(bucket.cost)}`}
-                        className={`w-full rounded-t-md transition-all duration-200 hover:opacity-85 ${barClass}`}
-                        style={{ height }}
-                      />
-                    </div>
-                  );
-                })}
-              </div>
-
-              <div className="grid grid-cols-12 gap-2 text-[10px] font-semibold text-stone-400">
-                {todayHourlyData.buckets.filter((_, index) => index % 2 === 0).map(bucket => (
-                  <div key={bucket.hour} className="text-center">{bucket.hour}</div>
-                ))}
-              </div>
-            </div>
-          ) : (
-            <div className="h-48 flex items-center justify-center text-stone-400 text-sm">No session data available</div>
-          )}
-        </Panel>
-
-        <Panel title="24-Hour Activity Heatmap" subtitle="Activity distribution by hour and day of week">
+      {/* 24-Hour Activity Heatmap */}
+      <div className="mb-4">
+        <Panel title="24-Hour Activity Heatmap" subtitle={isToday ? "Today's hourly activity distribution" : "Activity distribution by hour and day of week"}>
           {blocksData.loading && !blocksData.data ? (
             <div className="flex items-center justify-center h-48 text-stone-400 text-[13px]">
               <svg className="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
@@ -754,12 +764,15 @@ export function Dashboard() {
             <div className="flex flex-col w-full pt-1 pb-2">
               <div className="flex w-full gap-2">
                 <div className="w-8 shrink-0 flex flex-col justify-around text-[10px] font-medium text-stone-400 pt-0.5 pb-0.5">
-                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => <div key={d} className={`h-[22px] flex items-center justify-center rounded ${i === new Date().getDay() ? 'bg-stone-800 text-white font-bold' : ''}`}>{d}</div>)}
+                  {isToday
+                    ? <div className="h-[44px] flex items-center justify-center rounded bg-stone-800 text-white font-bold text-[9px]">Today</div>
+                    : ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => <div key={d} className={`h-[22px] flex items-center justify-center rounded ${i === new Date().getDay() ? 'bg-stone-800 text-white font-bold' : ''}`}>{d}</div>)
+                  }
                 </div>
                 <div className="flex-1 flex flex-col gap-1">
-                  {heatmapData.grid.map((dayRow, dayIdx) => (
-                    <div key={dayIdx} className="flex gap-1 h-[22px]">
-                      {dayRow.map((val, hourIdx) => {
+                  {(isToday ? [new Date().getDay()] : [0, 1, 2, 3, 4, 5, 6]).map(dayIdx => (
+                    <div key={dayIdx} className={`flex gap-1 ${isToday ? 'h-[44px]' : 'h-[22px]'}`}>
+                      {heatmapData.grid[dayIdx].map((val, hourIdx) => {
                         const opacity = heatmapData.maxVal > 0 ? 0.15 + (val / heatmapData.maxVal) * 0.85 : 0;
                         return (
                           <div

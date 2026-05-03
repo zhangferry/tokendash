@@ -3,6 +3,7 @@ import { cache } from '../cache.js';
 import { validateProjects } from '../../shared/schemas.js';
 import { getProjectsResponse as getCodexProjectsResponse } from '../codexParser.js';
 import { getProjectsResponse as getOpenClawProjectsResponse } from '../openclawParser.js';
+import { getProjectsResponse as getOpencodeProjectsResponse } from '../opencodeParser.js';
 import { getProjectsResponse as getClaudeProjectsResponse } from '../claudeJsonlParser.js';
 
 export async function getProjects(req: Request, res: Response): Promise<void> {
@@ -41,6 +42,8 @@ function fetchProjectsData(agent: string) {
     return getCodexProjectsResponse();
   } else if (agent === 'openclaw') {
     return validateProjects(getOpenClawProjectsResponse());
+  } else if (agent === 'opencode') {
+    return validateProjects(getOpencodeProjectsResponse());
   } else {
     // Claude Code: parse JSONL directly (fast, no CLI)
     return validateProjects(getClaudeProjectsResponse());

@@ -5,13 +5,16 @@ export default defineConfig({
   timeout: 30000,
   retries: 0,
   use: {
-    baseURL: 'http://localhost:3456',
+    baseURL: 'http://localhost:3457',
     channel: 'chrome',
   },
   webServer: {
-    command: 'npm run build && node dist/server/index.js --no-open',
-    port: 3456,
-    reuseExistingServer: true,
-    timeout: 30000,
+    // Use vite preview to serve built static files.
+    // All API calls are mocked via page.route() in tests,
+    // so no real backend needed — tests run on any machine/CI.
+    command: 'npm run build && npx vite preview --port 3457',
+    port: 3457,
+    reuseExistingServer: !process.env.CI,
+    timeout: 60000,
   },
 });

@@ -19,9 +19,14 @@ export function isCodexAvailable(): boolean {
   return existsSync(CODEX_SESSIONS_DIR);
 }
 
-export function detectAvailableAgents(): { claude: boolean; codex: boolean } {
+export function isOpencodeAvailable(): boolean {
+  return existsSync(join(homedir(), '.local', 'share', 'opencode', 'opencode.db'));
+}
+
+export function detectAvailableAgents(): { claude: boolean; codex: boolean; opencode: boolean } {
   return {
     claude: isClaudeCodeAvailable(),
     codex: isCodexAvailable(),
+    opencode: isOpencodeAvailable(),
   };
 }

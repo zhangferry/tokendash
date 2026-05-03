@@ -10,9 +10,10 @@ import { useCcusageData } from '../hooks/useCcusageData.js';
 import { useLocalStorageState } from '../hooks/useLocalStorageState.js';
 import { formatDate, formatTokens, formatUSD, formatPercent, formatProjectName } from '../utils/formatters.js';
 import { costSavedByCache } from '../utils/cacheCalculations.js';
+import { buildHourlyConsumption } from '../utils/hourlyConsumption.js';
 import { shortModelName } from '../utils/modelNames.js';
 import { AnalyticsSection } from './AnalyticsSection.js';
-import type { DailyEntry, MetricMode, BlockEntry } from '../../shared/types.js';
+import type { DailyEntry, MetricMode } from '../../shared/types.js';
 
 const C = ['#4f46e5', '#10b981', '#f59e0b', '#ec4899', '#0ea5e9', '#8b5cf6', '#ef4444', '#14b8a6'];
 
@@ -370,6 +371,33 @@ export function Dashboard() {
     return { grid, maxVal };
   }, [blocksData.data, timeRange, isTokens]);
 
+  const todayHourlyData = useMemo(() => {
+    if (!blocksData.data) return null;
+    return buildHourlyConsumption(blocksData.data.blocks);
+  }, [blocksData.data]);
+
+  const todayPeakBucket = useMemo(() => {
+    if (!todayHourlyData) return null;
+    return todayHourlyData.buckets.reduce((peak, bucket) => {
+      const peakValue = isTokens ? peak.tokens : peak.cost;
+      const nextValue = isTokens ? bucket.tokens : bucket.cost;
+      return nextValue > peakValue ? bucket : peak;
+    }, todayHourlyData.buckets[0]);
+  }, [todayHourlyData, isTokens]);
+
+  const todayHourlyMax = useMemo(() => {
+    if (!todayHourlyData) return 0;
+    return todayHourlyData.buckets.reduce((max, bucket) => {
+      const value = isTokens ? bucket.tokens : bucket.cost;
+      return Math.max(max, value);
+    }, 0);
+  }, [todayHourlyData, isTokens]);
+
+  const todayTotal = useMemo(() => {
+    if (!todayHourlyData) return 0;
+    return todayHourlyData.buckets.reduce((sum, bucket) => sum + (isTokens ? bucket.tokens : bucket.cost), 0);
+  }, [todayHourlyData, isTokens]);
+
   const renderAgentSwitcher = () => (
     <div className="flex items-center gap-1 p-1 bg-stone-200/50 rounded-xl w-fit shadow-inner border border-stone-200/50">
       <button
@@ -651,52 +679,117 @@ export function Dashboard() {
         ) : null}
       </div>
 
-      {/* Row 2: Heatmap Row */}
-      <Panel title="24-Hour Activity Heatmap" subtitle="Activity distribution by hour and day of week" className="mb-4">
-        {blocksData.loading && !blocksData.data ? (
-          <div className="flex items-center justify-center h-48 text-stone-400 text-[13px]">
-            <svg className="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
-            Loading session data...
-          </div>
-        ) : heatmapData ? (
-          <div className="flex flex-col w-full pt-1 pb-2">
-            <div className="flex w-full gap-2">
-              <div className="w-8 shrink-0 flex flex-col justify-around text-[10px] font-medium text-stone-400 pt-0.5 pb-0.5">
-                {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => <div key={d} className={`h-[22px] flex items-center justify-center rounded ${i === new Date().getDay() ? 'bg-stone-800 text-white font-bold' : ''}`}>{d}</div>)}
-              </div>
-              <div className="flex-1 flex flex-col gap-1">
-                {heatmapData.grid.map((dayRow, dayIdx) => (
-                  <div key={dayIdx} className="flex gap-1 h-[22px]">
-                    {dayRow.map((val, hourIdx) => {
-                      const opacity = heatmapData.maxVal > 0 ? 0.15 + (val / heatmapData.maxVal) * 0.85 : 0;
-                      return (
-                        <div
-                          key={hourIdx}
-                          className="flex-1 rounded-[3px] relative group transition-all hover:ring-2 hover:ring-emerald-400 hover:ring-offset-1 hover:z-10"
-                          style={{ backgroundColor: val > 0 ? `rgba(16, 185, 129, ${opacity})` : '#ebedf0' }}
-                        >
-                          {val > 0 && (
-                            <div className="absolute opacity-0 group-hover:opacity-100 z-20 bg-stone-900 text-white text-[10px] px-2 py-1 rounded bottom-full mb-1.5 left-1/2 -translate-x-1/2 pointer-events-none whitespace-nowrap shadow-lg font-mono">
-                              {hourIdx}:00 - {isTokens ? formatTokens(val) + ' tokens' : formatUSD(val)}
-                            </div>
-                          )}
-                        </div>
-                      )
-                    })}
+      {/* Row 2: Today by Hour + Heatmap */}
+      <div className="grid grid-cols-1 xl:grid-cols-[1.1fr,1fr] gap-4 mb-4">
+        <Panel title="Today by hour" subtitle="24 local-hour buckets built from the current day session blocks">
+          {blocksData.loading && !blocksData.data ? (
+            <div className="flex items-center justify-center h-48 text-stone-400 text-[13px]">
+              <svg className="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+              Loading session data...
+            </div>
+          ) : todayHourlyData && todayPeakBucket ? (
+            <div data-testid="today-by-hour-panel" data-metric={metric} className="flex h-full flex-col gap-4">
+              <div className="grid grid-cols-3 gap-3">
+                <div className="rounded-xl border border-stone-200/70 bg-stone-50/70 px-3 py-2.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Today total</div>
+                  <div className="mt-1 text-lg font-black tracking-tight text-stone-900">{isTokens ? formatTokens(todayTotal) : formatUSD(todayTotal)}</div>
+                </div>
+                <div className="rounded-xl border border-stone-200/70 bg-stone-50/70 px-3 py-2.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Peak hour</div>
+                  <div className="mt-1 text-lg font-black tracking-tight text-stone-900">{todayPeakBucket.label}</div>
+                </div>
+                <div className="rounded-xl border border-stone-200/70 bg-stone-50/70 px-3 py-2.5">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-stone-400">Peak value</div>
+                  <div className="mt-1 text-lg font-black tracking-tight text-stone-900">
+                    {isTokens ? formatTokens(todayPeakBucket.tokens) : formatUSD(todayPeakBucket.cost)}
                   </div>
+                </div>
+              </div>
+
+              <div data-testid="today-by-hour-bars" className="flex h-56 items-end gap-1 rounded-2xl border border-stone-200/70 bg-gradient-to-b from-stone-50 to-white px-3 py-4">
+                {todayHourlyData.buckets.map(bucket => {
+                  const value = isTokens ? bucket.tokens : bucket.cost;
+                  const height = todayHourlyMax > 0 ? `${Math.max((value / todayHourlyMax) * 100, value > 0 ? 10 : 4)}%` : '4%';
+                  const barClass = bucket.isFutureHour
+                    ? 'bg-stone-200'
+                    : bucket.isCurrentHour
+                      ? 'bg-indigo-500'
+                      : value > 0
+                        ? 'bg-emerald-500'
+                        : 'bg-stone-300';
+
+                  return (
+                    <div key={bucket.hour} className="flex h-full flex-1 flex-col justify-end">
+                      <div
+                        data-testid="today-hour-bar"
+                        data-hour={bucket.hour}
+                        data-value={String(value)}
+                        aria-label={`${bucket.label} ${isTokens ? formatTokens(bucket.tokens) : formatUSD(bucket.cost)}`}
+                        className={`w-full rounded-t-md transition-all duration-200 hover:opacity-85 ${barClass}`}
+                        style={{ height }}
+                      />
+                    </div>
+                  );
+                })}
+              </div>
+
+              <div className="grid grid-cols-12 gap-2 text-[10px] font-semibold text-stone-400">
+                {todayHourlyData.buckets.filter((_, index) => index % 2 === 0).map(bucket => (
+                  <div key={bucket.hour} className="text-center">{bucket.hour}</div>
                 ))}
               </div>
             </div>
-            <div className="flex ml-10 mt-1.5 text-[10px] font-medium text-stone-400">
-              {[...Array(24)].map((_, i) => (
-                <div key={i} className="flex-1 text-center truncate">{i % 2 === 0 ? i : ''}</div>
-              ))}
+          ) : (
+            <div className="h-48 flex items-center justify-center text-stone-400 text-sm">No session data available</div>
+          )}
+        </Panel>
+
+        <Panel title="24-Hour Activity Heatmap" subtitle="Activity distribution by hour and day of week">
+          {blocksData.loading && !blocksData.data ? (
+            <div className="flex items-center justify-center h-48 text-stone-400 text-[13px]">
+              <svg className="animate-spin w-4 h-4 mr-2" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" /><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" /></svg>
+              Loading session data...
             </div>
-          </div>
-        ) : (
-          <div className="h-48 flex items-center justify-center text-stone-400 text-sm">No session data available</div>
-        )}
-      </Panel>
+          ) : heatmapData ? (
+            <div className="flex flex-col w-full pt-1 pb-2">
+              <div className="flex w-full gap-2">
+                <div className="w-8 shrink-0 flex flex-col justify-around text-[10px] font-medium text-stone-400 pt-0.5 pb-0.5">
+                  {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map((d, i) => <div key={d} className={`h-[22px] flex items-center justify-center rounded ${i === new Date().getDay() ? 'bg-stone-800 text-white font-bold' : ''}`}>{d}</div>)}
+                </div>
+                <div className="flex-1 flex flex-col gap-1">
+                  {heatmapData.grid.map((dayRow, dayIdx) => (
+                    <div key={dayIdx} className="flex gap-1 h-[22px]">
+                      {dayRow.map((val, hourIdx) => {
+                        const opacity = heatmapData.maxVal > 0 ? 0.15 + (val / heatmapData.maxVal) * 0.85 : 0;
+                        return (
+                          <div
+                            key={hourIdx}
+                            className="flex-1 rounded-[3px] relative group transition-all hover:ring-2 hover:ring-emerald-400 hover:ring-offset-1 hover:z-10"
+                            style={{ backgroundColor: val > 0 ? `rgba(16, 185, 129, ${opacity})` : '#ebedf0' }}
+                          >
+                            {val > 0 && (
+                              <div className="absolute opacity-0 group-hover:opacity-100 z-20 bg-stone-900 text-white text-[10px] px-2 py-1 rounded bottom-full mb-1.5 left-1/2 -translate-x-1/2 pointer-events-none whitespace-nowrap shadow-lg font-mono">
+                                {hourIdx}:00 - {isTokens ? formatTokens(val) + ' tokens' : formatUSD(val)}
+                              </div>
+                            )}
+                          </div>
+                        )
+                      })}
+                    </div>
+                  ))}
+                </div>
+              </div>
+              <div className="flex ml-10 mt-1.5 text-[10px] font-medium text-stone-400">
+                {[...Array(24)].map((_, i) => (
+                  <div key={i} className="flex-1 text-center truncate">{i % 2 === 0 ? i : ''}</div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="h-48 flex items-center justify-center text-stone-400 text-sm">No session data available</div>
+          )}
+        </Panel>
+      </div>
 
       {/* Section: Code Analytics (Claude Code & OpenClaw only) */}
       {!isCodex && analyticsData.data && (

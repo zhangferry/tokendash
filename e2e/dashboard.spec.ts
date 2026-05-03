@@ -45,6 +45,29 @@ test.describe('Dashboard', () => {
     expect(count).toBeGreaterThan(0);
   });
 
+  test('today by hour panel renders 24 buckets and survives metric switch', async ({ page }) => {
+    const panel = page.locator('[data-testid="today-by-hour-panel"]');
+    await expect(panel).toBeVisible();
+    await expect(page.locator('text=Today by hour')).toBeVisible();
+
+    const bars = page.locator('[data-testid="today-hour-bar"]');
+    await expect(bars).toHaveCount(24);
+
+    const tokenValues = await bars.evaluateAll(nodes =>
+      nodes.map(node => Number((node as HTMLElement).dataset.value || '0'))
+    );
+    expect(tokenValues.some(value => value > 0)).toBe(true);
+    await expect(panel).toHaveAttribute('data-metric', 'tokens');
+
+    await page.locator('button:has-text("Cost")').click();
+    await expect(panel).toHaveAttribute('data-metric', 'usd');
+
+    const costValues = await bars.evaluateAll(nodes =>
+      nodes.map(node => Number((node as HTMLElement).dataset.value || '0'))
+    );
+    expect(costValues.some(value => value > 0)).toBe(true);
+  });
+
   test('time range switching updates charts', async ({ page }) => {
     // Click 7D
     await page.locator('button:has-text("7D")').click();

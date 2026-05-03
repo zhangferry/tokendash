@@ -25,7 +25,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:e2e": "playwright test",
-    "prepack": "npm run build"
+    "prepack": "npm run build",
+    "release": "npm publish --access public --registry https://registry.npmjs.org"
   },
   "dependencies": {
     "express": "^5.1.0",

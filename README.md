@@ -1,6 +1,6 @@
 # tokendash
 
-A beautiful, local web dashboard for visualizing your Claude Code, Codex, and OpenClaw token usage statistics.
+A beautiful, local web dashboard for visualizing your Claude Code, Codex, OpenClaw, and OpenCode token usage statistics.
 
 It runs locally and parses token usage data directly from local session files, presenting it in a clean, interactive React dashboard. No external CLI dependencies required.
 
@@ -8,9 +8,10 @@ It runs locally and parses token usage data directly from local session files, p
 
 ## Features
 
-- **Multi-Agent Support:** View usage for Claude Code, Codex, and OpenClaw.
+- **Multi-Agent Support:** View usage for Claude Code, Codex, OpenClaw, and OpenCode.
 - **Direct JSONL Parsing:** Reads `~/.claude/projects/` JSONL files directly — no `ccusage` CLI dependency, 100x faster data loading.
 - **Detailed Metrics:** Track total tokens, cost (USD), active days, cache hit rates, and output/input ratio.
+- **Today by Hour:** 24-hour token consumption panel showing hourly breakdown for the current day.
 - **Code Analytics:** Visualize code change trends, tool call frequency, and productivity KPIs (Claude Code & OpenClaw only).
 - **Pricing Transparency:** Toggle Cost metric to see per-model pricing formula and rates.
 - **Interactive Charts:** Bar/line/area charts with tooltips, model breakdowns, and time range filtering.
@@ -87,11 +88,19 @@ If you want to contribute or modify the dashboard locally:
 
 - **Frontend:** React 19, Recharts, Tailwind CSS (via Vite plugin), built with Vite.
 - **Backend:** Express, TypeScript.
-- **Data Source:** All agent data is parsed directly from local session files (`~/.claude/projects/`, `~/.codex/sessions/`). No external CLI dependencies.
+- **Data Source:** All agent data is parsed directly from local session files (`~/.claude/projects/`, `~/.codex/sessions/`) and OpenCode's SQLite database (`~/.local/share/opencode/opencode.db`). No external CLI dependencies.
 - **Caching:** Persistent disk cache (`/tmp/tokendash-cache/`) with stale-while-revalidate pattern for snappy UI updates.
 - **Testing:** Vitest (unit), Playwright (E2E). Run with `npm test` and `npm run test:e2e`.
+- **CI:** GitHub Actions pipeline for automated testing on every push and PR.
 
 ## Changelog
+
+### v1.3.0
+- **Added OpenCode agent support** — parses SQLite database at `~/.local/share/opencode/opencode.db`
+- **Added Today by Hour panel** — 24-hour token consumption breakdown for the current day
+- **E2E test overhaul** — comprehensive Playwright test suite with fixture-based test data
+- **Added CI pipeline** — GitHub Actions for automated testing on push and PR
+- **Fixed model trend chart** — included `cacheReadTokens` in model trend calculations
 
 ### v1.2.0
 - **Replaced `ccusage` CLI** with direct JSONL parser — data loads in 1-2ms instead of 12-30s

@@ -461,50 +461,53 @@ export function Dashboard() {
   }, [blocksData.data, timeRange, isTokens]);
 
 
-  const renderAgentSwitcher = () => (
-    <div className="flex items-center gap-1 p-1 bg-stone-200/50 rounded-xl w-fit shadow-inner border border-stone-200/50">
-      <button
-        onClick={() => handleAgentChange('claude')}
-        className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-bold tracking-wide transition-all duration-200 ${agent === 'claude'
-          ? 'bg-white text-indigo-600 shadow-[0_1px_3px_rgba(0,0,0,0.1)] ring-1 ring-stone-900/5'
-          : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
-          }`}
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>
-        Claude Code
-      </button>
-      <button
-        onClick={() => handleAgentChange('codex')}
-        className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-bold tracking-wide transition-all duration-200 ${agent === 'codex'
-          ? 'bg-white text-emerald-600 shadow-[0_1px_3px_rgba(0,0,0,0.1)] ring-1 ring-stone-900/5'
-          : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
-          }`}
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
-        Codex
-      </button>
-      <button
-        onClick={() => handleAgentChange('openclaw')}
-        className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-bold tracking-wide transition-all duration-200 ${agent === 'openclaw'
-          ? 'bg-white text-orange-600 shadow-[0_1px_3px_rgba(0,0,0,0.1)] ring-1 ring-stone-900/5'
-          : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
-          }`}
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>
-        OpenClaw
-      </button>
-      <button
-        onClick={() => handleAgentChange('opencode')}
-        className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-bold tracking-wide transition-all duration-200 ${agent === 'opencode'
-          ? 'bg-white text-amber-600 shadow-[0_1px_3px_rgba(0,0,0,0.1)] ring-1 ring-stone-900/5'
-          : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
-          }`}
-      >
-        <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>
-        OpenCode
-      </button>
-    </div>
-  );
+  const AGENT_CONFIG: Record<string, { label: string; activeColor: string; icon: JSX.Element }> = {
+    claude: {
+      label: 'Claude Code',
+      activeColor: 'text-indigo-600',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M13 10V3L4 14h7v7l9-11h-7z" /></svg>,
+    },
+    codex: {
+      label: 'Codex',
+      activeColor: 'text-emerald-600',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>,
+    },
+    openclaw: {
+      label: 'OpenClaw',
+      activeColor: 'text-orange-600',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M12 6V4m0 2a2 2 0 100 4m0-4a2 2 0 110 4m-6 8a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4m6 6v10m6-2a2 2 0 100-4m0 4a2 2 0 110-4m0 4v2m0-6V4" /></svg>,
+    },
+    opencode: {
+      label: 'OpenCode',
+      activeColor: 'text-amber-600',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>,
+    },
+  };
+
+  const renderAgentSwitcher = () => {
+    const availableAgents = (agentsInfo?.available ?? []).filter(a => a in AGENT_CONFIG);
+    return (
+      <div className="flex items-center gap-1 p-1 bg-stone-200/50 rounded-xl w-fit shadow-inner border border-stone-200/50">
+        {availableAgents.map((a) => {
+          const cfg = AGENT_CONFIG[a]!;
+          const isActive = agent === a;
+          return (
+            <button
+              key={a}
+              onClick={() => handleAgentChange(a as 'claude' | 'codex' | 'openclaw' | 'opencode')}
+              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-bold tracking-wide transition-all duration-200 ${isActive
+                ? `bg-white ${cfg.activeColor} shadow-[0_1px_3px_rgba(0,0,0,0.1)] ring-1 ring-stone-900/5`
+                : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
+                }`}
+            >
+              {cfg.icon}
+              {cfg.label}
+            </button>
+          );
+        })}
+      </div>
+    );
+  };
 
   if (coreLoading) {
     return (

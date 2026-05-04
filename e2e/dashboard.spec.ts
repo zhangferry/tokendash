@@ -242,6 +242,28 @@ test.describe('Time range: ALL', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Agent switching', () => {
+  test('only shows tabs for available agents', async ({ page }) => {
+    await setupPage(page, { agents: ['claude', 'opencode'] });
+
+    // Available agents should have visible tabs
+    await expect(page.locator('button:has-text("Claude Code")')).toBeVisible();
+    await expect(page.locator('button:has-text("OpenCode")')).toBeVisible();
+
+    // Unavailable agents should NOT have tabs
+    await expect(page.locator('button:has-text("Codex")')).not.toBeVisible();
+    await expect(page.locator('button:has-text("OpenClaw")')).not.toBeVisible();
+  });
+
+  test('hides agent switcher when only one agent available', async ({ page }) => {
+    await setupPage(page, { agents: ['claude'] });
+
+    // No agent buttons should be visible at all
+    await expect(page.locator('button:has-text("Claude Code")')).not.toBeVisible();
+    await expect(page.locator('button:has-text("OpenCode")')).not.toBeVisible();
+    await expect(page.locator('button:has-text("Codex")')).not.toBeVisible();
+    await expect(page.locator('button:has-text("OpenClaw")')).not.toBeVisible();
+  });
+
   test('switching from Claude to OpenCode updates model names', async ({ page }) => {
     await setupPage(page, { agents: ['claude', 'opencode'] });
 

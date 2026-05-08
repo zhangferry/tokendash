@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=340, initial-scale=1">
+  <title>TokenDash</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+      background: #faf9f7; color: #1c1917;
+      padding: 14px; user-select: none; overflow: hidden;
+      width: 340px; height: 380px;
+    }
+    .header { font-size: 13px; color: #78716c; margin-bottom: 8px; font-weight: 500; }
+    .header span { color: #a8a29e; }
+    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+    .card {
+      background: #f5f5f4; border-radius: 8px; padding: 10px 12px;
+      border: 1px solid #e7e5e4;
+    }
+    .card .label { font-size: 11px; color: #a8a29e; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
+    .card .value { font-size: 20px; font-weight: 600; display: block; margin-top: 2px; }
+    .chart-container { margin-bottom: 8px; background: #f5f5f4; border-radius: 8px; padding: 12px; border: 1px solid #e7e5e4; }
+    .chart-title { font-size: 11px; color: #a8a29e; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
+    #chart { width: 100%; height: 100px; display: block; }
+    #open-dashboard {
+      width: 100%; padding: 10px; background: #1c1917; color: #fafaf9;
+      border: none; border-radius: 8px; font-size: 13px; font-weight: 500;
+      cursor: pointer; font-family: inherit;
+    }
+    #open-dashboard:hover { background: #292524; }
+  </style>
+</head>
+<body>
+  <div class="header">Today <span id="date"></span></div>
+  <div class="metrics">
+    <div class="card"><span class="label">Input</span><span id="input" class="value">--</span></div>
+    <div class="card"><span class="label">Output</span><span id="output" class="value">--</span></div>
+    <div class="card"><span class="label">Cache Rate</span><span id="cache-rate" class="value">--</span></div>
+    <div class="card"><span class="label">Total Tokens</span><span id="total-tokens" class="value">--</span></div>
+  </div>
+  <div class="chart-container">
+    <div class="chart-title">Hourly Usage</div>
+    <canvas id="chart"></canvas>
+  </div>
+  <button id="open-dashboard">Open Dashboard</button>
+  <script>
+    var port = window.location.port || '3456';
+    var apiBase = 'http://localhost:' + port;
+
+    function formatNumber(n) {
+      if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
+      if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+      return String(n);
+    }
+
+    function formatCostValue(cost) {
+      if (cost === 0) return '$0';
+      if (cost < 0.01) return '<$0.01';
+      return '$' + cost.toFixed(2);
+    }
+
+    function fetchData() {
+      // First get available agents
+      fetch(apiBase + '/api/agents')
+        .then(function(res) { return res.json(); })
+        .then(function(agentData) {
+          var agents = (agentData && agentData.available) ? agentData.available : ['claude'];
+          // Fetch daily data for all agents in parallel
+          var dailyPromises = agents.map(function(agent) {
+            return fetch(apiBase + '/api/daily?agent=' + agent)
+              .then(function(r) { return r.json(); })
+              .catch(function() { return null; });
+          });
+          return Promise.all(dailyPromises);
+        })
+        .then(function(results) {
+          renderMetrics(results);
+          // Fetch blocks for chart (default agent)
+          return fetch(apiBase + '/api/blocks').then(function(r) { return r.json(); });
+        })
+        .then(function(blocks) {
+          renderChart(blocks);
+        })
+        .catch(function(e) {
+          console.error('Popover fetch error:', e);
+        });
+    }
+
+    function renderMetrics(allDaily) {
+      var today = new Date();
+      document.getElementById('date').textContent =
+        today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+
+      var todayStr = today.getFullYear() + "-" + String(today.getMonth()+1).padStart(2,"0") + "-" + String(today.getDate()).padStart(2,"0");
+      var totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalTokens = 0;
+
+      (allDaily || []).forEach(function(daily) {
+        if (!daily || !daily.daily) return;
+        var entry = daily.daily.find(function(d) { return d.date === todayStr; });
+        if (!entry) return;
+        totalInput += entry.inputTokens || 0;
+        totalOutput += entry.outputTokens || 0;
+        totalCacheRead += entry.cacheReadTokens || 0;
+        totalTokens += entry.totalTokens || 0;
+      });
+
+      document.getElementById('input').textContent = formatNumber(totalInput);
+      document.getElementById('output').textContent = formatNumber(totalOutput);
+
+      var cacheRate = totalTokens > 0 ? ((totalCacheRead / totalTokens) * 100) : 0;
+      document.getElementById('cache-rate').textContent = cacheRate.toFixed(1) + '%';
+      document.getElementById('total-tokens').textContent = formatNumber(totalTokens);
+    }
+
+    function renderChart(blocks) {
+      var canvas = document.getElementById('chart');
+      var ctx = canvas.getContext('2d');
+      var dpr = window.devicePixelRatio || 1;
+
+      canvas.width = canvas.offsetWidth * dpr;
+      canvas.height = 100 * dpr;
+      ctx.scale(dpr, dpr);
+
+      var w = canvas.offsetWidth;
+      var h = 100;
+      var barCount = 24;
+      var barWidth = (w - 23) / barCount;
+      var gap = 1;
+
+      // Group today's blocks by hour
+      var _d = new Date(); var todayStr = _d.getFullYear() + "-" + String(_d.getMonth()+1).padStart(2,"0") + "-" + String(_d.getDate()).padStart(2,"0");
+      var hourly = new Array(24).fill(0);
+      if (blocks && blocks.blocks) {
+        blocks.blocks.forEach(function(b) {
+          if (b.startTime.substring(0, 10) !== todayStr) return;
+          var hour = parseInt(b.startTime.substring(11, 13), 10);
+          if (hour >= 0 && hour < 24) {
+            hourly[hour] += b.totalTokens || 0;
+          }
+        });
+      }
+
+      var maxVal = Math.max.apply(null, hourly) || 1;
+
+      // Draw bars
+      ctx.clearRect(0, 0, w, h);
+      for (var i = 0; i < barCount; i++) {
+        var barH = (hourly[i] / maxVal) * (h - 10);
+        if (barH < 1 && hourly[i] > 0) barH = 1;
+        var x = i * (barWidth + gap);
+        var y = h - barH;
+
+        ctx.fillStyle = hourly[i] > 0 ? 'rgba(16, 185, 129, 0.7)' : '#e7e5e4';
+        ctx.beginPath();
+        if (ctx.roundRect) {
+          ctx.roundRect(x, y, barWidth, barH, 1);
+        } else {
+          ctx.rect(x, y, barWidth, barH);
+        }
+        ctx.fill();
+      }
+
+      // Hour labels
+      ctx.fillStyle = '#a8a29e';
+      ctx.font = '9px -apple-system, sans-serif';
+      ctx.textAlign = 'center';
+      [0, 6, 12, 18, 23].forEach(function(hr) {
+        var x = hr * (barWidth + gap) + barWidth / 2;
+        ctx.fillText(String(hr), x, h);
+      });
+    }
+
+    document.getElementById('open-dashboard').addEventListener('click', function() {
+      if (window.electronAPI && window.electronAPI.openDashboard) {
+        window.electronAPI.openDashboard(apiBase);
+      } else {
+        window.open(apiBase, '_blank');
+      }
+    });
+
+    fetchData();
+    setInterval(fetchData, 5000);
+  </script>
+</body>
+</html>

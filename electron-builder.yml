@@ -1,0 +1,17 @@
+appId: com.zhangferry-dev.tokendash
+productName: TokenDash
+directories:
+  output: release
+files:
+  - dist/**/*
+  - bin/**/*
+  - electron/**/*
+  - package.json
+mac:
+  target: dmg
+  category: public.app-category.developer-tools
+  icon: resources/icon.png
+  identity: null
+  darkModeSupport: true
+extraMetadata:
+  main: electron/main.cjs

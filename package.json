@@ -13,13 +13,19 @@
   },
   "files": [
     "dist",
-    "bin"
+    "bin",
+    "electron",
+    "resources",
+    "electron-builder.yml"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
     "dev:server": "tsx watch src/server/index.ts",
     "dev:client": "vite",
-    "build": "vite build && tsc -p tsconfig.json",
+    "build": "vite build && tsc -p tsconfig.json && cp public/popover.html dist/client/popover.html && node esbuild.config.mjs",
+    "dev:electron": "ELECTRON_DEV=1 electron .",
+    "build:electron": "electron-builder --mac",
+    "build:all": "npm run build && npm run build:electron",
     "start": "node dist/server/index.js",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p tsconfig.frontend.json --noEmit",
     "test": "vitest run",
@@ -45,6 +51,9 @@
     "@types/react-dom": "^19.1.2",
     "@vitejs/plugin-react": "^4.4.1",
     "concurrently": "^9.1.2",
+    "electron": "^41.5.0",
+    "electron-builder": "^26.0.0",
+    "esbuild": "^0.25.0",
     "tailwindcss": "^4.1.4",
     "tsx": "^4.19.3",
     "typescript": "^5.8.3",

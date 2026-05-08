@@ -12,6 +12,7 @@ interface CliArgs {
   port?: number;
   noOpen?: boolean;
   showVersion?: boolean;
+  tray?: boolean;
 }
 
 const CLI_USAGE = [
@@ -19,6 +20,7 @@ const CLI_USAGE = [
   '  tokendash',
   '  tokendash --version',
   '  tokendash --port <number> [--no-open]',
+  '  tokendash --tray [--port <number>]',
 ].join('\n');
 
 function getPackageVersion(): string {
@@ -64,6 +66,8 @@ function parseCliArgs(): CliArgs {
       i++;
     } else if (arg === '--no-open') {
       result.noOpen = true;
+    } else if (arg === '--tray') {
+      result.tray = true;
     } else {
       exitWithCliError(`Unsupported argument: ${arg}`);
     }
@@ -137,25 +141,7 @@ async function listenWithPortFallback(app: Express, preferredPort: number): Prom
   throw new Error(`Could not find an available port starting from ${preferredPort}`);
 }
 
-async function main() {
-  const args = parseCliArgs();
-  if (args.showVersion) {
-    console.log(getPackageVersion());
-    return;
-  }
-
-  const version = getPackageVersion();
-  const preferredPort = resolvePort(args.port ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : undefined));
-  const shouldOpenBrowser = !args.noOpen;
-
-  console.log(`Starting tokendash v${version}...`);
-  console.log(`Checking local usage data sources...`);
-
-  const isUsageSupportAvailable = await ensureUsageSupportAvailable();
-  if (!isUsageSupportAvailable) {
-    process.exit(1);
-  }
-
+export function createApp(_port: number, baseDir?: string): Express {
   const app = express();
   const router = express.Router();
 
@@ -163,13 +149,23 @@ async function main() {
   registerApiRoutes(router);
   app.use('/api', router);
 
-  // Check if running from dist (production build)
-  const isProduction = import.meta.url.includes('dist/');
+  // Resolve paths: use provided baseDir or compute from import.meta.url
+  const _baseDir = baseDir ?? dirname(fileURLToPath(import.meta.url));
+  const isProduction = baseDir
+    ? true
+    : import.meta.url.includes('dist/');
+  const popoverPath = isProduction
+    ? join(_baseDir, 'client', 'popover.html')
+    : join(_baseDir, '..', '..', 'public', 'popover.html');
 
+  app.get('/popover.html', (_req, res) => {
+    res.sendFile(popoverPath);
+  });
+
+  // Check if running from dist (production build)
   if (isProduction) {
     // Serve static files from client build
-    const __dirname = dirname(fileURLToPath(import.meta.url));
-    const clientPath = join(__dirname, '..', 'client');
+    const clientPath = join(_baseDir, 'client');
     const clientIndexPath = join(clientPath, 'index.html');
 
     app.use(express.static(clientPath));
@@ -180,6 +176,53 @@ async function main() {
     });
   }
 
+  return app;
+}
+
+async function main() {
+  const args = parseCliArgs();
+  if (args.showVersion) {
+    console.log(getPackageVersion());
+    return;
+  }
+
+  const version = getPackageVersion();
+  const preferredPort = resolvePort(args.port ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : undefined));
+
+  // --tray mode: launch Electron
+  if (args.tray) {
+    if (process.platform !== 'darwin') {
+      console.error('Error: --tray is only supported on macOS.');
+      process.exit(1);
+    }
+    console.log(`Starting tokendash v${version} in tray mode...`);
+    // @ts-ignore -- electron is installed separately for tray mode
+    const { default: electronPath } = await import('electron');
+    const { spawn } = await import('node:child_process');
+    const child = spawn(electronPath as unknown as string, ['.'], {
+      env: {
+        ...process.env,
+        TOKENDASH_PORT: String(preferredPort),
+        TOKENDASH_TRAY: '1',
+      },
+      stdio: 'inherit',
+    });
+    child.on('close', (code) => process.exit(code ?? 0));
+    process.on('SIGTERM', () => child.kill('SIGTERM'));
+    return;
+  }
+
+  const shouldOpenBrowser = !args.noOpen;
+
+  console.log(`Starting tokendash v${version}...`);
+  console.log(`Checking local usage data sources...`);
+
+  const isUsageSupportAvailable = await ensureUsageSupportAvailable();
+  if (!isUsageSupportAvailable) {
+    process.exit(1);
+  }
+
+  const app = createApp(preferredPort);
   const { server, port, usedFallback } = await listenWithPortFallback(app, preferredPort);
 
   if (usedFallback) {
@@ -188,6 +231,7 @@ async function main() {
 
   console.log(`tokendash running on http://localhost:${port}`);
   console.log(`API available at http://localhost:${port}/api`);
+  const isProduction = import.meta.url.includes('dist/');
   if (isProduction) {
     console.log('Serving production build');
   } else {
@@ -216,7 +260,4 @@ async function main() {
   });
 }
 
-main().catch((error) => {
-  console.error('Fatal error:', error);
-  process.exit(1);
-});
+export { main };

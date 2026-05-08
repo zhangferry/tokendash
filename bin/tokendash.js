@@ -1,2 +1,6 @@
 #!/usr/bin/env node
-import "../dist/server/index.js";
+import { main } from "../dist/server/index.js";
+main().catch((error) => {
+  console.error('Fatal error:', error);
+  process.exit(1);
+});

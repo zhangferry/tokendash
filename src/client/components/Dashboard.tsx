@@ -317,7 +317,7 @@ export function Dashboard() {
     for (const entry of hourlyModelTrendData) {
       for (const [key, val] of Object.entries(entry)) {
         if (key === 'hour') continue;
-        map[key] = (map[key] || 0) + (val as number);
+        map[key] = (map[key] || 0) + Number(val);
       }
     }
     return Object.entries(map)
@@ -617,8 +617,18 @@ export function Dashboard() {
 
       {/* KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
-        <KPICard label="Total tokens" value={formatTokens(totals.totalTokens)} accent insight="The primary volume indicator for the selected period." />
-        <KPICard label="Daily avg" value={formatTokens(activeDays > 0 ? totals.totalTokens / activeDays : 0)} sub={`${activeDays} active days`} insight="Baseline for typical daily volume." />
+        <KPICard
+          label={isTokens ? 'Total tokens' : 'Total cost'}
+          value={isTokens ? formatTokens(totals.totalTokens) : formatUSD(totals.totalCost)}
+          accent
+          insight={isTokens ? 'The primary volume indicator for the selected period.' : 'Estimated spend for the selected period.'}
+        />
+        <KPICard
+          label={isTokens ? 'Daily avg' : 'Daily avg cost'}
+          value={isTokens ? formatTokens(activeDays > 0 ? totals.totalTokens / activeDays : 0) : formatUSD(activeDays > 0 ? totals.totalCost / activeDays : 0)}
+          sub={`${activeDays} active days`}
+          insight={isTokens ? 'Baseline for typical daily volume.' : 'Baseline for typical daily spend.'}
+        />
         <KPICard label="Avg daily changes" value={avgDailyChanges !== null ? avgDailyChanges.toLocaleString() + ' lines' : '-'} insight="Average lines changed per active day." />
         <KPICard label="Cache hit" value={formatPercent(cacheHitRate)} insight="Higher hit rate reduces cost." />
         <KPICard label="Output/Input" value={formatPercent(outputRatio)} insight="Ratio of generation to context." />

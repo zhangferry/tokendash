@@ -44,9 +44,10 @@ function formatNumber(n: number): string {
 
 // --- Time range filter helper ---
 
-type TimeRangeKey = '7d' | '30d' | '60d' | 'all';
+type TimeRangeKey = 'today' | '7d' | '30d' | '60d' | 'all';
 
 const TIME_RANGES = [
+  { key: 'today', days: 1 },
   { key: '7d', days: 7 },
   { key: '30d', days: 30 },
   { key: '60d', days: 60 },
@@ -55,6 +56,15 @@ const TIME_RANGES = [
 
 function filterByDate<T extends { date: string }>(data: T[], rangeKey: TimeRangeKey): T[] {
   if (rangeKey === 'all') return data;
+  if (rangeKey === 'today') {
+    const now = new Date();
+    const todayStr = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0') + '-' + String(now.getDate()).padStart(2, '0');
+    return data.filter(d => {
+      const dt = new Date(d.date);
+      const fieldStr = dt.getFullYear() + '-' + String(dt.getMonth() + 1).padStart(2, '0') + '-' + String(dt.getDate()).padStart(2, '0');
+      return fieldStr === todayStr;
+    });
+  }
   const range = TIME_RANGES.find(t => t.key === rangeKey);
   const days = range ? range.days : 30;
   const cutoff = new Date();

@@ -1,7 +1,8 @@
-const { app, BrowserWindow, screen, shell } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
+const https = require('node:https');
 const { spawn } = require('node:child_process');
 
 // Global debug logger (writes to file since stdout is lost in packaged apps)
@@ -49,7 +50,12 @@ function resolveTrayHelperPath() {
 let popover = null;
 let server = null;
 let trayProcess = null;
+let selectedAgents = null; // null = use all available agents
 const serverPort = parseInt(process.env.TOKENDASH_PORT || '3456', 10);
+const POPOVER_WIDTH = 380;
+const POPOVER_HEIGHT = 540;
+const PACKAGE_NAME = '@zhangferry-dev/tokendash';
+const GITHUB_REPO = 'zhangferry/tokendash';
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -91,6 +97,57 @@ function fetchJson(url) {
   });
 }
 
+function fetchHttpsJson(url) {
+  return new Promise((resolve, reject) => {
+    const opts = new URL(url);
+    const reqOpts = {
+      hostname: opts.hostname,
+      path: opts.pathname + opts.search,
+      method: 'GET',
+      headers: { 'User-Agent': 'TokenDash' },
+    };
+    https.get(reqOpts, (res) => {
+      let data = '';
+      res.on('data', (chunk) => { data += chunk; });
+      res.on('end', () => {
+        if (res.statusCode && res.statusCode >= 400) {
+          reject(new Error(`HTTP ${res.statusCode}`));
+          return;
+        }
+        try { resolve(JSON.parse(data)); }
+        catch (e) { reject(e); }
+      });
+    }).on('error', reject);
+  });
+}
+
+function compareVersions(a, b) {
+  const aParts = String(a).split('.').map((part) => parseInt(part, 10) || 0);
+  const bParts = String(b).split('.').map((part) => parseInt(part, 10) || 0);
+  const maxLen = Math.max(aParts.length, bParts.length);
+  for (let i = 0; i < maxLen; i++) {
+    const delta = (aParts[i] || 0) - (bParts[i] || 0);
+    if (delta !== 0) return delta;
+  }
+  return 0;
+}
+
+function getAppInfo() {
+  // app.getVersion() returns Electron's version in dev mode (e.g. 41.5).
+  // Always read from package.json to get the app's own version.
+  let version = app.getVersion();
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'package.json'), 'utf8'));
+    if (pkg.version) version = pkg.version;
+  } catch (_) {}
+  return {
+    version,
+    launchAtLogin: app.getLoginItemSettings().openAtLogin,
+    platform: process.platform,
+    packageName: PACKAGE_NAME,
+  };
+}
+
 function positionPopoverAtClick(clickScreenX) {
   if (!popover) return;
 
@@ -102,13 +159,13 @@ function positionPopoverAtClick(clickScreenX) {
   }) || screen.getPrimaryDisplay();
 
   const { x: screenX, y: screenY, width: screenW, height: screenH } = clickDisplay.workArea;
-  const popoverWidth = 340;
-  const popoverHeight = 380;
+  const popoverWidth = POPOVER_WIDTH;
+  const popoverHeight = POPOVER_HEIGHT;
 
   // Center horizontally on click position
   let x = clickScreenX - popoverWidth / 2;
-  // Below menu bar
-  let y = screenY + 24;
+  // Below menu bar, close to the icon
+  let y = screenY + 6;
 
   // Clamp to screen bounds
   if (x < screenX + 8) x = screenX + 8;
@@ -200,7 +257,12 @@ function updateTrayBadge() {
   // Fetch agents list, then fetch daily data for each agent in parallel
   fetchJson(`http://localhost:${serverPort}/api/agents`)
     .then((agentData) => {
-      const agents = (agentData && agentData.available) ? agentData.available : ['claude'];
+      let agents = (agentData && agentData.available) ? agentData.available : ['claude'];
+      // Apply agent filter from popover settings
+      if (selectedAgents && selectedAgents.length > 0) {
+        agents = agents.filter(a => selectedAgents.includes(a));
+        if (agents.length === 0) agents = (agentData && agentData.available) ? agentData.available : ['claude'];
+      }
       return Promise.all(
         agents.map(agent =>
           fetchJson(`http://localhost:${serverPort}/api/daily?agent=${agent}`)
@@ -259,8 +321,8 @@ function stopBadgeUpdates() {
 
 function createPopoverWindow() {
   popover = new BrowserWindow({
-    width: 340,
-    height: 380,
+    width: POPOVER_WIDTH,
+    height: POPOVER_HEIGHT,
     frame: false,
     resizable: false,
     hasShadow: true,
@@ -272,6 +334,7 @@ function createPopoverWindow() {
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
+      preload: path.join(__dirname, 'preload.cjs'),
     },
   });
 
@@ -289,11 +352,70 @@ function createPopoverWindow() {
   });
 }
 
+function registerIpcHandlers() {
+  ipcMain.handle('tokendash:open-dashboard', (_event, url) => {
+    const target = typeof url === 'string' && url.length > 0 ? url : `http://localhost:${serverPort}`;
+    return shell.openExternal(target);
+  });
+
+  ipcMain.handle('tokendash:get-app-info', () => {
+    return getAppInfo();
+  });
+
+  ipcMain.handle('tokendash:set-launch-at-login', (_event, enabled) => {
+    const openAtLogin = Boolean(enabled);
+    app.setLoginItemSettings({ openAtLogin });
+    return { launchAtLogin: app.getLoginItemSettings().openAtLogin };
+  });
+
+  ipcMain.handle('tokendash:check-for-updates', async () => {
+    const currentVersion = getAppInfo().version;
+    const releasesUrl = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
+
+    try {
+      const latest = await fetchHttpsJson(releasesUrl);
+      // GitHub release tag may be "v1.3.0" or "1.3.0"
+      const tag = (latest.tag_name || '').replace(/^v/, '');
+      const latestVersion = tag || currentVersion;
+      return {
+        currentVersion,
+        latestVersion,
+        upToDate: compareVersions(currentVersion, latestVersion) >= 0,
+        releaseUrl: latest.html_url || null,
+      };
+    } catch (error) {
+      return {
+        currentVersion,
+        latestVersion: currentVersion,
+        upToDate: true,
+        error: error instanceof Error ? error.message : String(error),
+      };
+    }
+  });
+
+  ipcMain.handle('tokendash:quit', () => {
+    app.isQuitting = true;
+    stopBadgeUpdates();
+    stopTrayHelper();
+    if (server) server.close();
+    app.quit();
+  });
+
+  ipcMain.handle('tokendash:set-selected-agents', (_event, agents) => {
+    selectedAgents = Array.isArray(agents) ? agents : null;
+    // Immediately refresh badge with new filter
+    updateTrayBadge();
+    return { ok: true };
+  });
+}
+
 // ---------------------------------------------------------------------------
 // App lifecycle
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(async () => {
+  registerIpcHandlers();
+
   app.on('before-quit', () => {
     app.isQuitting = true;
     stopBadgeUpdates();

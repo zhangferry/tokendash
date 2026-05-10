@@ -18,6 +18,7 @@ It runs locally and parses token usage data directly from local session files, p
 - **24-Hour Heatmap:** Activity distribution by hour and day of week, with timezone awareness.
 - **Model & Project Distribution:** See which models and projects drive your usage.
 - **Persistent Filters:** Your selected time range, project, and metric mode are saved automatically.
+- **macOS Menu Bar App:** Native tray icon with real-time token usage, popover dashboard, and agent filtering — runs silently in the background.
 - **Test Coverage:** Unit tests (Vitest) and E2E tests (Playwright) for reliability.
 
 ## Requirements
@@ -43,6 +44,16 @@ tokendash
 By default, the backend server runs on port `3456`. When running the production build or installing globally, you access the dashboard at `http://localhost:3456`.
 
 During development (`npm run dev`), Vite starts a separate development server on port `5173` with hot-module replacement. You should access the dashboard at `http://localhost:5173` while developing.
+
+### macOS Menu Bar App
+
+Download the latest `TokenDash.dmg` from [GitHub Releases](https://github.com/zhangferry/tokendash/releases). Open the DMG and drag TokenDash to your Applications folder.
+
+The menu bar app shows real-time token usage in the status bar. Click the icon to open a compact popover dashboard with:
+- Today's token count and cost breakdown
+- Hourly consumption chart
+- Agent filter (show only Claude Code, Codex, etc.)
+- Settings: launch at login, check for updates, quit
 
 ### Command Line Options
 
@@ -94,6 +105,14 @@ If you want to contribute or modify the dashboard locally:
 - **CI:** GitHub Actions pipeline for automated testing on every push and PR.
 
 ## Changelog
+
+### v1.4.0
+- **macOS Menu Bar App** — native tray icon with real-time token count and cost in the status bar
+- **Popover Dashboard** — click the tray icon for a compact dashboard with hourly chart, agent filter, and settings
+- **Native Swift Tray Helper** — lightweight binary for macOS 26+ compatibility, drawn SVG icon
+- **Agent Filter** — choose which agents to display in both popover and tray badge, persisted across sessions
+- **Settings Panel** — launch at login, check for updates (via GitHub Releases), quit
+- **Update Checker** — automatic version check against GitHub Releases
 
 ### v1.3.0
 - **Added OpenCode agent support** — parses SQLite database at `~/.local/share/opencode/opencode.db`

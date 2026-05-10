@@ -1,100 +1,747 @@
 <!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=340, initial-scale=1">
+  <meta name="viewport" content="380, initial-scale=1">
   <title>TokenDash</title>
   <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: oklch(96.8% 0.01 155);
+      --surface: rgba(255, 255, 255, 0.90);
+      --surface-strong: rgba(255, 255, 255, 0.97);
+      --fg: oklch(22% 0.02 240);
+      --muted: oklch(54% 0.012 240);
+      --border: oklch(88% 0.008 240);
+      --accent: oklch(69% 0.11 162);
+      --accent-strong: oklch(61% 0.13 162);
+      --error-bg: oklch(95% 0.02 80);
+      --error-fg: oklch(45% 0.08 25);
+      --shadow: 0 26px 70px rgba(20, 28, 38, 0.14), 0 8px 18px rgba(20, 28, 38, 0.08);
+      --radius-shell: 30px;
+      --radius-panel: 22px;
+      --radius-card: 16px;
+      --font-display: -apple-system, BlinkMacSystemFont, "SF Pro Display", "Segoe UI", system-ui, sans-serif;
+      --font-body: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+      --font-mono: "SF Mono", "JetBrains Mono", ui-monospace, Menlo, monospace;
+    }
+
+    * { box-sizing: border-box; }
+
+    html, body {
+      width: 380px;
+      height: 540px;
+      overflow: hidden;
+      border-radius: var(--radius-shell);
+    }
+
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
-      background: #faf9f7; color: #1c1917;
-      padding: 14px; user-select: none; overflow: hidden;
-      width: 340px; height: 380px;
+      margin: 0;
+      font-family: var(--font-body);
+      color: var(--fg);
+      background: transparent;
+      user-select: none;
     }
-    .header { font-size: 13px; color: #78716c; margin-bottom: 8px; font-weight: 500; }
-    .header span { color: #a8a29e; }
-    .metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 10px; }
+
+    .shell {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      background: rgba(255, 255, 255, 0.76);
+      border: 1px solid rgba(255, 255, 255, 0.72);
+      border-radius: var(--radius-shell);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(28px);
+      overflow: hidden;
+    }
+
+    .toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+      padding: 14px 18px 12px;
+      border-bottom: 1px solid rgba(225, 230, 228, 0.94);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(248, 250, 249, 0.78));
+    }
+
+    .toolbar-label {
+      font-size: 12px;
+      color: var(--muted);
+      margin: 0;
+    }
+
+    /* Error banner — shown when API is unreachable */
+    .error-banner {
+      display: none;
+      padding: 7px 18px;
+      font-size: 11px;
+      color: var(--error-fg);
+      background: var(--error-bg);
+      border-bottom: 1px solid rgba(200, 180, 170, 0.3);
+    }
+
+    .error-banner.visible { display: block; }
+
+    .content {
+      height: calc(100% - 48px);
+      padding: 18px;
+      display: grid;
+      grid-template-rows: auto auto auto;
+      gap: 14px;
+      background: linear-gradient(180deg, rgba(250, 252, 251, 0.85), rgba(244, 247, 245, 0.7));
+    }
+
+    .content.has-error {
+      height: calc(100% - 48px - 28px);
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+    }
+
     .card {
-      background: #f5f5f4; border-radius: 8px; padding: 10px 12px;
-      border: 1px solid #e7e5e4;
+      padding: 12px;
+      border-radius: var(--radius-card);
+      border: 1px solid var(--border);
+      background: var(--surface-strong);
     }
-    .card .label { font-size: 11px; color: #a8a29e; display: block; text-transform: uppercase; letter-spacing: 0.5px; }
-    .card .value { font-size: 20px; font-weight: 600; display: block; margin-top: 2px; }
-    .chart-container { margin-bottom: 8px; background: #f5f5f4; border-radius: 8px; padding: 12px; border: 1px solid #e7e5e4; }
-    .chart-title { font-size: 11px; color: #a8a29e; margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.5px; }
-    #chart { width: 100%; height: 100px; display: block; }
-    #open-dashboard {
-      width: 100%; padding: 10px; background: #1c1917; color: #fafaf9;
-      border: none; border-radius: 8px; font-size: 13px; font-weight: 500;
-      cursor: pointer; font-family: inherit;
+
+    .card-label {
+      margin: 0 0 6px;
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
     }
-    #open-dashboard:hover { background: #292524; }
+
+    .card-value {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 22px;
+      line-height: 1;
+      letter-spacing: -0.05em;
+      font-weight: 700;
+    }
+
+    .card-value.empty { color: var(--muted); }
+
+    .card-meta {
+      margin: 6px 0 0;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    /* Shimmer skeleton for loading state */
+    .skeleton {
+      display: inline-block;
+      width: 56px;
+      height: 24px;
+      border-radius: 6px;
+      background: linear-gradient(90deg, var(--border) 25%, rgba(255,255,255,0.6) 50%, var(--border) 75%);
+      background-size: 200% 100%;
+      animation: shimmer 1.5s infinite;
+    }
+
+    @keyframes shimmer {
+      0% { background-position: 200% 0; }
+      100% { background-position: -200% 0; }
+    }
+
+    .chart-panel {
+      padding: 16px;
+      border-radius: var(--radius-panel);
+      border: 1px solid var(--border);
+      background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(247, 250, 248, 0.9));
+    }
+
+    .chart-header {
+      margin-bottom: 14px;
+    }
+
+    .eyebrow {
+      margin: 0;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+    }
+
+    .chart-frame {
+      display: grid;
+      grid-template-columns: max-content 1fr;
+      gap: 6px;
+      align-items: stretch;
+      min-height: 190px;
+    }
+
+    .y-axis {
+      display: grid;
+      grid-template-rows: repeat(4, 1fr);
+      justify-items: end;
+      width: max-content;
+      padding-block: 6px 24px;
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 10px;
+    }
+
+    .plot {
+      position: relative;
+      border-inline-start: 1px solid var(--border);
+      border-block-end: 1px solid var(--border);
+      padding: 6px 12px 24px 14px;
+      display: grid;
+      align-items: end;
+      gap: 8px;
+      background:
+        linear-gradient(to top, rgba(212, 218, 215, 0.6) 1px, transparent 1px) 0 0 / 100% calc((100% - 24px) / 3),
+        transparent;
+    }
+
+    /* Empty state for chart */
+    .chart-empty {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      height: 100%;
+      gap: 6px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
+    .chart-empty-icon {
+      font-size: 24px;
+      opacity: 0.4;
+      margin-bottom: 4px;
+    }
+
+    .chart-empty-title {
+      font-weight: 600;
+      color: var(--fg);
+      opacity: 0.6;
+    }
+
+    .bar-wrap {
+      position: relative;
+      height: 100%;
+      display: flex;
+      align-items: end;
+      justify-content: center;
+    }
+
+    .bar {
+      width: 100%;
+      max-width: 22px;
+      border-radius: 8px 8px 3px 3px;
+      background: linear-gradient(180deg, color-mix(in oklch, var(--accent) 60%, white), var(--accent));
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+    }
+
+    .bar.zero { opacity: 0.35; }
+
+    .bar.peak {
+      background: linear-gradient(180deg, color-mix(in oklch, var(--accent) 85%, white), var(--accent-strong));
+    }
+
+    .bar-label {
+      position: absolute;
+      inset-block-end: -20px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      color: var(--muted);
+    }
+
+    .bar-tip {
+      position: absolute;
+      inset-block-end: calc(var(--height) + 10px);
+      font-size: 10px;
+      color: var(--fg);
+      font-family: var(--font-mono);
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--border);
+      border-radius: 999px;
+      padding: 4px 7px;
+      white-space: nowrap;
+    }
+
+    .actions {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 8px;
+      align-self: end;
+    }
+
+    .action {
+      appearance: none;
+      border: 1px solid var(--border);
+      border-radius: 14px;
+      min-height: 42px;
+      padding: 0 14px;
+      font-family: var(--font-body);
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease, opacity 160ms ease;
+    }
+
+    .action:hover { transform: translateY(-1px); }
+    .action:disabled { opacity: 0.6; cursor: default; transform: none; }
+
+    .action.primary {
+      background: #1f2423;
+      border-color: #1f2423;
+      color: white;
+    }
+
+    .action.secondary {
+      background: rgba(255, 255, 255, 0.94);
+      color: var(--fg);
+    }
+
+    .drawer-overlay {
+      position: absolute;
+      inset: 0;
+      background: transparent;
+      opacity: 0;
+      pointer-events: none;
+      transition: opacity 200ms ease;
+      overflow: hidden;
+      border-radius: var(--radius-shell);
+    }
+
+    .drawer {
+      height: 100%;
+      display: grid;
+      grid-template-rows: auto 1fr auto;
+      gap: 14px;
+      padding: 14px;
+      border-radius: var(--radius-shell);
+      background: rgba(255, 255, 255, 0.96);
+      backdrop-filter: blur(20px);
+      border: 1px solid rgba(255, 255, 255, 0.84);
+      box-shadow: 0 18px 48px rgba(20, 28, 38, 0.14);
+      transform: translateY(10px);
+      opacity: 0;
+      transition: transform 220ms ease, opacity 220ms ease;
+    }
+
+    .shell[data-view="settings"] .drawer-overlay {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .shell[data-view="settings"] .drawer {
+      transform: translateY(0);
+      opacity: 1;
+    }
+
+    .drawer-header {
+      display: flex;
+      align-items: center;
+      justify-content: flex-start;
+    }
+
+    .drawer-back {
+      appearance: none;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.94);
+      color: var(--fg);
+      display: inline-flex;
+      align-items: center;
+      gap: 4px;
+      min-width: auto;
+      height: 32px;
+      padding: 0 12px;
+      border-radius: 999px;
+      font-size: 13px;
+      font-weight: 600;
+      font-family: var(--font-body);
+      cursor: pointer;
+    }
+
+    .drawer-back-arrow {
+      font-size: 17px;
+      line-height: 1;
+    }
+
+    .settings-list {
+      display: grid;
+      align-content: start;
+      gap: 8px;
+    }
+
+    .settings-row {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      padding: 12px 14px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: rgba(250, 252, 251, 0.94);
+    }
+
+    .settings-copy {
+      min-width: 0;
+    }
+
+    .settings-label {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 600;
+    }
+
+    .settings-meta {
+      margin: 3px 0 0;
+      font-size: 11px;
+      color: var(--muted);
+    }
+
+    .settings-value {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 28px;
+      min-width: 58px;
+      padding-inline: 10px;
+      border-radius: 999px;
+      border: 1px solid var(--border);
+      background: rgba(255, 255, 255, 0.96);
+      color: var(--muted);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      white-space: nowrap;
+    }
+
+    .settings-value.button {
+      cursor: pointer;
+      color: var(--fg);
+    }
+
+    /* Agent filter dropdown */
+    .agent-dropdown-wrap {
+      position: relative;
+    }
+
+    .agent-dropdown-trigger {
+      cursor: pointer;
+      color: var(--fg);
+      padding-right: 24px;
+      position: relative;
+    }
+
+    .agent-dropdown-trigger::after {
+      content: "▾";
+      position: absolute;
+      right: 10px;
+      font-size: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+    }
+
+    .agent-dropdown-menu {
+      display: none;
+      position: absolute;
+      right: 0;
+      top: calc(100% + 6px);
+      min-width: 160px;
+      padding: 6px;
+      border-radius: 14px;
+      border: 1px solid var(--border);
+      background: white;
+      box-shadow: 0 8px 24px rgba(20, 28, 38, 0.12);
+      z-index: 10;
+    }
+
+    .agent-dropdown-menu.open { display: block; }
+
+    .agent-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 13px;
+      font-weight: 500;
+      transition: background 120ms ease;
+    }
+
+    .agent-option:hover { background: rgba(240, 244, 242, 0.9); }
+
+    .agent-checkbox {
+      width: 16px;
+      height: 16px;
+      border-radius: 4px;
+      border: 1.5px solid var(--border);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 10px;
+      flex-shrink: 0;
+      transition: background 120ms ease, border-color 120ms ease;
+    }
+
+    .agent-checkbox.checked {
+      background: color-mix(in oklch, var(--accent) 72%, white);
+      border-color: var(--accent);
+    }
+
+    .agent-checkbox.checked::after {
+      content: "✓";
+      color: white;
+      font-weight: 700;
+      font-size: 10px;
+    }
+
+    .settings-divider {
+      height: 1px;
+      background: var(--border);
+      margin: 4px 0;
+    }
+
+    .settings-quit-row {
+      border-color: rgba(192, 57, 43, 0.15);
+    }
+
+    .settings-quit-btn {
+      color: #c0392b !important;
+    }
+
+    .settings-version {
+      text-align: center;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--muted);
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      padding-block: 2px 6px;
+    }
+
+    .switch {
+      position: relative;
+      width: 44px;
+      height: 26px;
+      border-radius: 999px;
+      border: 1px solid color-mix(in srgb, #000 7%, transparent);
+      background: rgba(228, 231, 229, 0.9);
+      cursor: pointer;
+      transition: background-color 160ms ease;
+    }
+
+    .switch::after {
+      content: "";
+      position: absolute;
+      inset-block-start: 2px;
+      inset-inline-start: 2px;
+      width: 20px;
+      height: 20px;
+      border-radius: 50%;
+      background: white;
+      box-shadow: 0 1px 3px rgba(20, 28, 38, 0.18);
+      transition: transform 160ms ease;
+    }
+
+    .switch[aria-checked="true"] {
+      background: color-mix(in oklch, var(--accent) 72%, white);
+    }
+
+    .switch[aria-checked="true"]::after {
+      transform: translateX(18px);
+    }
   </style>
 </head>
 <body>
-  <div class="header">Today <span id="date"></span></div>
-  <div class="metrics">
-    <div class="card"><span class="label">Input</span><span id="input" class="value">--</span></div>
-    <div class="card"><span class="label">Output</span><span id="output" class="value">--</span></div>
-    <div class="card"><span class="label">Cache Rate</span><span id="cache-rate" class="value">--</span></div>
-    <div class="card"><span class="label">Total Tokens</span><span id="total-tokens" class="value">--</span></div>
-  </div>
-  <div class="chart-container">
-    <div class="chart-title">Hourly Usage</div>
-    <canvas id="chart"></canvas>
-  </div>
-  <button id="open-dashboard">Open Dashboard</button>
+  <main class="shell" aria-label="Token dashboard menu" data-view="main">
+    <header class="toolbar">
+      <p class="toolbar-label">Today <span id="date"></span></p>
+    </header>
+
+    <div class="error-banner" id="error-banner">
+      Unable to fetch data. Retrying...
+    </div>
+
+    <section class="content" id="content">
+      <section class="summary" aria-label="Summary metrics">
+        <article class="card">
+          <p class="card-label">Total</p>
+          <p class="card-value" id="total-tokens"><span class="skeleton"></span></p>
+        </article>
+        <article class="card">
+          <p class="card-label">Input</p>
+          <p class="card-value" id="input"><span class="skeleton"></span></p>
+        </article>
+        <article class="card">
+          <p class="card-label">Output</p>
+          <p class="card-value" id="output"><span class="skeleton"></span></p>
+        </article>
+        <article class="card">
+          <p class="card-label">Hit rate</p>
+          <p class="card-value" id="cache-rate"><span class="skeleton"></span></p>
+        </article>
+      </section>
+
+      <section class="chart-panel" aria-label="Hourly usage">
+        <div class="chart-header">
+          <p class="eyebrow">Hourly usage</p>
+        </div>
+        <div class="chart-frame">
+          <div class="y-axis" id="y-axis" aria-hidden="true"></div>
+          <div class="plot" id="plot">
+            <div class="chart-empty">
+              <div class="chart-empty-icon">&#x1F4CA;</div>
+              <div class="chart-empty-title">No usage yet</div>
+              <div>Start a session to see your hourly breakdown.</div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="actions" aria-label="Primary actions">
+        <button class="action primary" type="button" id="open-dashboard">Open Dashboard</button>
+        <button class="action secondary" type="button" id="open-settings">Settings</button>
+      </section>
+    </section>
+
+    <div class="drawer-overlay" aria-hidden="true">
+      <section class="drawer" aria-label="Settings drawer">
+        <div class="drawer-header">
+          <button class="drawer-back" type="button" aria-label="Back" id="close-settings">
+            <span class="drawer-back-arrow">&lsaquo;</span>
+          </button>
+        </div>
+
+        <div class="settings-list">
+          <article class="settings-row">
+            <div class="settings-copy">
+              <p class="settings-label">Check for updates</p>
+              <p class="settings-meta" id="update-status">Check whether a newer build is available.</p>
+            </div>
+            <button class="settings-value button" type="button" id="check-updates">Check</button>
+          </article>
+
+          <article class="settings-row">
+            <div class="settings-copy">
+              <p class="settings-label">Launch at login</p>
+              <p class="settings-meta">Keep TokenDash in the menu bar after sign in.</p>
+            </div>
+            <button class="switch" type="button" id="launch-at-login" role="switch" aria-checked="false" aria-label="Launch at login"></button>
+          </article>
+
+          <article class="settings-row" id="agent-filter-row">
+            <div class="settings-copy">
+              <p class="settings-label">Data sources</p>
+              <p class="settings-meta">Filter which agents contribute to metrics.</p>
+            </div>
+            <div class="agent-dropdown-wrap">
+              <button class="settings-value button agent-dropdown-trigger" type="button" id="agent-dropdown-btn">All</button>
+              <div class="agent-dropdown-menu" id="agent-dropdown-menu"></div>
+            </div>
+          </article>
+
+          <div class="settings-divider"></div>
+
+          <article class="settings-row settings-quit-row">
+            <div class="settings-copy">
+              <p class="settings-label">Quit TokenDash</p>
+              <p class="settings-meta">Close the app and stop background services.</p>
+            </div>
+            <button class="settings-value button settings-quit-btn" type="button" id="quit-app">Quit</button>
+          </article>
+        </div>
+
+        <div class="settings-version" id="app-version">Version --</div>
+      </section>
+    </div>
+  </main>
+
   <script>
+    var shell = document.querySelector('.shell');
     var port = window.location.port || '3456';
     var apiBase = 'http://localhost:' + port;
+    var appInfo = { version: '--', launchAtLogin: false };
+    var availableAgents = [];
+    var selectedAgents = [];
+    var isFirstLoad = true;
+
+    // --- Helpers ---
 
     function formatNumber(n) {
+      if (!Number.isFinite(n) || n <= 0) return '0';
       if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
       if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
-      return String(n);
+      return String(Math.round(n));
     }
 
-    function formatCostValue(cost) {
-      if (cost === 0) return '$0';
-      if (cost < 0.01) return '<$0.01';
-      return '$' + cost.toFixed(2);
+    function formatPercent(n) {
+      return (Number.isFinite(n) ? n : 0).toFixed(1) + '%';
     }
 
-    function fetchData() {
-      // First get available agents
-      fetch(apiBase + '/api/agents')
-        .then(function(res) { return res.json(); })
-        .then(function(agentData) {
-          var agents = (agentData && agentData.available) ? agentData.available : ['claude'];
-          // Fetch daily data for all agents in parallel
-          var dailyPromises = agents.map(function(agent) {
-            return fetch(apiBase + '/api/daily?agent=' + agent)
-              .then(function(r) { return r.json(); })
-              .catch(function() { return null; });
-          });
-          return Promise.all(dailyPromises);
-        })
-        .then(function(results) {
-          renderMetrics(results);
-          // Fetch blocks for chart (default agent)
-          return fetch(apiBase + '/api/blocks').then(function(r) { return r.json(); });
-        })
-        .then(function(blocks) {
-          renderChart(blocks);
-        })
-        .catch(function(e) {
-          console.error('Popover fetch error:', e);
-        });
+    function getTodayString() {
+      var d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth() + 1).padStart(2, '0') + '-' + String(d.getDate()).padStart(2, '0');
     }
 
-    function renderMetrics(allDaily) {
+    function setDateLabel() {
       var today = new Date();
       document.getElementById('date').textContent =
         today.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
 
-      var todayStr = today.getFullYear() + "-" + String(today.getMonth()+1).padStart(2,"0") + "-" + String(today.getDate()).padStart(2,"0");
-      var totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalTokens = 0;
+    function fetchJson(url) {
+      return fetch(url).then(function(res) { return res.json(); });
+    }
+
+    // --- Dynamic chart hours based on current time ---
+
+    function getChartHours() {
+      var now = new Date();
+      var currentHour = now.getHours();
+      var hours = [];
+      for (var h = 0; h <= currentHour; h += 2) {
+        hours.push(h);
+      }
+      // At least 4 bars
+      while (hours.length < 4) {
+        var next = hours[hours.length - 1] + 2;
+        if (next > 23) break;
+        hours.push(next);
+      }
+      return hours;
+    }
+
+    // --- Loading & Error states ---
+
+    function showSkeletons() {
+      ['total-tokens', 'input', 'output', 'cache-rate'].forEach(function(id) {
+        var el = document.getElementById(id);
+        if (el && !el.querySelector('.skeleton')) return; // already has data
+        if (el) el.innerHTML = '<span class="skeleton"></span>';
+      });
+    }
+
+    function showError() {
+      document.getElementById('error-banner').classList.add('visible');
+      document.getElementById('content').classList.add('has-error');
+    }
+
+    function hideError() {
+      document.getElementById('error-banner').classList.remove('visible');
+      document.getElementById('content').classList.remove('has-error');
+    }
+
+    // --- Metrics rendering ---
+
+    function renderMetrics(allDaily) {
+      var todayStr = getTodayString();
+      var totalInput = 0;
+      var totalOutput = 0;
+      var totalCacheRead = 0;
+      var totalTokens = 0;
 
       (allDaily || []).forEach(function(daily) {
         if (!daily || !daily.daily) return;
@@ -106,71 +753,267 @@
         totalTokens += entry.totalTokens || 0;
       });
 
-      document.getElementById('input').textContent = formatNumber(totalInput);
-      document.getElementById('output').textContent = formatNumber(totalOutput);
+      var denominator = totalInput + totalCacheRead;
+      var cacheRate = denominator > 0 ? (totalCacheRead / denominator) * 100 : 0;
 
-      var cacheRate = totalTokens > 0 ? ((totalCacheRead / totalTokens) * 100) : 0;
-      document.getElementById('cache-rate').textContent = cacheRate.toFixed(1) + '%';
-      document.getElementById('total-tokens').textContent = formatNumber(totalTokens);
+      setCardValue('total-tokens', formatNumber(totalTokens), totalTokens === 0);
+      setCardValue('input', formatNumber(totalInput), totalInput === 0);
+      setCardValue('output', formatNumber(totalOutput), totalOutput === 0);
+      setCardValue('cache-rate', formatPercent(cacheRate), cacheRate === 0);
     }
 
-    function renderChart(blocks) {
-      var canvas = document.getElementById('chart');
-      var ctx = canvas.getContext('2d');
-      var dpr = window.devicePixelRatio || 1;
+    function setCardValue(id, text, isEmpty) {
+      var el = document.getElementById(id);
+      el.textContent = text;
+      el.classList.toggle('empty', isEmpty);
+    }
 
-      canvas.width = canvas.offsetWidth * dpr;
-      canvas.height = 100 * dpr;
-      ctx.scale(dpr, dpr);
+    // --- Chart rendering ---
 
-      var w = canvas.offsetWidth;
-      var h = 100;
-      var barCount = 24;
-      var barWidth = (w - 23) / barCount;
-      var gap = 1;
-
-      // Group today's blocks by hour
-      var _d = new Date(); var todayStr = _d.getFullYear() + "-" + String(_d.getMonth()+1).padStart(2,"0") + "-" + String(_d.getDate()).padStart(2,"0");
+    function renderChart(allBlocks) {
       var hourly = new Array(24).fill(0);
-      if (blocks && blocks.blocks) {
-        blocks.blocks.forEach(function(b) {
-          if (b.startTime.substring(0, 10) !== todayStr) return;
-          var hour = parseInt(b.startTime.substring(11, 13), 10);
+      var todayStr = getTodayString();
+
+      (allBlocks || []).forEach(function(data) {
+        if (!data || !data.blocks) return;
+        data.blocks.forEach(function(block) {
+          if (!block.startTime || block.startTime.substring(0, 10) !== todayStr) return;
+          var hour = parseInt(block.startTime.substring(11, 13), 10);
           if (hour >= 0 && hour < 24) {
-            hourly[hour] += b.totalTokens || 0;
+            hourly[hour] += block.totalTokens || 0;
           }
         });
+      });
+
+      var chartHours = getChartHours();
+      var selected = chartHours.map(function(hour) {
+        return { hour: hour, value: hourly[hour] || 0 };
+      });
+
+      var maxValue = selected.reduce(function(max, entry) {
+        return Math.max(max, entry.value);
+      }, 0);
+
+      var plot = document.getElementById('plot');
+      var axis = document.getElementById('y-axis');
+
+      // Empty state
+      if (maxValue === 0) {
+        axis.innerHTML = '';
+        plot.innerHTML = '';
+        plot.style.gridTemplateColumns = '';
+        plot.innerHTML = '<div class="chart-empty">' +
+          '<div class="chart-empty-title">No usage yet</div>' +
+          '<div>Start a session to see your hourly breakdown.</div>' +
+          '</div>';
+        return;
       }
 
-      var maxVal = Math.max.apply(null, hourly) || 1;
+      renderAxis(maxValue);
+      var maxEntry = selected.reduce(function(max, entry) {
+        return !max || entry.value > max.value ? entry : max;
+      }, null);
+      renderBars(selected, maxValue, maxEntry);
+    }
 
-      // Draw bars
-      ctx.clearRect(0, 0, w, h);
-      for (var i = 0; i < barCount; i++) {
-        var barH = (hourly[i] / maxVal) * (h - 10);
-        if (barH < 1 && hourly[i] > 0) barH = 1;
-        var x = i * (barWidth + gap);
-        var y = h - barH;
+    function renderAxis(maxValue) {
+      var axis = document.getElementById('y-axis');
+      var top = maxValue;
+      var midHigh = top * (2 / 3);
+      var midLow = top * (1 / 3);
+      axis.innerHTML = [
+        '<span>' + formatNumber(top) + '</span>',
+        '<span>' + formatNumber(midHigh) + '</span>',
+        '<span>' + formatNumber(midLow) + '</span>',
+        '<span>0</span>'
+      ].join('');
+    }
 
-        ctx.fillStyle = hourly[i] > 0 ? 'rgba(16, 185, 129, 0.7)' : '#e7e5e4';
-        ctx.beginPath();
-        if (ctx.roundRect) {
-          ctx.roundRect(x, y, barWidth, barH, 1);
-        } else {
-          ctx.rect(x, y, barWidth, barH);
+    function renderBars(selected, maxValue, maxEntry) {
+      var plot = document.getElementById('plot');
+      plot.innerHTML = '';
+      plot.style.gridTemplateColumns = 'repeat(' + selected.length + ', minmax(0, 1fr))';
+
+      // Adjust gap based on number of bars
+      var gap = selected.length > 10 ? '4px' : selected.length > 6 ? '6px' : '8px';
+      plot.style.gap = gap;
+
+      selected.forEach(function(entry) {
+        var height = entry.value > 0 ? Math.max(8, (entry.value / maxValue) * 100) : 3;
+        var wrap = document.createElement('div');
+        wrap.className = 'bar-wrap';
+        wrap.style.setProperty('--height', height + '%');
+
+        var bar = document.createElement('div');
+        bar.className = 'bar';
+        if (entry.value === 0) {
+          bar.classList.add('zero');
+        } else if (maxEntry && entry.hour === maxEntry.hour && entry.value === maxEntry.value) {
+          bar.classList.add('peak');
         }
-        ctx.fill();
-      }
+        bar.style.height = height + '%';
+        wrap.appendChild(bar);
 
-      // Hour labels
-      ctx.fillStyle = '#a8a29e';
-      ctx.font = '9px -apple-system, sans-serif';
-      ctx.textAlign = 'center';
-      [0, 6, 12, 18, 23].forEach(function(hr) {
-        var x = hr * (barWidth + gap) + barWidth / 2;
-        ctx.fillText(String(hr), x, h);
+        if (maxEntry && entry.hour === maxEntry.hour && entry.value === maxEntry.value) {
+          var tip = document.createElement('span');
+          tip.className = 'bar-tip';
+          tip.textContent = formatNumber(entry.value);
+          wrap.appendChild(tip);
+        }
+
+        var label = document.createElement('span');
+        label.className = 'bar-label';
+        label.textContent = String(entry.hour).padStart(2, '0');
+        wrap.appendChild(label);
+
+        plot.appendChild(wrap);
       });
     }
+
+    // --- App info ---
+
+    function applyAppInfo(info) {
+      appInfo = info || appInfo;
+      document.getElementById('app-version').textContent = 'Version ' + (appInfo.version || '--');
+      setLaunchAtLogin(Boolean(appInfo.launchAtLogin));
+    }
+
+    function setLaunchAtLogin(enabled) {
+      var button = document.getElementById('launch-at-login');
+      button.setAttribute('aria-checked', enabled ? 'true' : 'false');
+    }
+
+    function fetchAppInfo() {
+      if (window.electronAPI && window.electronAPI.getAppInfo) {
+        return window.electronAPI.getAppInfo().then(applyAppInfo).catch(function() {});
+      }
+      applyAppInfo({ version: '--', launchAtLogin: false });
+      return Promise.resolve();
+    }
+
+    // --- Agent filter ---
+
+    function loadSelectedAgents() {
+      try {
+        var saved = localStorage.getItem('tokendash:selected-agents');
+        if (saved) return JSON.parse(saved);
+      } catch(e) {}
+      return null;
+    }
+
+    function saveSelectedAgents() {
+      try {
+        localStorage.setItem('tokendash:selected-agents', JSON.stringify(selectedAgents));
+      } catch(e) {}
+      // Sync to main process for tray badge updates
+      if (window.electronAPI && window.electronAPI.setSelectedAgents) {
+        window.electronAPI.setSelectedAgents(selectedAgents);
+      }
+    }
+
+    function updateAgentDropdownLabel() {
+      var btn = document.getElementById('agent-dropdown-btn');
+      if (selectedAgents.length === availableAgents.length) {
+        btn.textContent = 'All';
+      } else {
+        btn.textContent = selectedAgents.length + ' of ' + availableAgents.length;
+      }
+    }
+
+    function renderAgentDropdown() {
+      var menu = document.getElementById('agent-dropdown-menu');
+      menu.innerHTML = '';
+
+      availableAgents.forEach(function(agent) {
+        var isChecked = selectedAgents.indexOf(agent) !== -1;
+        var option = document.createElement('div');
+        option.className = 'agent-option';
+        option.innerHTML =
+          '<div class="agent-checkbox' + (isChecked ? ' checked' : '') + '"></div>' +
+          '<span>' + agent.charAt(0).toUpperCase() + agent.slice(1) + '</span>';
+
+        option.addEventListener('click', function(e) {
+          e.stopPropagation();
+          var idx = selectedAgents.indexOf(agent);
+          if (idx !== -1) {
+            // Don't allow deselecting the last agent
+            if (selectedAgents.length <= 1) return;
+            selectedAgents.splice(idx, 1);
+          } else {
+            selectedAgents.push(agent);
+          }
+          saveSelectedAgents();
+          renderAgentDropdown();
+          updateAgentDropdownLabel();
+          fetchData();
+        });
+
+        menu.appendChild(option);
+      });
+
+      updateAgentDropdownLabel();
+
+      // Show/hide the row if only 1 agent available
+      var row = document.getElementById('agent-filter-row');
+      row.style.display = availableAgents.length <= 1 ? 'none' : '';
+    }
+
+    function initAgentFilter(agents) {
+      availableAgents = agents;
+      var saved = loadSelectedAgents();
+      if (saved) {
+        // Filter saved to only include agents that are actually available
+        selectedAgents = saved.filter(function(a) { return agents.indexOf(a) !== -1; });
+        if (selectedAgents.length === 0) selectedAgents = agents.slice(); // fallback
+      } else {
+        selectedAgents = agents.slice(); // default: all selected
+      }
+      renderAgentDropdown();
+    }
+
+    // --- Data fetching ---
+
+    function fetchData() {
+      setDateLabel();
+      hideError();
+
+      return fetchJson(apiBase + '/api/agents')
+        .then(function(agentData) {
+          var agents = (agentData && agentData.available) ? agentData.available : ['claude'];
+
+          // Init agent filter on first load or if agents changed
+          if (isFirstLoad || agents.length !== availableAgents.length) {
+            initAgentFilter(agents);
+            isFirstLoad = false;
+          }
+
+          // Use filtered agents
+          var fetchAgents = selectedAgents.length > 0 ? selectedAgents : agents;
+
+          return Promise.all(fetchAgents.map(function(agent) {
+            return fetchJson(apiBase + '/api/daily?agent=' + agent).catch(function() { return null; });
+          })).then(function(dailyResults) {
+            // Also fetch blocks for all selected agents
+            var blockPromises = fetchAgents.map(function(agent) {
+              return fetchJson(apiBase + '/api/blocks?agent=' + agent).catch(function() { return null; });
+            });
+            return Promise.all(blockPromises).then(function(blockResults) {
+              return { dailyResults: dailyResults, blockResults: blockResults };
+            });
+          });
+        })
+        .then(function(data) {
+          renderMetrics(data.dailyResults);
+          renderChart(data.blockResults);
+          hideError();
+        })
+        .catch(function(error) {
+          console.error('Popover fetch error:', error);
+          showError();
+        });
+    }
+
+    // --- Event listeners ---
 
     document.getElementById('open-dashboard').addEventListener('click', function() {
       if (window.electronAPI && window.electronAPI.openDashboard) {
@@ -180,6 +1023,81 @@
       }
     });
 
+    document.getElementById('open-settings').addEventListener('click', function() {
+      shell.dataset.view = 'settings';
+    });
+
+    document.getElementById('close-settings').addEventListener('click', function() {
+      shell.dataset.view = 'main';
+    });
+
+    document.getElementById('launch-at-login').addEventListener('click', function() {
+      var nextValue = this.getAttribute('aria-checked') !== 'true';
+      if (window.electronAPI && window.electronAPI.setLaunchAtLogin) {
+        window.electronAPI.setLaunchAtLogin(nextValue)
+          .then(function(result) {
+            setLaunchAtLogin(Boolean(result && result.launchAtLogin));
+          })
+          .catch(function() {
+            setLaunchAtLogin(nextValue);
+          });
+      } else {
+        setLaunchAtLogin(nextValue);
+      }
+    });
+
+    document.getElementById('check-updates').addEventListener('click', function() {
+      var status = document.getElementById('update-status');
+      var button = this;
+      status.textContent = 'Checking...';
+      button.disabled = true;
+
+      var promise = window.electronAPI && window.electronAPI.checkForUpdates
+        ? window.electronAPI.checkForUpdates()
+        : Promise.resolve({ currentVersion: appInfo.version, latestVersion: appInfo.version, upToDate: true });
+
+      promise.then(function(result) {
+        if (result.error) {
+          status.textContent = 'Unable to reach update service right now.';
+          return;
+        }
+        status.textContent = result.upToDate
+          ? 'You are up to date.'
+          : 'Version ' + result.latestVersion + ' is available.';
+      }).catch(function() {
+        status.textContent = 'Unable to reach update service right now.';
+      }).finally(function() {
+        button.disabled = false;
+      });
+    });
+
+    document.getElementById('quit-app').addEventListener('click', function() {
+      if (window.electronAPI && window.electronAPI.quitApp) {
+        window.electronAPI.quitApp();
+      }
+    });
+
+    // Agent dropdown toggle
+    document.getElementById('agent-dropdown-btn').addEventListener('click', function(e) {
+      e.stopPropagation();
+      var menu = document.getElementById('agent-dropdown-menu');
+      menu.classList.toggle('open');
+    });
+
+    // Close dropdown on outside click
+    document.addEventListener('click', function() {
+      var menu = document.getElementById('agent-dropdown-menu');
+      if (menu) menu.classList.remove('open');
+    });
+
+    // Prevent dropdown from closing when clicking inside it
+    document.getElementById('agent-dropdown-menu').addEventListener('click', function(e) {
+      e.stopPropagation();
+    });
+
+    // --- Init ---
+
+    fetchAppInfo();
     fetchData();
     setInterval(fetchData, 5000);
   </script>

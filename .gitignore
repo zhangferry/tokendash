@@ -12,3 +12,10 @@ dist
 test-results/
 *.png
 resources/
+.wolf/
+CLAUDE.md
+main.js
+electron/main.js
+electron/trayBadge.js
+electron/trayHelper
+release/

@@ -1,5 +1,4 @@
-// electron/trayBadge.js
-const { nativeImage } = require('electron');
+// electron/trayBadge.cjs
 
 /**
  * Format token count as compact string for tray badge.
@@ -8,7 +7,8 @@ const { nativeImage } = require('electron');
 function formatTokens(tokens) {
   if (tokens >= 1e6) return (tokens / 1e6).toFixed(1) + 'M';
   if (tokens >= 1e3) return (tokens / 1e3).toFixed(1) + 'K';
-  return String(tokens);
+  if (tokens > 0) return String(tokens);
+  return '0.0M';
 }
 
 /**
@@ -22,19 +22,4 @@ function formatCost(cost) {
   return '$' + Math.round(cost);
 }
 
-// Embedded 22x22 PNG: white circle on transparent background
-// Used as a template image — macOS auto-adapts to menu bar appearance
-const TRAY_PNG_BASE64 =
-  'iVBORw0KGgoAAAANSUhEUgAAABYAAAAWCAYAAADEtGw7AAAAWElEQVR4nO2U2QkAMAjFnNatOqsFP+2BJxRpBgjh0QrQCiIadGZ4hHgRSjCj0ldvLNWXB6RM5gSSdZIEKfPFzcQ1zy2jeiuFyi8dmER3QkvOpqHefuifZgKh/EKNb7YAbgAAAABJRU5ErkJggg==';
-
-/**
- * Create a macOS tray icon template.
- * setTemplate(true) lets macOS automatically invert colors for light/dark menu bars.
- */
-function createBadgeIcon(_text) {
-  const img = nativeImage.createFromDataURL(`data:image/png;base64,${TRAY_PNG_BASE64}`);
-  img.setTemplateImage(true);
-  return img;
-}
-
-module.exports = { createBadgeIcon, formatCost, formatTokens };
+module.exports = { formatCost, formatTokens };

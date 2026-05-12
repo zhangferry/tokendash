@@ -5,10 +5,12 @@
  * Examples: 1234 -> "1.2K", 567890 -> "567.9K", 1500000 -> "1.5M"
  */
 function formatTokens(tokens) {
+  tokens = Number(tokens) || 0;
+
   if (tokens >= 1e6) return (tokens / 1e6).toFixed(1) + 'M';
   if (tokens >= 1e3) return (tokens / 1e3).toFixed(1) + 'K';
   if (tokens > 0) return String(tokens);
-  return '0.0M';
+  return '0';
 }
 
 /**

@@ -19,4 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   setSelectedAgents(agents) {
     return ipcRenderer.invoke('tokendash:set-selected-agents', agents);
   },
+  updateTraySnapshot(snapshot) {
+    return ipcRenderer.invoke('tokendash:update-tray-snapshot', snapshot);
+  },
 });

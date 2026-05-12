@@ -1,6 +1,13 @@
 import { describe, it, expect } from 'vitest';
 import { createApp } from '../../server/index.js';
 import http from 'node:http';
+import { createRequire } from 'node:module';
+
+const require = createRequire(import.meta.url);
+const { formatCost, formatTokens } = require('../../../electron/trayBadge.cjs') as {
+  formatCost: (cost: number) => string;
+  formatTokens: (tokens: number) => string;
+};
 
 describe('createApp', () => {
   it('returns an Express app', () => {
@@ -45,14 +52,6 @@ describe('createApp', () => {
 });
 
 describe('formatCost', () => {
-  // Inline formatCost logic (same as electron/trayBadge.js)
-  function formatCost(cost: number): string {
-    if (cost < 0.05) return '$0';
-    if (cost < 10) return '$' + cost.toFixed(1);
-    if (cost < 100) return '$' + Math.round(cost);
-    return '$' + Math.round(cost);
-  }
-
   it('formats near-zero cost as $0', () => {
     expect(formatCost(0)).toBe('$0');
     expect(formatCost(0.01)).toBe('$0');
@@ -107,12 +106,6 @@ describe('local date helper', () => {
 });
 
 describe('formatTokens', () => {
-  function formatTokens(tokens: number): string {
-    if (tokens >= 1e6) return (tokens / 1e6).toFixed(1) + 'M';
-    if (tokens >= 1e3) return (tokens / 1e3).toFixed(1) + 'K';
-    return String(tokens);
-  }
-
   it('formats millions', () => {
     expect(formatTokens(1500000)).toBe('1.5M');
     expect(formatTokens(32000000)).toBe('32.0M');
@@ -127,6 +120,11 @@ describe('formatTokens', () => {
     expect(formatTokens(0)).toBe('0');
     expect(formatTokens(42)).toBe('42');
     expect(formatTokens(999)).toBe('999');
+  });
+
+  it('does not render zero or invalid values as a fake million count', () => {
+    expect(formatTokens(-1)).toBe('0');
+    expect(formatTokens(Number.NaN)).toBe('0');
   });
 });
 

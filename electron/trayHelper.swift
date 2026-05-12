@@ -20,7 +20,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem.button?.imagePosition = .imageLeft
         statusItem.button?.imageScaling = .scaleProportionallyDown
 
-        statusItem.button?.title = "0.0M"
+        statusItem.button?.title = "0"
         statusItem.button?.toolTip = "TokenDash"
 
         // Set up click actions — both left and right click

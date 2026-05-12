@@ -742,6 +742,7 @@
       var totalOutput = 0;
       var totalCacheRead = 0;
       var totalTokens = 0;
+      var totalCost = 0;
 
       (allDaily || []).forEach(function(daily) {
         if (!daily || !daily.daily) return;
@@ -751,6 +752,7 @@
         totalOutput += entry.outputTokens || 0;
         totalCacheRead += entry.cacheReadTokens || 0;
         totalTokens += entry.totalTokens || 0;
+        totalCost += entry.totalCost || 0;
       });
 
       var denominator = totalInput + totalCacheRead;
@@ -760,6 +762,14 @@
       setCardValue('input', formatNumber(totalInput), totalInput === 0);
       setCardValue('output', formatNumber(totalOutput), totalOutput === 0);
       setCardValue('cache-rate', formatPercent(cacheRate), cacheRate === 0);
+
+      return {
+        today: todayStr,
+        agentKey: selectedAgents.slice().sort().join(','),
+        totalTokens: totalTokens,
+        totalCost: totalCost,
+        totalCacheRead: totalCacheRead
+      };
     }
 
     function setCardValue(id, text, isEmpty) {
@@ -969,6 +979,7 @@
         selectedAgents = agents.slice(); // default: all selected
       }
       renderAgentDropdown();
+      saveSelectedAgents();
     }
 
     // --- Data fetching ---
@@ -1003,8 +1014,11 @@
           });
         })
         .then(function(data) {
-          renderMetrics(data.dailyResults);
+          var traySnapshot = renderMetrics(data.dailyResults);
           renderChart(data.blockResults);
+          if (window.electronAPI && window.electronAPI.updateTraySnapshot && traySnapshot.totalTokens > 0) {
+            window.electronAPI.updateTraySnapshot(traySnapshot).catch(function() {});
+          }
           hideError();
         })
         .catch(function(error) {

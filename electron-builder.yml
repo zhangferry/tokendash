@@ -10,8 +10,11 @@ files:
 mac:
   target: dmg
   category: public.app-category.developer-tools
-  icon: resources/icon.png
+  icon: resources/icon.icns
   identity: null
   darkModeSupport: true
+  minimumSystemVersion: '14.0'
+  extendInfo:
+    LSUIElement: true
 extraMetadata:
   main: electron/main.cjs

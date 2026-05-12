@@ -51,7 +51,7 @@ let popover = null;
 let server = null;
 let trayProcess = null;
 let selectedAgents = null; // null = use all available agents
-const serverPort = parseInt(process.env.TOKENDASH_PORT || '3456', 10);
+let serverPort = parseInt(process.env.TOKENDASH_PORT || '3456', 10);
 const POPOVER_WIDTH = 380;
 const POPOVER_HEIGHT = 540;
 const PACKAGE_NAME = '@zhangferry-dev/tokendash';
@@ -250,6 +250,27 @@ function stopTrayHelper() {
 // ---------------------------------------------------------------------------
 
 let updateTimer = null;
+let lastTraySnapshot = null;
+
+function getTrayAgentKey(agents) {
+  return agents.slice().sort().join(',');
+}
+
+function applyTraySnapshot(snapshot) {
+  const totalTokens = Number(snapshot && snapshot.totalTokens) || 0;
+  const totalCost = Number(snapshot && snapshot.totalCost) || 0;
+  const totalCacheRead = Number(snapshot && snapshot.totalCacheRead) || 0;
+  const today = snapshot && snapshot.today;
+  const agentKey = snapshot && snapshot.agentKey;
+
+  lastTraySnapshot = { today, agentKey, totalTokens, totalCost, totalCacheRead };
+
+  const tokenStr = formatTokens(totalTokens);
+  sendTrayCommand('title:' + tokenStr);
+
+  const cacheRate = totalTokens > 0 ? ((totalCacheRead / totalTokens) * 100).toFixed(1) : '0.0';
+  sendTrayCommand('tooltip:TokenDash - ' + tokenStr + ' tokens today ($' + totalCost.toFixed(2) + ') | cache: ' + cacheRate + '%');
+}
 
 function updateTrayBadge() {
   const d = new Date(); const today = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
@@ -257,20 +278,35 @@ function updateTrayBadge() {
   // Fetch agents list, then fetch daily data for each agent in parallel
   fetchJson(`http://localhost:${serverPort}/api/agents`)
     .then((agentData) => {
-      let agents = (agentData && agentData.available) ? agentData.available : ['claude'];
+      let agents = (agentData && Array.isArray(agentData.available)) ? agentData.available : ['claude'];
+      if (agents.length === 0) {
+        // Transient agent detection failures should not clear a previously valid tray badge.
+        return null;
+      }
+
       // Apply agent filter from popover settings
       if (selectedAgents && selectedAgents.length > 0) {
-        agents = agents.filter(a => selectedAgents.includes(a));
-        if (agents.length === 0) agents = (agentData && agentData.available) ? agentData.available : ['claude'];
+        const filtered = agents.filter(a => selectedAgents.includes(a));
+        if (filtered.length > 0) agents = filtered;
       }
+
+      const agentKey = getTrayAgentKey(agents);
       return Promise.all(
         agents.map(agent =>
           fetchJson(`http://localhost:${serverPort}/api/daily?agent=${agent}`)
             .catch(() => null)
         )
-      );
+      ).then(results => ({ agentKey, results }));
     })
-    .then((results) => {
+    .then((payload) => {
+      if (!payload) return;
+      const { agentKey, results } = payload;
+      const successfulResults = results.filter(data => data && data.daily);
+      if (successfulResults.length === 0) {
+        // Keep the last good value when every daily request failed.
+        return;
+      }
+
       let totalTokens = 0;
       let totalCost = 0;
       let totalInput = 0;
@@ -288,13 +324,20 @@ function updateTrayBadge() {
         totalCacheRead += entry.cacheReadTokens || 0;
       }
 
-      // Show token count on tray icon
-      const tokenStr = formatTokens(totalTokens);
-      sendTrayCommand('title:' + tokenStr);
+      const shouldPreserveLastPositive =
+        totalTokens === 0 &&
+        lastTraySnapshot &&
+        lastTraySnapshot.today === today &&
+        lastTraySnapshot.agentKey === agentKey &&
+        lastTraySnapshot.totalTokens > 0;
 
-      // Tooltip with breakdown
-      const cacheRate = totalTokens > 0 ? ((totalCacheRead / totalTokens) * 100).toFixed(1) : '0.0';
-      sendTrayCommand('tooltip:TokenDash - ' + tokenStr + ' tokens today ($' + totalCost.toFixed(2) + ') | cache: ' + cacheRate + '%');
+      if (shouldPreserveLastPositive) {
+        // Daily usage should not drop to zero during the same day for the same agent filter.
+        // Treat a zero refresh after a positive value as transient empty data and keep the badge stable.
+        return;
+      }
+
+      applyTraySnapshot({ today, agentKey, totalTokens, totalCost, totalCacheRead });
     })
     .catch((err) => {
       if (err.code !== 'ECONNREFUSED') {
@@ -403,8 +446,15 @@ function registerIpcHandlers() {
 
   ipcMain.handle('tokendash:set-selected-agents', (_event, agents) => {
     selectedAgents = Array.isArray(agents) ? agents : null;
+    lastTraySnapshot = null;
     // Immediately refresh badge with new filter
     updateTrayBadge();
+    return { ok: true };
+  });
+
+  ipcMain.handle('tokendash:update-tray-snapshot', (_event, snapshot) => {
+    if (!snapshot || typeof snapshot !== 'object') return { ok: false };
+    applyTraySnapshot(snapshot);
     return { ok: true };
   });
 }
@@ -414,6 +464,10 @@ function registerIpcHandlers() {
 // ---------------------------------------------------------------------------
 
 app.whenReady().then(async () => {
+  if (process.platform === 'darwin' && app.dock) {
+    app.dock.hide();
+  }
+
   registerIpcHandlers();
 
   app.on('before-quit', () => {
@@ -430,6 +484,7 @@ app.whenReady().then(async () => {
   try {
     const result = await listenWithFallback(expressApp, serverPort);
     server = result.server;
+    serverPort = result.port;
     console.log(`tokendash running on http://localhost:${result.port}`);
   } catch (err) {
     console.error('Failed to start server:', err);

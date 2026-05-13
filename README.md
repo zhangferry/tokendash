@@ -9,16 +9,14 @@ It runs locally and parses token usage data directly from local session files, p
 ## Features
 
 - **Multi-Agent Support:** View usage for Claude Code, Codex, OpenClaw, and OpenCode.
-- **Direct JSONL Parsing:** Reads `~/.claude/projects/` JSONL files directly — no `ccusage` CLI dependency, 100x faster data loading.
+- **Direct JSONL Parsing:** Reads local session files directly — 100x faster data loading.
 - **Detailed Metrics:** Track total tokens, cost (USD), active days, cache hit rates, and output/input ratio.
 - **Today by Hour:** 24-hour token consumption panel showing hourly breakdown for the current day.
-- **Code Analytics:** Visualize code change trends, tool call frequency, and productivity KPIs (Claude Code & OpenClaw only).
-- **Pricing Transparency:** Toggle Cost metric to see per-model pricing formula and rates.
+- **Code Analytics:** Visualize code change trends, tool call frequency, and productivity KPIs.
 - **Interactive Charts:** Bar/line/area charts with tooltips, model breakdowns, and time range filtering.
 - **24-Hour Heatmap:** Activity distribution by hour and day of week, with timezone awareness.
 - **Model & Project Distribution:** See which models and projects drive your usage.
 - **Persistent Filters:** Your selected time range, project, and metric mode are saved automatically.
-- **Test Coverage:** Unit tests (Vitest) and E2E tests (Playwright) for reliability.
 
 ## macOS Menu Bar App
 

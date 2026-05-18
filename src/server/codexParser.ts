@@ -64,6 +64,16 @@ interface TokenAccumulator {
   totalTokens: number;
 }
 
+function tokenUsageKey(usage: z.infer<typeof TokenUsageSchema>): string {
+  return [
+    usage.input_tokens,
+    usage.cached_input_tokens,
+    usage.output_tokens,
+    usage.reasoning_output_tokens,
+    usage.total_tokens,
+  ].join(':');
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -118,11 +128,10 @@ export function scanCodexSessions(): string[] {
 /**
  * Parse a single Codex session JSONL file.
  *
- * CRITICAL INVARIANT: Sum ALL token_count events without any deduplication.
- * Each Codex turn emits TWO token_count events with identical last_token_usage
- * values (~1-2s apart) — one for reasoning, one for output completion.
- * Both are distinct billable events. Deduplicating would produce the wrong
- * total (4.7M instead of the correct 9.2M).
+ * Codex can emit duplicate token_count events for the same turn, with identical
+ * total_token_usage and last_token_usage snapshots a few seconds apart. These
+ * are repeated status updates, not separate billable usage records, so only the
+ * first occurrence of each cumulative total_token_usage snapshot should count.
  */
 export function parseCodexSession(filepath: string): ParsedSession | null {
   let content: string;
@@ -138,6 +147,7 @@ export function parseCodexSession(filepath: string): ParsedSession | null {
   let model = '';
   let createdAt = '';
   const tokenEvents: ParsedTokenEvent[] = [];
+  const seenTotalUsageSnapshots = new Set<string>();
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -167,7 +177,6 @@ export function parseCodexSession(filepath: string): ParsedSession | null {
     }
 
     // Extract token counts from event_msg with nested token_count payload.
-    // NEVER deduplicate — see invariant comment above.
     if (type === 'event_msg') {
       const payload = (obj.payload as Record<string, unknown>) || {};
       if (payload.type === 'token_count') {
@@ -179,6 +188,10 @@ export function parseCodexSession(filepath: string): ParsedSession | null {
         }
         const info = parseResult.data.info;
         if (!info) continue;
+        const totalUsageKey = tokenUsageKey(info.total_token_usage);
+        if (seenTotalUsageSnapshots.has(totalUsageKey)) continue;
+        seenTotalUsageSnapshots.add(totalUsageKey);
+
         const last = info.last_token_usage;
         tokenEvents.push({
           timestamp,

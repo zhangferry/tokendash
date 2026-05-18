@@ -1,5 +1,10 @@
 # Changelog
 
+### v1.4.2
+- **Codex usage de-duplication** — avoid double-counting duplicate Codex usage snapshots when parsing session data
+- **Codex parser coverage** — added regression tests for duplicate snapshot handling
+- **Tray helper compatibility** — keep the native tray helper compatible with macOS 14
+
 ### v1.4.1
 - **Chart Y-axis improvement** — nice number algorithm for clean axis ticks (round step sizes instead of arbitrary divisions)
 - **Bar-tip border removal** — peak value label on the hourly chart no longer has background/border, cleaner look

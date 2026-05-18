@@ -54,3 +54,15 @@ Playwright config uses `vite preview` (port 3457) to serve the built frontend, w
 - **Bug fix / small change**: must pass `npm test` (unit tests) before committing
 - **Larger change** (new agent, route logic, Dashboard rendering): must pass `npm run test:e2e` (e2e tests) before committing
 - **PR submission**: CI runs both `npm test` and `npm run test:e2e` automatically
+
+## Release Checklist
+
+For a standard patch release after a remote bug fix:
+
+1. Sync `main` with `origin/main`.
+2. Bump the patch version with `npm version patch --no-git-tag-version`.
+3. Update `CHANGELOG.md` with the released fix.
+4. Run tests and build/package the app with `npm run build:all`.
+5. Commit the version and changelog changes.
+6. Publish npm with `npm run release`.
+7. Push `main`, tag the version, and create/update the GitHub Release with the packaged DMG and blockmap.

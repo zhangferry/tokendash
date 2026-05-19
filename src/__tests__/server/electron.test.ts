@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest';
-import { createApp } from '../../server/index.js';
+import { createApp, resolveStaticAssetBaseDir } from '../../server/index.js';
 import http from 'node:http';
 import { createRequire } from 'node:module';
+import { join } from 'node:path';
 
 const require = createRequire(import.meta.url);
 const { formatCost, formatTokens } = require('../../../electron/trayBadge.cjs') as {
@@ -31,8 +32,8 @@ describe('createApp', () => {
     }
   });
 
-  it('serves /popover.html', async () => {
-    const app = createApp(0);
+  it('serves /popover.html when the static file is present', async () => {
+    const app = createApp(0, join(process.cwd(), 'dist'));
     const server = app.listen(0);
     const address = server.address();
     if (!address || typeof address === 'string') throw new Error('no address');
@@ -48,6 +49,30 @@ describe('createApp', () => {
     } finally {
       server.close();
     }
+  });
+});
+
+
+describe('resolveStaticAssetBaseDir', () => {
+  it('resolves CLI production assets from dist/server to dist', () => {
+    const resolved = resolveStaticAssetBaseDir('file:///opt/homebrew/lib/node_modules/@zhangferry-dev/tokendash/dist/server/index.js');
+
+    expect(resolved).toEqual({
+      baseDir: '/opt/homebrew/lib/node_modules/@zhangferry-dev/tokendash/dist',
+      isProduction: true,
+    });
+  });
+
+  it('keeps explicit production base directories unchanged', () => {
+    const resolved = resolveStaticAssetBaseDir('file:///app/dist/server/index.js', '/app/dist');
+
+    expect(resolved).toEqual({ baseDir: '/app/dist', isProduction: true });
+  });
+
+  it('keeps source server directories in development', () => {
+    const resolved = resolveStaticAssetBaseDir('file:///repo/src/server/index.ts');
+
+    expect(resolved).toEqual({ baseDir: '/repo/src/server', isProduction: false });
   });
 });
 

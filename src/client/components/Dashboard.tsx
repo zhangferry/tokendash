@@ -1,4 +1,5 @@
 import { useState, useMemo, useCallback, useEffect } from 'react';
+import type { ReactElement } from 'react';
 import {
   BarChart, Bar, Cell, LineChart, Line,
   ComposedChart, AreaChart, Area, PieChart, Pie,
@@ -9,7 +10,7 @@ import type { AgentsResponse } from '../api/client.js';
 import { useCcusageData } from '../hooks/useCcusageData.js';
 import { useLocalStorageState } from '../hooks/useLocalStorageState.js';
 import { formatDate, formatTokens, formatUSD, formatPercent, formatProjectName } from '../utils/formatters.js';
-import { costSavedByCache } from '../utils/cacheCalculations.js';
+import { cacheHitRate as calculateCacheHitRate, costSavedByCache } from '../utils/cacheCalculations.js';
 
 import { shortModelName } from '../utils/modelNames.js';
 import { AnalyticsSection } from './AnalyticsSection.js';
@@ -179,6 +180,18 @@ function filterProjectDaily(projects: Record<string, DailyEntry[]>, project: str
   return filterByTime(projects[project] || [], range);
 }
 
+
+function modelTokenMode(entry: DailyEntry): 'inputOutput' | 'withCache' {
+  const inputOutput = entry.modelBreakdowns.reduce((sum, b) => sum + b.inputTokens + b.outputTokens, 0);
+  const withCache = entry.modelBreakdowns.reduce((sum, b) => sum + b.inputTokens + b.outputTokens + b.cacheReadTokens, 0);
+  return Math.abs(entry.totalTokens - inputOutput) <= Math.abs(entry.totalTokens - withCache) ? 'inputOutput' : 'withCache';
+}
+
+function modelBreakdownTokens(breakdown: DailyEntry['modelBreakdowns'][number], mode: 'inputOutput' | 'withCache'): number {
+  const base = breakdown.inputTokens + breakdown.outputTokens;
+  return mode === 'withCache' ? base + breakdown.cacheReadTokens : base;
+}
+
 /* ---- Main Dashboard ---- */
 
 export function Dashboard() {
@@ -306,7 +319,7 @@ export function Dashboard() {
         hour: `${h.padStart(2, '0')}:00`,
         cacheRead: d.cacheRead,
         input: d.input,
-        hitRate: d.input > 0 ? (d.cacheRead / (d.cacheRead + d.input)) * 100 : 0,
+        hitRate: calculateCacheHitRate(d.cacheRead, d.input),
       }));
   }, [isToday, blocksData.data]);
 
@@ -345,7 +358,7 @@ export function Dashboard() {
     const totalLines = trend.reduce((s, d) => s + d.linesAdded + d.linesDeleted, 0);
     return Math.round(totalLines / trend.length);
   }, [analyticsData.data]);
-  const cacheHitRate = totals.inputTokens > 0 ? (totals.cacheReadTokens / (totals.cacheReadTokens + totals.inputTokens)) * 100 : 0;
+  const cacheHitRate = calculateCacheHitRate(totals.cacheReadTokens, totals.inputTokens);
   const outputRatio = totals.inputTokens > 0 ? (totals.outputTokens / totals.inputTokens) * 100 : 0;
 
   // Cache Savings Data
@@ -361,10 +374,11 @@ export function Dashboard() {
   const modelAgg = useMemo(() => {
     const map: Record<string, { tokens: number; cost: number; input: number; output: number; cacheRead: number }> = {};
     for (const d of filteredDaily) {
+      const tokenMode = modelTokenMode(d);
       for (const b of d.modelBreakdowns) {
         const name = shortModelName(b.modelName);
         if (!map[name]) map[name] = { tokens: 0, cost: 0, input: 0, output: 0, cacheRead: 0 };
-        map[name].tokens += b.inputTokens + b.outputTokens + b.cacheReadTokens;
+        map[name].tokens += modelBreakdownTokens(b, tokenMode);
         map[name].cost += b.cost;
         map[name].input += b.inputTokens;
         map[name].output += b.outputTokens;
@@ -378,9 +392,10 @@ export function Dashboard() {
   const modelTrendData = useMemo(() => {
     return filteredDaily.map(d => {
       const entry: Record<string, string | number> = { date: formatDate(d.date) };
+      const tokenMode = modelTokenMode(d);
       for (const b of d.modelBreakdowns) {
         const name = shortModelName(b.modelName);
-        entry[name] = (entry[name] as number || 0) + (isTokens ? b.inputTokens + b.outputTokens + b.cacheReadTokens : b.cost);
+        entry[name] = (entry[name] as number || 0) + (isTokens ? modelBreakdownTokens(b, tokenMode) : b.cost);
       }
       return entry;
     });
@@ -408,7 +423,7 @@ export function Dashboard() {
     date: formatDate(d.date),
     cacheRead: d.cacheReadTokens,
     input: d.inputTokens,
-    hitRate: d.inputTokens > 0 ? (d.cacheReadTokens / (d.cacheReadTokens + d.inputTokens)) * 100 : 0,
+    hitRate: calculateCacheHitRate(d.cacheReadTokens, d.inputTokens),
   })), [filteredDaily]);
 
   // Output/Input trend data (for single project view)
@@ -461,7 +476,7 @@ export function Dashboard() {
   }, [blocksData.data, timeRange, isTokens]);
 
 
-  const AGENT_CONFIG: Record<string, { label: string; activeColor: string; icon: JSX.Element }> = {
+  const AGENT_CONFIG: Record<string, { label: string; activeColor: string; icon: ReactElement }> = {
     claude: {
       label: 'Claude Code',
       activeColor: 'text-indigo-600',

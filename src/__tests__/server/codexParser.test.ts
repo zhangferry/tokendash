@@ -187,4 +187,29 @@ describe('buildCodexResponsesFromSessions', () => {
     expect(modelTokens).toBe(daily.totalTokens);
     expect(modelTokensWithCacheDoubleCounted).toBe(1_950);
   });
+
+  it('calculates per-model costs independently instead of splitting evenly', () => {
+    const responses = buildCodexResponsesFromSessions([
+      session('s1', '/repo/project-a', 'gpt-5.4', [event('2026-05-18T01:00:00.000Z', 10_000, 500)]),
+      session('s2', '/repo/project-a', 'gpt-5.5', [event('2026-05-18T02:00:00.000Z', 1_000, 50)]),
+    ], { timezone: 'UTC' });
+
+    const daily = responses.daily.daily[0];
+    expect(daily.modelBreakdowns).toHaveLength(2);
+
+    const gpt54 = daily.modelBreakdowns.find(b => b.modelName === 'gpt-5.4')!;
+    const gpt55 = daily.modelBreakdowns.find(b => b.modelName === 'gpt-5.5')!;
+
+    // gpt-5.4 has 10x the tokens, so its cost should be much higher
+    expect(gpt54.cost).toBeGreaterThan(0);
+    expect(gpt55.cost).toBeGreaterThan(0);
+    expect(gpt54.cost).toBeGreaterThan(gpt55.cost * 5);
+
+    // Verify totalCost is the sum of per-model costs (not evenly split)
+    const sumOfModelCosts = gpt54.cost + gpt55.cost;
+    expect(sumOfModelCosts).toBeCloseTo(daily.totalCost, 10);
+
+    // Costs should NOT be equal (would happen with even split)
+    expect(gpt54.cost).not.toBeCloseTo(gpt55.cost, 5);
+  });
 });

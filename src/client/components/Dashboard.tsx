@@ -11,6 +11,7 @@ import { useCcusageData } from '../hooks/useCcusageData.js';
 import { useLocalStorageState } from '../hooks/useLocalStorageState.js';
 import { formatDate, formatTokens, formatUSD, formatPercent, formatProjectName } from '../utils/formatters.js';
 import { cacheHitRate as calculateCacheHitRate, costSavedByCache } from '../utils/cacheCalculations.js';
+import { modelTokenMode, modelBreakdownTokens } from '../utils/modelAggregation.js';
 
 import { shortModelName } from '../utils/modelNames.js';
 import { AnalyticsSection } from './AnalyticsSection.js';
@@ -180,17 +181,6 @@ function filterProjectDaily(projects: Record<string, DailyEntry[]>, project: str
   return filterByTime(projects[project] || [], range);
 }
 
-
-function modelTokenMode(entry: DailyEntry): 'inputOutput' | 'withCache' {
-  const inputOutput = entry.modelBreakdowns.reduce((sum, b) => sum + b.inputTokens + b.outputTokens, 0);
-  const withCache = entry.modelBreakdowns.reduce((sum, b) => sum + b.inputTokens + b.outputTokens + b.cacheReadTokens, 0);
-  return Math.abs(entry.totalTokens - inputOutput) <= Math.abs(entry.totalTokens - withCache) ? 'inputOutput' : 'withCache';
-}
-
-function modelBreakdownTokens(breakdown: DailyEntry['modelBreakdowns'][number], mode: 'inputOutput' | 'withCache'): number {
-  const base = breakdown.inputTokens + breakdown.outputTokens;
-  return mode === 'withCache' ? base + breakdown.cacheReadTokens : base;
-}
 
 /* ---- Main Dashboard ---- */
 

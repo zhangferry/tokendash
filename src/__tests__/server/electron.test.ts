@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest';
 import { createApp, resolveStaticAssetBaseDir } from '../../server/index.js';
+import { existsSync } from 'node:fs';
 import http from 'node:http';
 import { createRequire } from 'node:module';
 import { join } from 'node:path';
@@ -33,6 +34,9 @@ describe('createApp', () => {
   });
 
   it('serves /popover.html when the static file is present', async () => {
+    const popoverFile = join(process.cwd(), 'dist', 'client', 'popover.html');
+    if (!existsSync(popoverFile)) return; // skip when build output is absent
+
     const app = createApp(0, join(process.cwd(), 'dist'));
     const server = app.listen(0);
     const address = server.address();
@@ -46,6 +50,21 @@ describe('createApp', () => {
       expect(html).toContain('<!DOCTYPE html>');
       expect(html).toContain('TokenDash');
       expect(html).toContain('open-dashboard');
+    } finally {
+      server.close();
+    }
+  });
+
+  it('returns 404 for /popover.html when static file is absent', async () => {
+    const app = createApp(0, join(process.cwd(), 'nonexistent-dist'));
+    const server = app.listen(0);
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('no address');
+    const port = address.port;
+
+    try {
+      const res = await fetch(`http://localhost:${port}/popover.html`);
+      expect(res.status).toBe(404);
     } finally {
       server.close();
     }

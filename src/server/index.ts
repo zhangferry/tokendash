@@ -1,9 +1,9 @@
 import express from 'express';
 import type { Express } from 'express';
-import { readFileSync } from 'node:fs';
+import { existsSync, readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
 import { fileURLToPath } from 'node:url';
-import { dirname, join } from 'node:path';
+import { basename, dirname, join, resolve } from 'node:path';
 import { registerApiRoutes } from './routes/api.js';
 import { detectAvailableAgents } from './agentDetection.js';
 import open from 'open';
@@ -141,6 +141,25 @@ async function listenWithPortFallback(app: Express, preferredPort: number): Prom
   throw new Error(`Could not find an available port starting from ${preferredPort}`);
 }
 
+export function resolveStaticAssetBaseDir(moduleUrl = import.meta.url, baseDir?: string): { baseDir: string; isProduction: boolean } {
+  if (baseDir) return { baseDir: resolve(baseDir), isProduction: true };
+
+  const moduleDir = dirname(fileURLToPath(moduleUrl));
+  const isProduction = moduleUrl.includes('/dist/');
+
+  if (!isProduction) return { baseDir: resolve(moduleDir), isProduction: false };
+
+  // The CLI entrypoint runs from dist/server/index.js while the Vite assets are
+  // emitted to dist/client. Resolve the production asset base to dist instead
+  // of dist/server so / resolves to dist/client/index.html in installed npm
+  // packages. Electron passes dist explicitly and is unaffected by this branch.
+  if (basename(moduleDir) === 'server') {
+    return { baseDir: resolve(dirname(moduleDir)), isProduction: true };
+  }
+
+  return { baseDir: resolve(moduleDir), isProduction: true };
+}
+
 export function createApp(_port: number, baseDir?: string): Express {
   const app = express();
   const router = express.Router();
@@ -149,17 +168,17 @@ export function createApp(_port: number, baseDir?: string): Express {
   registerApiRoutes(router);
   app.use('/api', router);
 
-  // Resolve paths: use provided baseDir or compute from import.meta.url
-  const _baseDir = baseDir ?? dirname(fileURLToPath(import.meta.url));
-  const isProduction = baseDir
-    ? true
-    : import.meta.url.includes('dist/');
+  const { baseDir: _baseDir, isProduction } = resolveStaticAssetBaseDir(import.meta.url, baseDir);
   const popoverPath = isProduction
     ? join(_baseDir, 'client', 'popover.html')
     : join(_baseDir, '..', '..', 'public', 'popover.html');
 
-  app.get('/popover.html', (_req, res) => {
-    res.sendFile(popoverPath);
+  app.get('/popover.html', (_req, res, next) => {
+    if (!existsSync(popoverPath)) {
+      next();
+      return;
+    }
+    res.type('html').send(readFileSync(popoverPath, 'utf8'));
   });
 
   // Check if running from dist (production build)

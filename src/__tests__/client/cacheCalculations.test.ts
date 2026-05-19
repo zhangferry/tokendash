@@ -6,9 +6,13 @@ describe('cacheHitRate', () => {
     expect(cacheHitRate(1000, 0)).toBe(0);
   });
 
-  it('calculates hit rate as percentage', () => {
-    // cacheHitRate(cacheReadTokens, inputTokens) = cacheRead / input * 100
+  it('calculates hit rate against all input tokens', () => {
+    // cached input is already part of input_tokens, so do not add it again.
     expect(cacheHitRate(500, 1000)).toBe(50);
+  });
+
+  it('does not dilute the hit rate by adding cached input to input again', () => {
+    expect(cacheHitRate(500, 1000)).not.toBeCloseTo((500 / 1500) * 100, 5);
   });
 
   it('returns 0 when both are 0', () => {

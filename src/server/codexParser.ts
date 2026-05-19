@@ -2,7 +2,7 @@ import { readFileSync, readdirSync, statSync, accessSync, constants } from 'node
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { z } from 'zod';
-import type { DailyEntry, DailyResponse, ProjectsResponse, BlockEntry, BlocksResponse, Totals, ModelBreakdown } from '../shared/types.js';
+import type { DailyEntry, DailyResponse, ProjectsResponse, BlockEntry, BlocksResponse, ModelBreakdown } from '../shared/types.js';
 import { calculateCost } from './codexPricing.js';
 
 // ---------------------------------------------------------------------------
@@ -31,7 +31,7 @@ const TokenCountPayloadSchema = z.object({
 // Types
 // ---------------------------------------------------------------------------
 
-interface ParsedTokenEvent {
+export interface ParsedTokenEvent {
   timestamp: string;
   inputTokens: number;
   cachedInputTokens: number;
@@ -62,6 +62,11 @@ interface TokenAccumulator {
   outputTokens: number;
   reasoningOutputTokens: number;
   totalTokens: number;
+}
+
+interface AggregateBucket {
+  acc: TokenAccumulator;
+  models: Map<string, TokenAccumulator>;
 }
 
 function tokenUsageKey(usage: z.infer<typeof TokenUsageSchema>): string {
@@ -282,8 +287,17 @@ function mergeAcc(a: TokenAccumulator, b: TokenAccumulator): void {
   a.totalTokens += b.totalTokens;
 }
 
-function accToEntry(date: string, acc: TokenAccumulator, models: Set<string>): DailyEntry {
-  const cost = calculateCost(acc, models);
+function addAccToBucket(bucket: AggregateBucket, ev: ParsedTokenEvent, model: string): void {
+  addAcc(bucket.acc, ev);
+  if (!model) return;
+  if (!bucket.models.has(model)) bucket.models.set(model, emptyAcc());
+  addAcc(bucket.models.get(model)!, ev);
+}
+
+function accToEntry(date: string, acc: TokenAccumulator, modelAccs: Map<string, TokenAccumulator>): DailyEntry {
+  const modelNames = [...modelAccs.keys()];
+  const modelBreakdowns = buildModelBreakdowns(modelAccs);
+  const totalCost = modelBreakdowns.reduce((sum, model) => sum + model.cost, 0);
   return {
     date,
     inputTokens: acc.inputTokens,
@@ -291,23 +305,20 @@ function accToEntry(date: string, acc: TokenAccumulator, models: Set<string>): D
     cacheCreationTokens: 0,
     cacheReadTokens: acc.cachedInputTokens,
     totalTokens: acc.totalTokens,
-    totalCost: cost,
-    modelsUsed: [...models],
-    modelBreakdowns: buildModelBreakdowns(acc, models, cost),
+    totalCost,
+    modelsUsed: modelNames,
+    modelBreakdowns,
   };
 }
 
-function buildModelBreakdowns(acc: TokenAccumulator, models: Set<string>, totalCost: number): ModelBreakdown[] {
-  const modelList = [...models];
-  if (modelList.length === 0) return [];
-  const costPerModel = totalCost / modelList.length;
-  return modelList.map(name => ({
-    modelName: name,
+function buildModelBreakdowns(modelAccs: Map<string, TokenAccumulator>): ModelBreakdown[] {
+  return [...modelAccs.entries()].map(([modelName, acc]) => ({
+    modelName,
     inputTokens: acc.inputTokens,
     outputTokens: acc.outputTokens,
     cacheCreationTokens: 0,
     cacheReadTokens: acc.cachedInputTokens,
-    cost: costPerModel,
+    cost: calculateCost(acc, new Set([modelName])),
   }));
 }
 
@@ -316,9 +327,9 @@ type GroupKey = string;
 function groupSessions(
   sessions: ParsedSession[],
   options: AggregateOptions,
-): Map<GroupKey, { acc: TokenAccumulator; models: Set<string> }> {
+): Map<GroupKey, AggregateBucket> {
   const tz = options.timezone || 'Asia/Shanghai';
-  const grouped = new Map<GroupKey, { acc: TokenAccumulator; models: Set<string> }>();
+  const grouped = new Map<GroupKey, AggregateBucket>();
 
   for (const session of sessions) {
     if (options.project && extractProjectName(session.cwd) !== options.project) continue;
@@ -338,11 +349,9 @@ function groupSessions(
       }
 
       if (!grouped.has(key)) {
-        grouped.set(key, { acc: emptyAcc(), models: new Set() });
+        grouped.set(key, { acc: emptyAcc(), models: new Map() });
       }
-      const entry = grouped.get(key)!;
-      addAcc(entry.acc, ev);
-      if (session.model) entry.models.add(session.model);
+      addAccToBucket(grouped.get(key)!, ev, session.model);
     }
   }
 
@@ -353,25 +362,36 @@ function groupSessions(
 // Public API — response builders for route handlers
 // ---------------------------------------------------------------------------
 
-/** Aggregate and return DailyResponse format (for /daily?agent=codex) */
-export function getDailyResponse(options?: Partial<AggregateOptions>): DailyResponse {
-  const sessions = parseAllSessions();
+export function buildCodexResponsesFromSessions(
+  sessions: ParsedSession[],
+  options?: Partial<AggregateOptions>,
+): { daily: DailyResponse; projects: ProjectsResponse; blocks: BlocksResponse } {
+  return {
+    daily: buildDailyResponse(sessions, options),
+    projects: buildProjectsResponse(sessions, options),
+    blocks: buildBlocksResponse(sessions, options),
+  };
+}
+
+function buildDailyResponse(sessions: ParsedSession[], options?: Partial<AggregateOptions>): DailyResponse {
   const grouped = groupSessions(sessions, { groupBy: 'day', ...options });
 
   const daily: DailyEntry[] = [];
   const totalsAcc = emptyAcc();
 
+  const totalModels = new Map<string, TokenAccumulator>();
   for (const [date, { acc, models }] of grouped) {
     daily.push(accToEntry(date, acc, models));
     mergeAcc(totalsAcc, acc);
+    for (const [model, modelAcc] of models) {
+      if (!totalModels.has(model)) totalModels.set(model, emptyAcc());
+      mergeAcc(totalModels.get(model)!, modelAcc);
+    }
   }
 
-  // Sort by date ascending
   daily.sort((a, b) => a.date.localeCompare(b.date));
 
-  const models = new Set<string>();
-  for (const s of sessions) if (s.model) models.add(s.model);
-  const totalCost = calculateCost(totalsAcc, models);
+  const totalCost = buildModelBreakdowns(totalModels).reduce((sum, model) => sum + model.cost, 0);
 
   return {
     daily,
@@ -386,17 +406,16 @@ export function getDailyResponse(options?: Partial<AggregateOptions>): DailyResp
   };
 }
 
-/** Aggregate and return ProjectsResponse format (for /projects?agent=codex) */
-export function getProjectsResponse(options?: Partial<AggregateOptions>): ProjectsResponse {
-  const sessions = parseAllSessions();
+function buildProjectsResponse(sessions: ParsedSession[], options?: Partial<AggregateOptions>): ProjectsResponse {
   const tz = options?.timezone || 'Asia/Shanghai';
-  const projects: Record<string, DailyEntry[]> = {};
+  const projectGroups = new Map<string, Map<string, AggregateBucket>>();
 
   for (const session of sessions) {
     const projectName = extractProjectName(session.cwd);
+    if (options?.project && projectName !== options.project) continue;
+    if (!projectGroups.has(projectName)) projectGroups.set(projectName, new Map());
+    const dailyMap = projectGroups.get(projectName)!;
 
-    // Per-project daily grouping
-    const dailyMap = new Map<string, { acc: TokenAccumulator; models: Set<string> }>();
     for (const ev of session.tokenEvents) {
       const evDate = new Date(ev.timestamp);
       if (options?.since && evDate < options.since) continue;
@@ -404,36 +423,30 @@ export function getProjectsResponse(options?: Partial<AggregateOptions>): Projec
 
       const dayKey = getDateKey(ev.timestamp, tz);
       if (!dailyMap.has(dayKey)) {
-        dailyMap.set(dayKey, { acc: emptyAcc(), models: new Set() });
+        dailyMap.set(dayKey, { acc: emptyAcc(), models: new Map() });
       }
-      addAcc(dailyMap.get(dayKey)!.acc, ev);
-      if (session.model) dailyMap.get(dayKey)!.models.add(session.model);
-    }
-
-    if (!projects[projectName]) projects[projectName] = [];
-    for (const [date, { acc, models }] of dailyMap) {
-      projects[projectName].push(accToEntry(date, acc, models));
+      addAccToBucket(dailyMap.get(dayKey)!, ev, session.model);
     }
   }
 
-  // Sort each project's daily entries
-  for (const key of Object.keys(projects)) {
-    projects[key].sort((a, b) => a.date.localeCompare(b.date));
+  const projects: Record<string, DailyEntry[]> = {};
+  for (const [projectName, dailyMap] of projectGroups) {
+    projects[projectName] = [...dailyMap.entries()]
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(([date, { acc, models }]) => accToEntry(date, acc, models));
   }
 
   return { projects };
 }
 
-/** Aggregate and return BlocksResponse format (hourly, for /blocks?agent=codex) */
-export function getBlocksResponse(options?: Partial<AggregateOptions>): BlocksResponse {
-  const sessions = parseAllSessions();
+function buildBlocksResponse(sessions: ParsedSession[], options?: Partial<AggregateOptions>): BlocksResponse {
   const grouped = groupSessions(sessions, { groupBy: 'hour', ...options });
 
   const blocks: BlockEntry[] = [];
   let idx = 0;
 
   for (const [hourKey, { acc, models }] of grouped) {
-    const cost = calculateCost(acc, models);
+    const cost = buildModelBreakdowns(models).reduce((sum, model) => sum + model.cost, 0);
     const [datePart, timePart] = hourKey.split(' ');
     const hour = timePart.split(':')[0];
 
@@ -453,13 +466,27 @@ export function getBlocksResponse(options?: Partial<AggregateOptions>): BlocksRe
       },
       totalTokens: acc.totalTokens,
       costUSD: cost,
-      models: [...models],
+      models: [...models.keys()],
     });
     idx++;
   }
 
-  // Sort by startTime
   blocks.sort((a, b) => a.startTime.localeCompare(b.startTime));
 
   return { blocks };
+}
+
+/** Aggregate and return DailyResponse format (for /daily?agent=codex) */
+export function getDailyResponse(options?: Partial<AggregateOptions>): DailyResponse {
+  return buildDailyResponse(parseAllSessions(), options);
+}
+
+/** Aggregate and return ProjectsResponse format (for /projects?agent=codex) */
+export function getProjectsResponse(options?: Partial<AggregateOptions>): ProjectsResponse {
+  return buildProjectsResponse(parseAllSessions(), options);
+}
+
+/** Aggregate and return BlocksResponse format (hourly, for /blocks?agent=codex) */
+export function getBlocksResponse(options?: Partial<AggregateOptions>): BlocksResponse {
+  return buildBlocksResponse(parseAllSessions(), options);
 }

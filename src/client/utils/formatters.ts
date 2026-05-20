@@ -32,7 +32,7 @@ export function formatPercent(n: number): string {
 export function formatProjectName(project: string, allProjects?: string[]): string {
   if (!project) return '';
 
-  const getParts = (p: string) => p.includes('/') ? p.split('/').filter(Boolean) : p.split('-').filter(Boolean);
+  const getParts = (p: string) => p.split('/').filter(Boolean);
   const parts = getParts(project);
   if (parts.length === 0) return project;
 

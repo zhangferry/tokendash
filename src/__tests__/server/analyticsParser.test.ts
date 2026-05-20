@@ -102,4 +102,38 @@ describe('computeAnalytics', () => {
     expect(apr16.Write).toBe(1);
     expect(apr16.Edit).toBe(1);
   });
+
+  it('fills missing tool values with 0 in tool call trend', () => {
+    // Create tool calls where different tools appear on different days
+    const sparseToolCalls = [
+      { toolName: 'Edit', timestamp: new Date('2026-05-01T08:00:00Z').getTime(), linesAdded: 5, linesDeleted: 2 },
+      { toolName: 'Read', timestamp: new Date('2026-05-01T09:00:00Z').getTime(), linesAdded: 0, linesDeleted: 0 },
+      // Day 2: only Edit, no Read
+      { toolName: 'Edit', timestamp: new Date('2026-05-02T08:00:00Z').getTime(), linesAdded: 3, linesDeleted: 1 },
+      // Day 3: only Read, no Edit
+      { toolName: 'Read', timestamp: new Date('2026-05-03T09:00:00Z').getTime(), linesAdded: 0, linesDeleted: 0 },
+    ];
+    const res = computeAnalytics(sparseToolCalls, 'UTC');
+    const trend = res.toolCallTrend;
+    expect(trend).toHaveLength(3);
+
+    // Every day should have both Edit and Read (not undefined)
+    for (const entry of trend) {
+      expect(entry.Edit).toBeDefined();
+      expect(entry.Read).toBeDefined();
+      expect(typeof entry.Edit).toBe('number');
+      expect(typeof entry.Read).toBe('number');
+    }
+
+    const day1 = trend.find(t => t.date === '2026-05-01')!;
+    const day2 = trend.find(t => t.date === '2026-05-02')!;
+    const day3 = trend.find(t => t.date === '2026-05-03')!;
+
+    expect(day1.Edit).toBe(1);
+    expect(day1.Read).toBe(1);
+    expect(day2.Edit).toBe(1);
+    expect(day2.Read).toBe(0); // Read not used on day 2, should be 0
+    expect(day3.Edit).toBe(0); // Edit not used on day 3, should be 0
+    expect(day3.Read).toBe(1);
+  });
 });

@@ -36,11 +36,15 @@ describe('formatPercent', () => {
 });
 
 describe('formatProjectName', () => {
-  it('returns last segment for simple names', () => {
-    // split by '-' → last segment
-    expect(formatProjectName('my-project')).toBe('project');
-    expect(formatProjectName('foo-bar-baz')).toBe('baz');
+  it('returns name as-is for simple names with dashes', () => {
+    expect(formatProjectName('my-project')).toBe('my-project');
+    expect(formatProjectName('foo-bar-baz')).toBe('foo-bar-baz');
     expect(formatProjectName('single')).toBe('single');
+  });
+
+  it('returns last segment for slash-separated paths', () => {
+    expect(formatProjectName('dir1/dashboard')).toBe('dashboard');
+    expect(formatProjectName('a/b/c')).toBe('c');
   });
 
   it('uses parent prefix when duplicates exist', () => {

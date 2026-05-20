@@ -70,9 +70,56 @@ const CLAUDE_PROJECTS_DIR = join(homedir(), '.claude', 'projects');
 
 const fileCache = new Map<string, { mtime: number; entries: ParsedUsage[] }>();
 
-function extractProjectName(dirName: string): string {
-  const parts = dirName.replace(/^-/, '').split('-');
-  return parts[parts.length - 1] || dirName;
+const projectNameCache = new Map<string, string>();
+
+/** Decode Claude's encoded project directory name.
+ *  Claude encodes paths: /Users/foo/bar → -Users-foo-bar
+ *  Since '-' replaces '/' and project names can contain '-',
+ *  we use filesystem checks to find the correct last segment.
+ */
+export function extractProjectName(dirName: string): string {
+  if (!dirName.startsWith('-')) return dirName;
+
+  const cached = projectNameCache.get(dirName);
+  if (cached) return cached;
+
+  const segments = dirName.replace(/^-/, '').split('-').filter(Boolean);
+  if (segments.length === 0) { projectNameCache.set(dirName, dirName); return dirName; }
+  if (segments.length === 1) { projectNameCache.set(dirName, segments[0]); return segments[0]; }
+
+  let bestName = segments[segments.length - 1];
+
+  // Try from right: find the longest last segment that forms a valid path
+  for (let splitAt = segments.length - 1; splitAt >= 1; splitAt--) {
+    const parentSegments = segments.slice(0, splitAt);
+    const candidateName = segments.slice(splitAt).join('-');
+
+    // Build parent path, handling hidden directories (dot prefix)
+    let parentPath = '/';
+    let valid = true;
+    for (const seg of parentSegments) {
+      const regular = join(parentPath, seg);
+      const hidden = join(parentPath, '.' + seg);
+      if (existsSync(regular)) {
+        parentPath = regular;
+      } else if (existsSync(hidden)) {
+        parentPath = hidden;
+      } else {
+        valid = false;
+        break;
+      }
+    }
+
+    if (!valid) continue;
+
+    if (existsSync(join(parentPath, candidateName)) || existsSync(join(parentPath, '.' + candidateName))) {
+      bestName = candidateName;
+      break;
+    }
+  }
+
+  projectNameCache.set(dirName, bestName);
+  return bestName;
 }
 
 function matchesProject(dirName: string, filter: string): boolean {
@@ -293,7 +340,7 @@ export function getProjectsResponse(tz = DEFAULT_TZ): ProjectsResponse {
 
   for (const e of entries) {
     const date = getDateKey(e.timestamp, tz);
-    const projectName = e.projectDir;
+    const projectName = extractProjectName(e.projectDir);
 
     if (!projectMap.has(projectName)) {
       projectMap.set(projectName, new Map());

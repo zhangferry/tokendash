@@ -70,9 +70,54 @@ function countLines(text: string): number {
 
 const CLAUDE_PROJECTS_DIR = join(homedir(), '.claude', 'projects');
 
+const projectNameCache = new Map<string, string>();
+
+/** Decode Claude's encoded project directory name.
+ *  Claude encodes paths: /Users/foo/bar → -Users-foo-bar
+ *  Since '-' replaces '/' and project names can contain '-',
+ *  we use filesystem checks to find the correct last segment.
+ */
 function extractProjectName(dirName: string): string {
-  const parts = dirName.replace(/^-/, '').split('-');
-  return parts[parts.length - 1] || dirName;
+  if (!dirName.startsWith('-')) return dirName;
+
+  const cached = projectNameCache.get(dirName);
+  if (cached) return cached;
+
+  const segments = dirName.replace(/^-/, '').split('-').filter(Boolean);
+  if (segments.length === 0) { projectNameCache.set(dirName, dirName); return dirName; }
+  if (segments.length === 1) { projectNameCache.set(dirName, segments[0]); return segments[0]; }
+
+  let bestName = segments[segments.length - 1];
+
+  for (let splitAt = segments.length - 1; splitAt >= 1; splitAt--) {
+    const parentSegments = segments.slice(0, splitAt);
+    const candidateName = segments.slice(splitAt).join('-');
+
+    let parentPath = '/';
+    let valid = true;
+    for (const seg of parentSegments) {
+      const regular = join(parentPath, seg);
+      const hidden = join(parentPath, '.' + seg);
+      if (existsSync(regular)) {
+        parentPath = regular;
+      } else if (existsSync(hidden)) {
+        parentPath = hidden;
+      } else {
+        valid = false;
+        break;
+      }
+    }
+
+    if (!valid) continue;
+
+    if (existsSync(join(parentPath, candidateName)) || existsSync(join(parentPath, '.' + candidateName))) {
+      bestName = candidateName;
+      break;
+    }
+  }
+
+  projectNameCache.set(dirName, bestName);
+  return bestName;
 }
 
 function matchesProject(dirName: string, filter: string): boolean {
@@ -302,6 +347,23 @@ export function computeAnalytics(toolCalls: ToolCallRecord[], timezone = 'Asia/S
     toolCallTrend.push(entry);
   }
   toolCallTrend.sort((a, b) => a.date.localeCompare(b.date));
+
+  // Fill missing tool values with 0 so chart lines don't break
+  if (toolCallTrend.length > 0) {
+    const allTools = new Set<string>();
+    for (const entry of toolCallTrend) {
+      for (const key of Object.keys(entry)) {
+        if (key !== 'date') allTools.add(key);
+      }
+    }
+    for (const entry of toolCallTrend) {
+      for (const tool of allTools) {
+        if (entry[tool] === undefined) {
+          entry[tool] = 0;
+        }
+      }
+    }
+  }
 
   return { codeChangeTrend, toolUsageDistribution, productivityKPIs, toolCallTrend };
 }

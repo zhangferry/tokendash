@@ -1,5 +1,10 @@
 # Changelog
 
+### v1.5.0
+- **Project name fix** — correctly display project names with dashes (e.g. `ccusage-dashboard` instead of `dashboard`) using filesystem-based path decoding (#14)
+- **Tool call trend fix** — fill missing tool values with 0 so chart lines don't break when a tool has no data for a given day (#13)
+- **Unit tests** — added regression tests for project name decoding and tool call trend zero-filling
+
 ### v1.4.2
 - **Codex usage de-duplication** — avoid double-counting duplicate Codex usage snapshots when parsing session data
 - **Codex parser coverage** — added regression tests for duplicate snapshot handling

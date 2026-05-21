@@ -13,6 +13,17 @@ contextBridge.exposeInMainWorld('electronAPI', {
   checkForUpdates() {
     return ipcRenderer.invoke('tokendash:check-for-updates');
   },
+  downloadUpdate(updateInfo) {
+    return ipcRenderer.invoke('tokendash:download-update', updateInfo);
+  },
+  onUpdateDownloadProgress(callback) {
+    if (typeof callback !== 'function') return function noop() {};
+    const listener = (_event, progress) => callback(progress);
+    ipcRenderer.on('tokendash:update-download-progress', listener);
+    return function unsubscribe() {
+      ipcRenderer.removeListener('tokendash:update-download-progress', listener);
+    };
+  },
   quitApp() {
     return ipcRenderer.invoke('tokendash:quit');
   },

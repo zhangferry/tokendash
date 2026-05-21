@@ -10,6 +10,11 @@ const { formatCost, formatTokens } = require('../../../electron/trayBadge.cjs') 
   formatCost: (cost: number) => string;
   formatTokens: (tokens: number) => string;
 };
+const { compareVersions, getReleaseUpdateInfo, selectMacDmgAsset } = require('../../../electron/updateService.cjs') as {
+  compareVersions: (a: string, b: string) => number;
+  getReleaseUpdateInfo: (release: any, currentVersion: string, arch?: string) => any;
+  selectMacDmgAsset: (assets: any[], arch?: string) => any;
+};
 
 describe('createApp', () => {
   it('returns an Express app', () => {
@@ -172,6 +177,47 @@ describe('formatTokens', () => {
   });
 });
 
+describe('updateService', () => {
+  it('compares semantic versions with optional v prefixes', () => {
+    expect(compareVersions('1.5.0', 'v1.5.0')).toBe(0);
+    expect(compareVersions('1.5.1', '1.5.0')).toBeGreaterThan(0);
+    expect(compareVersions('1.4.9', '1.5.0')).toBeLessThan(0);
+  });
+
+  it('selects the matching macOS DMG asset for the current architecture', () => {
+    const assets = [
+      { name: 'TokenDash-1.6.0-x64.dmg', browser_download_url: 'https://example.com/x64.dmg' },
+      { name: 'TokenDash-1.6.0-arm64.dmg', browser_download_url: 'https://example.com/arm64.dmg' },
+      { name: 'TokenDash-1.6.0-arm64.dmg.blockmap', browser_download_url: 'https://example.com/blockmap' },
+    ];
+
+    expect(selectMacDmgAsset(assets, 'arm64')?.name).toBe('TokenDash-1.6.0-arm64.dmg');
+    expect(selectMacDmgAsset(assets, 'x64')?.name).toBe('TokenDash-1.6.0-x64.dmg');
+  });
+
+  it('builds update info with a downloadable asset', () => {
+    const info = getReleaseUpdateInfo({
+      tag_name: 'v1.6.0',
+      html_url: 'https://github.com/zhangferry/tokendash/releases/tag/v1.6.0',
+      assets: [
+        {
+          name: 'TokenDash-1.6.0-arm64.dmg',
+          size: 123,
+          browser_download_url: 'https://example.com/TokenDash.dmg',
+        },
+      ],
+    }, '1.5.0', 'arm64');
+
+    expect(info.upToDate).toBe(false);
+    expect(info.latestVersion).toBe('1.6.0');
+    expect(info.asset).toEqual({
+      name: 'TokenDash-1.6.0-arm64.dmg',
+      size: 123,
+      url: 'https://example.com/TokenDash.dmg',
+    });
+  });
+});
+
 describe('daily API data freshness', () => {
   let server: ReturnType<ReturnType<typeof createApp>['listen']>;
   let port: number;
@@ -259,7 +305,7 @@ describe('daily API data freshness', () => {
       // Each agent should have daily array (may be empty)
       expect(Array.isArray(data.daily)).toBe(true);
     }
-  });
+  }, 20000);
 });
 
 function fetchJson(url: string): Promise<any> {

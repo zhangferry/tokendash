@@ -2,7 +2,6 @@ const { app, BrowserWindow, ipcMain, screen, shell } = require('electron');
 const path = require('node:path');
 const fs = require('node:fs');
 const http = require('node:http');
-const https = require('node:https');
 const { spawn } = require('node:child_process');
 
 // Global debug logger (writes to file since stdout is lost in packaged apps)
@@ -19,6 +18,7 @@ try {
 }
 
 const { formatTokens } = require('./trayBadge.cjs');
+const { checkForUpdates, downloadUpdateAsset } = require('./updateService.cjs');
 
 // Resolve trayHelper binary: extract from asar if needed
 function resolveTrayHelperPath() {
@@ -52,6 +52,8 @@ let server = null;
 let trayProcess = null;
 let selectedAgents = null; // null = use all available agents
 let serverPort = parseInt(process.env.TOKENDASH_PORT || '3456', 10);
+let lastUpdateInfo = null;
+let isDownloadingUpdate = false;
 const POPOVER_WIDTH = 380;
 const POPOVER_HEIGHT = 540;
 const PACKAGE_NAME = '@zhangferry-dev/tokendash';
@@ -95,41 +97,6 @@ function fetchJson(url) {
       });
     }).on('error', reject);
   });
-}
-
-function fetchHttpsJson(url) {
-  return new Promise((resolve, reject) => {
-    const opts = new URL(url);
-    const reqOpts = {
-      hostname: opts.hostname,
-      path: opts.pathname + opts.search,
-      method: 'GET',
-      headers: { 'User-Agent': 'TokenDash' },
-    };
-    https.get(reqOpts, (res) => {
-      let data = '';
-      res.on('data', (chunk) => { data += chunk; });
-      res.on('end', () => {
-        if (res.statusCode && res.statusCode >= 400) {
-          reject(new Error(`HTTP ${res.statusCode}`));
-          return;
-        }
-        try { resolve(JSON.parse(data)); }
-        catch (e) { reject(e); }
-      });
-    }).on('error', reject);
-  });
-}
-
-function compareVersions(a, b) {
-  const aParts = String(a).split('.').map((part) => parseInt(part, 10) || 0);
-  const bParts = String(b).split('.').map((part) => parseInt(part, 10) || 0);
-  const maxLen = Math.max(aParts.length, bParts.length);
-  for (let i = 0; i < maxLen; i++) {
-    const delta = (aParts[i] || 0) - (bParts[i] || 0);
-    if (delta !== 0) return delta;
-  }
-  return 0;
 }
 
 function getAppInfo() {
@@ -415,19 +382,10 @@ function registerIpcHandlers() {
 
   ipcMain.handle('tokendash:check-for-updates', async () => {
     const currentVersion = getAppInfo().version;
-    const releasesUrl = `https://api.github.com/repos/${GITHUB_REPO}/releases/latest`;
 
     try {
-      const latest = await fetchHttpsJson(releasesUrl);
-      // GitHub release tag may be "v1.3.0" or "1.3.0"
-      const tag = (latest.tag_name || '').replace(/^v/, '');
-      const latestVersion = tag || currentVersion;
-      return {
-        currentVersion,
-        latestVersion,
-        upToDate: compareVersions(currentVersion, latestVersion) >= 0,
-        releaseUrl: latest.html_url || null,
-      };
+      lastUpdateInfo = await checkForUpdates({ repo: GITHUB_REPO, currentVersion });
+      return lastUpdateInfo;
     } catch (error) {
       return {
         currentVersion,
@@ -435,6 +393,31 @@ function registerIpcHandlers() {
         upToDate: true,
         error: error instanceof Error ? error.message : String(error),
       };
+    }
+  });
+
+  ipcMain.handle('tokendash:download-update', async (event) => {
+    if (isDownloadingUpdate) {
+      return { ok: false, error: 'An update download is already in progress.' };
+    }
+
+    const info = lastUpdateInfo;
+    if (!info || info.upToDate || !info.asset || !info.asset.url) {
+      return { ok: false, error: 'No downloadable update is available.' };
+    }
+
+    isDownloadingUpdate = true;
+    try {
+      const downloadsDir = path.join(app.getPath('downloads'), 'TokenDash Updates');
+      const filePath = await downloadUpdateAsset(info.asset, downloadsDir, (progress) => {
+        event.sender.send('tokendash:update-download-progress', progress);
+      });
+      await shell.openPath(filePath);
+      return { ok: true, filePath };
+    } catch (error) {
+      return { ok: false, error: error instanceof Error ? error.message : String(error) };
+    } finally {
+      isDownloadingUpdate = false;
     }
   });
 

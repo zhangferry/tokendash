@@ -165,7 +165,7 @@ export function getClaudeBlocksByProject(project: string): BlockEntry[] {
         const outputTokens = usage.output_tokens;
         const cacheCreationTokens = usage.cache_creation_input_tokens;
         const cacheReadTokens = usage.cache_read_input_tokens;
-        const totalTokens = inputTokens + outputTokens + cacheReadTokens;
+        const totalTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
 
         if (totalTokens === 0) continue;
 
@@ -192,7 +192,7 @@ export function getClaudeBlocksByProject(project: string): BlockEntry[] {
   const blocks: BlockEntry[] = [];
   let idx = 0;
   for (const [hourKey, bucket] of hourMap) {
-    const totalTokens = bucket.inputTokens + bucket.outputTokens + bucket.cacheReadTokens;
+    const totalTokens = bucket.inputTokens + bucket.outputTokens + bucket.cacheCreationTokens + bucket.cacheReadTokens;
     blocks.push({
       id: `claude-project-${idx}`,
       startTime: `${hourKey}:00:00.000Z`,

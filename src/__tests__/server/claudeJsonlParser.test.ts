@@ -28,11 +28,18 @@ describe('calculateCost', () => {
     expect(costWithCache).toBeCloseTo(0.30, 2);
   });
 
-  it('deducts cache read from input tokens', () => {
-    // 1M input with 500K cache read → 500K non-cached input + 500K cache read
+  it('charges input and cache read as separate usage buckets', () => {
+    // 1M input and 500K cache read match ccusage bucket semantics:
+    // input is not reduced by cache_read_input_tokens.
     const cost = calculateCost(1_000_000, 500_000, 0, 'claude-sonnet-4-6');
-    // non-cached: 500K * $3 = $1.50, cache: 500K * $0.30 = $0.15 → $1.65
-    expect(cost).toBeCloseTo(1.65, 2);
+    // input: 1M * $3 = $3, cache read: 500K * $0.30 = $0.15 -> $3.15
+    expect(cost).toBeCloseTo(3.15, 2);
+  });
+
+  it('charges cache creation separately', () => {
+    const cost = calculateCost(0, 0, 0, 'claude-sonnet-4-6', 1_000_000);
+
+    expect(cost).toBeCloseTo(3.75, 2);
   });
 });
 

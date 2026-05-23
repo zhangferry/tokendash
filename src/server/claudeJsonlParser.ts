@@ -10,25 +10,26 @@ import type { DailyEntry, DailyResponse, ProjectsResponse, Totals, BlockEntry } 
 
 interface ModelPricing {
   inputPer1M: number;
+  cacheCreationPer1M: number;
   cacheReadPer1M: number;
   outputPer1M: number;
 }
 
 const MODEL_PRICING: Record<string, ModelPricing> = {
   // Claude 4.6
-  'claude-opus-4-6': { inputPer1M: 15, cacheReadPer1M: 1.50, outputPer1M: 75 },
-  'claude-sonnet-4-6': { inputPer1M: 3, cacheReadPer1M: 0.30, outputPer1M: 15 },
+  'claude-opus-4-6': { inputPer1M: 15, cacheCreationPer1M: 18.75, cacheReadPer1M: 1.50, outputPer1M: 75 },
+  'claude-sonnet-4-6': { inputPer1M: 3, cacheCreationPer1M: 3.75, cacheReadPer1M: 0.30, outputPer1M: 15 },
   // Claude 4.5
-  'claude-sonnet-4-5-20250514': { inputPer1M: 3, cacheReadPer1M: 0.30, outputPer1M: 15 },
-  'claude-haiku-4-5-20251001': { inputPer1M: 0.80, cacheReadPer1M: 0.08, outputPer1M: 4 },
+  'claude-sonnet-4-5-20250514': { inputPer1M: 3, cacheCreationPer1M: 3.75, cacheReadPer1M: 0.30, outputPer1M: 15 },
+  'claude-haiku-4-5-20251001': { inputPer1M: 0.80, cacheCreationPer1M: 1, cacheReadPer1M: 0.08, outputPer1M: 4 },
   // Older Claude models
-  'claude-3-5-sonnet-20241022': { inputPer1M: 3, cacheReadPer1M: 0.30, outputPer1M: 15 },
-  'claude-3-5-haiku-20241022': { inputPer1M: 0.80, cacheReadPer1M: 0.08, outputPer1M: 4 },
-  'claude-3-opus-20240229': { inputPer1M: 15, cacheReadPer1M: 1.50, outputPer1M: 75 },
-  'claude-3-haiku-20240307': { inputPer1M: 0.25, cacheReadPer1M: 0.03, outputPer1M: 1.25 },
+  'claude-3-5-sonnet-20241022': { inputPer1M: 3, cacheCreationPer1M: 3.75, cacheReadPer1M: 0.30, outputPer1M: 15 },
+  'claude-3-5-haiku-20241022': { inputPer1M: 0.80, cacheCreationPer1M: 1, cacheReadPer1M: 0.08, outputPer1M: 4 },
+  'claude-3-opus-20240229': { inputPer1M: 15, cacheCreationPer1M: 18.75, cacheReadPer1M: 1.50, outputPer1M: 75 },
+  'claude-3-haiku-20240307': { inputPer1M: 0.25, cacheCreationPer1M: 0.30, cacheReadPer1M: 0.03, outputPer1M: 1.25 },
 };
 
-const DEFAULT_PRICING: ModelPricing = { inputPer1M: 3, cacheReadPer1M: 0.30, outputPer1M: 15 };
+const DEFAULT_PRICING: ModelPricing = { inputPer1M: 3, cacheCreationPer1M: 3.75, cacheReadPer1M: 0.30, outputPer1M: 15 };
 
 function getPricing(model: string): ModelPricing {
   // Try exact match first, then prefix match
@@ -40,12 +41,16 @@ function getPricing(model: string): ModelPricing {
   return DEFAULT_PRICING;
 }
 
-export function calculateCost(inputTokens: number, cacheReadTokens: number, outputTokens: number, model: string): number {
+export function calculateCost(inputTokens: number, cacheReadTokens: number, outputTokens: number, model: string, cacheCreationTokens = 0): number {
   const p = getPricing(model);
-  const nonCachedInput = Math.max(inputTokens - cacheReadTokens, 0);
-  return (nonCachedInput / 1_000_000) * p.inputPer1M
+  return (inputTokens / 1_000_000) * p.inputPer1M
+    + (cacheCreationTokens / 1_000_000) * p.cacheCreationPer1M
     + (cacheReadTokens / 1_000_000) * p.cacheReadPer1M
     + (outputTokens / 1_000_000) * p.outputPer1M;
+}
+
+function totalClaudeTokens(inputTokens: number, outputTokens: number, cacheCreationTokens: number, cacheReadTokens: number): number {
+  return inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
 }
 
 // ---------------------------------------------------------------------------
@@ -189,7 +194,7 @@ function parseAllSessions(project?: string | null): ParsedUsage[] {
         const outputTokens = usage.output_tokens || 0;
         const cacheCreationTokens = usage.cache_creation_input_tokens || 0;
         const cacheReadTokens = usage.cache_read_input_tokens || 0;
-        const totalTokens = inputTokens + outputTokens + cacheReadTokens;
+        const totalTokens = totalClaudeTokens(inputTokens, outputTokens, cacheCreationTokens, cacheReadTokens);
 
         if (totalTokens === 0) continue;
 
@@ -305,9 +310,9 @@ export function getDailyResponse(project?: string | null, tz = DEFAULT_TZ): Dail
     agg.outputTokens += e.outputTokens;
     agg.cacheCreationTokens += e.cacheCreationTokens;
     agg.cacheReadTokens += e.cacheReadTokens;
-    agg.totalTokens += e.inputTokens + e.outputTokens + e.cacheReadTokens;
+    agg.totalTokens += totalClaudeTokens(e.inputTokens, e.outputTokens, e.cacheCreationTokens, e.cacheReadTokens);
 
-    const cost = calculateCost(e.inputTokens, e.cacheReadTokens, e.outputTokens, e.model);
+    const cost = calculateCost(e.inputTokens, e.cacheReadTokens, e.outputTokens, e.model, e.cacheCreationTokens);
     agg.totalCost += cost;
 
     if (!agg.models.has(e.model)) {
@@ -359,9 +364,9 @@ export function getProjectsResponse(tz = DEFAULT_TZ): ProjectsResponse {
     agg.outputTokens += e.outputTokens;
     agg.cacheCreationTokens += e.cacheCreationTokens;
     agg.cacheReadTokens += e.cacheReadTokens;
-    agg.totalTokens += e.inputTokens + e.outputTokens + e.cacheReadTokens;
+    agg.totalTokens += totalClaudeTokens(e.inputTokens, e.outputTokens, e.cacheCreationTokens, e.cacheReadTokens);
 
-    const cost = calculateCost(e.inputTokens, e.cacheReadTokens, e.outputTokens, e.model);
+    const cost = calculateCost(e.inputTokens, e.cacheReadTokens, e.outputTokens, e.model, e.cacheCreationTokens);
     agg.totalCost += cost;
 
     if (!agg.models.has(e.model)) {
@@ -405,14 +410,14 @@ export function getBlocksResponse(project?: string | null, tz = DEFAULT_TZ): { b
     bucket.outputTokens += e.outputTokens;
     bucket.cacheCreationTokens += e.cacheCreationTokens;
     bucket.cacheReadTokens += e.cacheReadTokens;
-    bucket.costUSD += calculateCost(e.inputTokens, e.cacheReadTokens, e.outputTokens, e.model);
+    bucket.costUSD += calculateCost(e.inputTokens, e.cacheReadTokens, e.outputTokens, e.model, e.cacheCreationTokens);
     bucket.models.add(e.model);
   }
 
   const blocks: BlockEntry[] = [];
   let idx = 0;
   for (const [hourKey, bucket] of hourMap) {
-    const totalTokens = bucket.inputTokens + bucket.outputTokens + bucket.cacheReadTokens;
+    const totalTokens = totalClaudeTokens(bucket.inputTokens, bucket.outputTokens, bucket.cacheCreationTokens, bucket.cacheReadTokens);
     blocks.push({
       id: `claude-${idx}`,
       startTime: `${hourKey}:00:00`,

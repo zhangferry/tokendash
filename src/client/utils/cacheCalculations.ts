@@ -1,6 +1,7 @@
 export function cacheHitRate(cacheReadTokens: number, inputTokens: number): number {
-  if (inputTokens === 0) return 0;
-  return (cacheReadTokens / inputTokens) * 100;
+  const totalInputTokens = inputTokens + cacheReadTokens;
+  if (totalInputTokens === 0) return 0;
+  return (cacheReadTokens / totalInputTokens) * 100;
 }
 
 export function tokensSavedByCache(cacheReadTokens: number): number {

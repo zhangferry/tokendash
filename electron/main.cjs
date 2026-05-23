@@ -258,17 +258,19 @@ function getTrayAgentKey(agents) {
 
 function applyTraySnapshot(snapshot) {
   const totalTokens = Number(snapshot && snapshot.totalTokens) || 0;
+  const totalInput = Number(snapshot && snapshot.totalInput) || 0;
   const totalCost = Number(snapshot && snapshot.totalCost) || 0;
   const totalCacheRead = Number(snapshot && snapshot.totalCacheRead) || 0;
   const today = snapshot && snapshot.today;
   const agentKey = snapshot && snapshot.agentKey;
 
-  lastTraySnapshot = { today, agentKey, totalTokens, totalCost, totalCacheRead };
+  lastTraySnapshot = { today, agentKey, totalTokens, totalInput, totalCost, totalCacheRead };
 
   const tokenStr = formatTokens(totalTokens);
   sendTrayCommand('title:' + tokenStr);
 
-  const cacheRate = totalTokens > 0 ? ((totalCacheRead / totalTokens) * 100).toFixed(1) : '0.0';
+  const cacheInput = totalInput + totalCacheRead;
+  const cacheRate = cacheInput > 0 ? ((totalCacheRead / cacheInput) * 100).toFixed(1) : '0.0';
   sendTrayCommand('tooltip:TokenDash - ' + tokenStr + ' tokens today ($' + totalCost.toFixed(2) + ') | cache: ' + cacheRate + '%');
 }
 
@@ -337,7 +339,7 @@ function updateTrayBadge() {
         return;
       }
 
-      applyTraySnapshot({ today, agentKey, totalTokens, totalCost, totalCacheRead });
+      applyTraySnapshot({ today, agentKey, totalTokens, totalInput, totalCost, totalCacheRead });
     })
     .catch((err) => {
       if (err.code !== 'ECONNREFUSED') {

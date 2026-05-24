@@ -19,7 +19,7 @@ const TokenUsageSchema = z.object({
 
 const TokenCountInfoSchema = z.object({
   total_token_usage: TokenUsageSchema,
-  last_token_usage: TokenUsageSchema,
+  last_token_usage: TokenUsageSchema.optional(),
 }).nullable().default(null);
 
 const TokenCountPayloadSchema = z.object({
@@ -69,14 +69,22 @@ interface AggregateBucket {
   models: Map<string, TokenAccumulator>;
 }
 
-function tokenUsageKey(usage: z.infer<typeof TokenUsageSchema>): string {
-  return [
-    usage.input_tokens,
-    usage.cached_input_tokens,
-    usage.output_tokens,
-    usage.reasoning_output_tokens,
-    usage.total_tokens,
-  ].join(':');
+function subtractTokenUsage(
+  current: z.infer<typeof TokenUsageSchema>,
+  previous: z.infer<typeof TokenUsageSchema> | null,
+): ParsedTokenEvent {
+  return {
+    timestamp: '',
+    inputTokens: Math.max(0, current.input_tokens - (previous?.input_tokens ?? 0)),
+    cachedInputTokens: Math.max(0, current.cached_input_tokens - (previous?.cached_input_tokens ?? 0)),
+    outputTokens: Math.max(0, current.output_tokens - (previous?.output_tokens ?? 0)),
+    reasoningOutputTokens: Math.max(0, current.reasoning_output_tokens - (previous?.reasoning_output_tokens ?? 0)),
+    totalTokens: Math.max(0, current.total_tokens - (previous?.total_tokens ?? 0)),
+  };
+}
+
+function displayInputTokens(inputTokens: number, cachedInputTokens: number): number {
+  return Math.max(0, inputTokens - cachedInputTokens);
 }
 
 // ---------------------------------------------------------------------------
@@ -152,7 +160,9 @@ export function parseCodexSession(filepath: string): ParsedSession | null {
   let model = '';
   let createdAt = '';
   const tokenEvents: ParsedTokenEvent[] = [];
+  let previousTotalUsage: z.infer<typeof TokenUsageSchema> | null = null;
   const seenTotalUsageSnapshots = new Set<string>();
+  const seenUsageEvents = new Set<string>();
 
   for (const line of lines) {
     const trimmed = line.trim();
@@ -193,19 +203,45 @@ export function parseCodexSession(filepath: string): ParsedSession | null {
         }
         const info = parseResult.data.info;
         if (!info) continue;
-        const totalUsageKey = tokenUsageKey(info.total_token_usage);
+        const totalUsageKey = [
+          info.total_token_usage.input_tokens,
+          info.total_token_usage.cached_input_tokens,
+          info.total_token_usage.output_tokens,
+          info.total_token_usage.reasoning_output_tokens,
+          info.total_token_usage.total_tokens,
+        ].join(':');
         if (seenTotalUsageSnapshots.has(totalUsageKey)) continue;
         seenTotalUsageSnapshots.add(totalUsageKey);
 
-        const last = info.last_token_usage;
-        tokenEvents.push({
+        const last = info.last_token_usage ?? info.total_token_usage;
+        const rawEvent = info.last_token_usage
+          ? subtractTokenUsage(last, null)
+          : subtractTokenUsage(last, previousTotalUsage);
+        previousTotalUsage = info.total_token_usage;
+
+        if (rawEvent.inputTokens === 0 && rawEvent.cachedInputTokens === 0 && rawEvent.outputTokens === 0 && rawEvent.reasoningOutputTokens === 0) {
+          continue;
+        }
+
+        const event = {
+          ...rawEvent,
           timestamp,
-          inputTokens: last.input_tokens,
-          cachedInputTokens: last.cached_input_tokens,
-          outputTokens: last.output_tokens,
-          reasoningOutputTokens: last.reasoning_output_tokens,
-          totalTokens: last.total_tokens,
-        });
+          cachedInputTokens: Math.min(rawEvent.cachedInputTokens, rawEvent.inputTokens),
+        };
+        const eventKey = [
+          timestamp,
+          model,
+          event.inputTokens,
+          event.cachedInputTokens,
+          event.outputTokens,
+          event.reasoningOutputTokens,
+          event.totalTokens,
+        ].join(':');
+        if (seenUsageEvents.has(eventKey)) {
+          continue;
+        }
+        seenUsageEvents.add(eventKey);
+        tokenEvents.push(event);
       }
     }
   }
@@ -279,6 +315,13 @@ function addAcc(a: TokenAccumulator, ev: ParsedTokenEvent): void {
   a.totalTokens += ev.totalTokens;
 }
 
+function displayAcc(acc: TokenAccumulator): TokenAccumulator {
+  return {
+    ...acc,
+    inputTokens: displayInputTokens(acc.inputTokens, acc.cachedInputTokens),
+  };
+}
+
 function mergeAcc(a: TokenAccumulator, b: TokenAccumulator): void {
   a.inputTokens += b.inputTokens;
   a.cachedInputTokens += b.cachedInputTokens;
@@ -295,16 +338,17 @@ function addAccToBucket(bucket: AggregateBucket, ev: ParsedTokenEvent, model: st
 }
 
 function accToEntry(date: string, acc: TokenAccumulator, modelAccs: Map<string, TokenAccumulator>): DailyEntry {
+  const display = displayAcc(acc);
   const modelNames = [...modelAccs.keys()];
   const modelBreakdowns = buildModelBreakdowns(modelAccs);
   const totalCost = modelBreakdowns.reduce((sum, model) => sum + model.cost, 0);
   return {
     date,
-    inputTokens: acc.inputTokens,
-    outputTokens: acc.outputTokens,
+    inputTokens: display.inputTokens,
+    outputTokens: display.outputTokens,
     cacheCreationTokens: 0,
-    cacheReadTokens: acc.cachedInputTokens,
-    totalTokens: acc.totalTokens,
+    cacheReadTokens: display.cachedInputTokens,
+    totalTokens: display.totalTokens,
     totalCost,
     modelsUsed: modelNames,
     modelBreakdowns,
@@ -312,14 +356,17 @@ function accToEntry(date: string, acc: TokenAccumulator, modelAccs: Map<string, 
 }
 
 function buildModelBreakdowns(modelAccs: Map<string, TokenAccumulator>): ModelBreakdown[] {
-  return [...modelAccs.entries()].map(([modelName, acc]) => ({
-    modelName,
-    inputTokens: acc.inputTokens,
-    outputTokens: acc.outputTokens,
-    cacheCreationTokens: 0,
-    cacheReadTokens: acc.cachedInputTokens,
-    cost: calculateCost(acc, new Set([modelName])),
-  }));
+  return [...modelAccs.entries()].map(([modelName, acc]) => {
+    const display = displayAcc(acc);
+    return {
+      modelName,
+      inputTokens: display.inputTokens,
+      outputTokens: display.outputTokens,
+      cacheCreationTokens: 0,
+      cacheReadTokens: display.cachedInputTokens,
+      cost: calculateCost(acc, new Set([modelName])),
+    };
+  });
 }
 
 type GroupKey = string;
@@ -396,7 +443,7 @@ function buildDailyResponse(sessions: ParsedSession[], options?: Partial<Aggrega
   return {
     daily,
     totals: {
-      inputTokens: totalsAcc.inputTokens,
+      inputTokens: displayInputTokens(totalsAcc.inputTokens, totalsAcc.cachedInputTokens),
       outputTokens: totalsAcc.outputTokens,
       cacheCreationTokens: 0,
       cacheReadTokens: totalsAcc.cachedInputTokens,
@@ -459,7 +506,7 @@ function buildBlocksResponse(sessions: ParsedSession[], options?: Partial<Aggreg
       isGap: false,
       entries: acc.totalTokens > 0 ? 1 : 0,
       tokenCounts: {
-        inputTokens: acc.inputTokens,
+        inputTokens: displayInputTokens(acc.inputTokens, acc.cachedInputTokens),
         outputTokens: acc.outputTokens,
         cacheCreationInputTokens: 0,
         cacheReadInputTokens: acc.cachedInputTokens,

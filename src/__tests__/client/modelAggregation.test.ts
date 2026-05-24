@@ -28,7 +28,7 @@ describe('modelTokenMode', () => {
     expect(modelTokenMode(entry)).toBe('inputOutput');
   });
 
-  it('returns withCache when totalTokens is closer to input+output+cacheRead', () => {
+  it('returns withReadCache when totalTokens is closer to input+output+cacheRead', () => {
     const entry = makeEntry({
       totalTokens: 3_500,
       modelBreakdowns: [
@@ -38,8 +38,20 @@ describe('modelTokenMode', () => {
     });
 
     // inputOutput sum = 1000+500+500+500 = 2500, diff from 3500 = 1000
-    // withCache sum = 2500+1000 = 3500, diff from 3500 = 0
-    expect(modelTokenMode(entry)).toBe('withCache');
+    // withReadCache sum = 2500+1000 = 3500, diff from 3500 = 0
+    expect(modelTokenMode(entry)).toBe('withReadCache');
+  });
+
+  it('returns withAllCache when totalTokens includes cache creation and cache read', () => {
+    const entry = makeEntry({
+      totalTokens: 3_700,
+      modelBreakdowns: [
+        { modelName: 'claude-sonnet', inputTokens: 1_000, outputTokens: 500, cacheCreationTokens: 200, cacheReadTokens: 1_000, cost: 0 },
+        { modelName: 'gpt-5.4', inputTokens: 500, outputTokens: 500, cacheCreationTokens: 0, cacheReadTokens: 0, cost: 0 },
+      ],
+    });
+
+    expect(modelTokenMode(entry)).toBe('withAllCache');
   });
 
   it('returns inputOutput for Claude-style entries where totalTokens = input + output', () => {
@@ -78,12 +90,17 @@ describe('modelBreakdownTokens', () => {
   });
 
   it('returns input+output+cacheRead in withCache mode', () => {
-    expect(modelBreakdownTokens(breakdown, 'withCache')).toBe(1_700);
+    expect(modelBreakdownTokens(breakdown, 'withReadCache')).toBe(1_700);
+  });
+
+  it('returns input+output+cacheCreation+cacheRead in withAllCache mode', () => {
+    const withCreate = { ...breakdown, cacheCreationTokens: 300 };
+    expect(modelBreakdownTokens(withCreate, 'withAllCache')).toBe(2_000);
   });
 
   it('returns input+output when cacheRead is zero regardless of mode', () => {
     const noCache = { ...breakdown, cacheReadTokens: 0 };
     expect(modelBreakdownTokens(noCache, 'inputOutput')).toBe(1_200);
-    expect(modelBreakdownTokens(noCache, 'withCache')).toBe(1_200);
+    expect(modelBreakdownTokens(noCache, 'withReadCache')).toBe(1_200);
   });
 });

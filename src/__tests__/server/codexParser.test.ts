@@ -22,29 +22,32 @@ function writeSession(lines: unknown[]): string {
   return filepath;
 }
 
-function tokenCount(timestamp: string, totalTokens: number, outputTokens = 100): unknown {
+function tokenCount(timestamp: string, totalTokens: number, outputTokens = 100, includeLast = true): unknown {
   const inputTokens = totalTokens - outputTokens;
+  const info: Record<string, unknown> = {
+    total_token_usage: {
+      input_tokens: inputTokens,
+      cached_input_tokens: 0,
+      output_tokens: outputTokens,
+      reasoning_output_tokens: 0,
+      total_tokens: totalTokens,
+    },
+  };
+  if (includeLast) {
+    info.last_token_usage = {
+      input_tokens: inputTokens,
+      cached_input_tokens: 0,
+      output_tokens: outputTokens,
+      reasoning_output_tokens: 0,
+      total_tokens: totalTokens,
+    };
+  }
   return {
     timestamp,
     type: 'event_msg',
     payload: {
       type: 'token_count',
-      info: {
-        total_token_usage: {
-          input_tokens: inputTokens,
-          cached_input_tokens: 0,
-          output_tokens: outputTokens,
-          reasoning_output_tokens: 0,
-          total_tokens: totalTokens,
-        },
-        last_token_usage: {
-          input_tokens: inputTokens,
-          cached_input_tokens: 0,
-          output_tokens: outputTokens,
-          reasoning_output_tokens: 0,
-          total_tokens: totalTokens,
-        },
-      },
+      info,
     },
   };
 }
@@ -106,6 +109,27 @@ describe('parseCodexSession', () => {
 
     expect(session?.tokenEvents).toHaveLength(2);
     expect(session?.tokenEvents.map(ev => ev.totalTokens)).toEqual([1500, 2100]);
+  });
+
+  it('derives per-turn usage from cumulative total_token_usage when last_token_usage is missing', () => {
+    const filepath = writeSession([
+      {
+        type: 'session_meta',
+        payload: {
+          id: 'session-1',
+          cwd: '/tmp/project',
+          timestamp: '2026-05-18T00:00:00.000Z',
+        },
+      },
+      tokenCount('2026-05-18T00:00:01.000Z', 150, 50, false),
+      tokenCount('2026-05-18T00:00:02.000Z', 275, 75, false),
+    ]);
+
+    const session = parseCodexSession(filepath);
+
+    expect(session?.tokenEvents).toHaveLength(2);
+    expect(session?.tokenEvents[0]).toMatchObject({ inputTokens: 100, outputTokens: 50, totalTokens: 150 });
+    expect(session?.tokenEvents[1]).toMatchObject({ inputTokens: 100, outputTokens: 25, totalTokens: 125 });
   });
 });
 
@@ -171,21 +195,17 @@ describe('buildCodexResponsesFromSessions', () => {
     expect(entries[0].modelsUsed.sort()).toEqual(['gpt-5.4', 'gpt-5.5']);
   });
 
-  it('does not count cache reads again in Codex model totals', () => {
+  it('reports Codex input separately from cached input like ccusage', () => {
     const responses = buildCodexResponsesFromSessions([
       session('s1', '/repo/project-a', 'gpt-5.4', [event('2026-05-18T01:00:00.000Z', 1_000, 50, 900)]),
     ], { timezone: 'UTC' });
 
     const daily = responses.daily.daily[0];
-    const modelTokens = daily.modelBreakdowns.reduce((sum, model) => sum + model.inputTokens + model.outputTokens, 0);
-    const modelTokensWithCacheDoubleCounted = daily.modelBreakdowns.reduce(
-      (sum, model) => sum + model.inputTokens + model.outputTokens + model.cacheReadTokens,
-      0,
-    );
 
+    expect(daily.inputTokens).toBe(100);
+    expect(daily.cacheReadTokens).toBe(900);
     expect(daily.totalTokens).toBe(1_050);
-    expect(modelTokens).toBe(daily.totalTokens);
-    expect(modelTokensWithCacheDoubleCounted).toBe(1_950);
+    expect(daily.modelBreakdowns[0]).toMatchObject({ inputTokens: 100, cacheReadTokens: 900, outputTokens: 50 });
   });
 
   it('calculates per-model costs independently instead of splitting evenly', () => {

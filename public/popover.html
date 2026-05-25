@@ -45,6 +45,8 @@
 
     .shell {
       position: relative;
+      display: flex;
+      flex-direction: column;
       width: 100%;
       height: 100%;
       background: rgba(255, 255, 255, 0.76);
@@ -58,16 +60,37 @@
     .toolbar {
       display: flex;
       align-items: center;
-      justify-content: flex-start;
-      padding: 14px 18px 12px;
+      justify-content: space-between;
+      padding: 10px 24px 9px;
       border-bottom: 1px solid rgba(225, 230, 228, 0.94);
       background: linear-gradient(180deg, rgba(255, 255, 255, 0.84), rgba(248, 250, 249, 0.78));
     }
 
     .toolbar-label {
-      font-size: 12px;
-      color: var(--muted);
+      font-size: 15px;
+      line-height: 1.1;
+      color: var(--fg);
       margin: 0;
+      letter-spacing: 0;
+      font-weight: 500;
+    }
+
+    .toolbar-label strong {
+      font-weight: 700;
+    }
+
+    .cache-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 22px;
+      padding: 0 9px;
+      border-radius: 8px;
+      border: 1px solid color-mix(in oklch, var(--accent-strong) 36%, var(--border));
+      background: color-mix(in oklch, var(--accent) 12%, white);
+      color: color-mix(in oklch, var(--accent-strong) 76%, black);
+      font-size: 11px;
+      font-weight: 600;
     }
 
     /* Error banner — shown when API is unreachable */
@@ -83,55 +106,104 @@
     .error-banner.visible { display: block; }
 
     .content {
-      height: calc(100% - 48px);
-      padding: 18px;
-      display: grid;
-      grid-template-rows: auto auto auto;
-      gap: 14px;
+      flex: 1 1 auto;
+      min-height: 0;
+      padding: 0 24px 0;
+      display: flex;
+      flex-direction: column;
       background: linear-gradient(180deg, rgba(250, 252, 251, 0.85), rgba(244, 247, 245, 0.7));
     }
 
     .content.has-error {
-      height: calc(100% - 48px - 28px);
+      min-height: 0;
     }
 
     .summary {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
+      flex: 0 0 auto;
+      padding: 7px 0 7px;
+      border-bottom: 1px solid var(--border);
     }
 
-    .card {
-      padding: 12px;
-      border-radius: var(--radius-card);
-      border: 1px solid var(--border);
-      background: var(--surface-strong);
+    .summary-top {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: end;
+      gap: 12px;
+      margin-bottom: 8px;
     }
 
     .card-label {
       margin: 0 0 6px;
-      font-size: 11px;
+      font-size: 12px;
       color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.08em;
+      letter-spacing: 0;
     }
 
     .card-value {
       margin: 0;
       font-family: var(--font-display);
-      font-size: 22px;
-      line-height: 1;
+      font-size: 32px;
+      line-height: 0.95;
       letter-spacing: -0.05em;
       font-weight: 700;
     }
 
     .card-value.empty { color: var(--muted); }
 
-    .card-meta {
-      margin: 6px 0 0;
+    .cost-value {
+      margin: 0 0 2px;
+      font-family: var(--font-display);
+      font-size: 25px;
+      line-height: 1;
+      color: color-mix(in oklch, var(--accent-strong) 76%, black);
+      letter-spacing: -0.04em;
+      font-weight: 600;
+    }
+
+    .mini-metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      border-top: 1px solid var(--border);
+      padding-top: 7px;
+    }
+
+    .mini-metric {
+      min-width: 0;
+      padding-inline: 14px;
+      border-left: 1px solid var(--border);
+      text-align: center;
+    }
+
+    .mini-metric:first-child {
+      padding-left: 0;
+      border-left: 0;
+      text-align: left;
+    }
+
+    .mini-metric:last-child {
+      padding-right: 0;
+      text-align: right;
+    }
+
+    .mini-label {
+      margin: 0 0 5px;
       font-size: 11px;
       color: var(--muted);
     }
+
+    .mini-value {
+      margin: 0;
+      font-family: var(--font-display);
+      font-size: 15px;
+      line-height: 1;
+      color: var(--fg);
+      letter-spacing: -0.02em;
+      font-weight: 600;
+    }
+
+    .mini-value.input { color: color-mix(in oklch, var(--accent-strong) 76%, black); }
+    .mini-value.output { color: oklch(45% 0.13 255); }
+    .mini-value.cached { color: oklch(62% 0.15 75); }
 
     /* Shimmer skeleton for loading state */
     .skeleton {
@@ -150,56 +222,92 @@
     }
 
     .chart-panel {
-      padding: 16px;
-      border-radius: var(--radius-panel);
-      border: 1px solid var(--border);
-      background: linear-gradient(180deg, rgba(255, 255, 255, 0.97), rgba(247, 250, 248, 0.9));
+      flex: 0 0 auto;
+      padding: 9px 0 7px;
+      border-radius: 0;
+      border: 0;
+      border-bottom: 1px solid var(--border);
+      background: transparent;
     }
 
     .chart-header {
-      margin-bottom: 14px;
+      display: flex;
+      justify-content: flex-start;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 10px;
     }
 
     .eyebrow {
       margin: 0;
-      font-family: var(--font-mono);
-      font-size: 11px;
-      color: var(--muted);
-      text-transform: uppercase;
-      letter-spacing: 0.12em;
+      font-family: var(--font-body);
+      font-size: 13px;
+      color: var(--fg);
+      text-transform: none;
+      letter-spacing: 0;
+      font-weight: 700;
     }
 
     .chart-frame {
       display: grid;
-      grid-template-columns: max-content 1fr;
-      gap: 6px;
+      grid-template-columns: 34px 1fr;
+      grid-template-rows: 88px 18px;
+      gap: 5px;
       align-items: stretch;
-      min-height: 190px;
+      row-gap: 5px;
     }
 
     .y-axis {
-      display: flex;
-      flex-direction: column;
-      justify-content: space-between;
-      align-items: flex-end;
-      width: max-content;
-      padding-block: 6px 24px;
+      position: relative;
+      grid-column: 1;
+      grid-row: 1;
       color: var(--muted);
       font-family: var(--font-mono);
-      font-size: 10px;
+      font-size: 9px;
+    }
+
+    .y-axis span {
+      position: absolute;
+      inset-inline-end: 0;
+      line-height: 1;
+      transform: translateY(-50%);
     }
 
     .plot {
       position: relative;
-      border-inline-start: 1px solid var(--border);
-      border-block-end: 1px solid var(--border);
-      padding: 6px 12px 24px 14px;
+      grid-column: 2;
+      grid-row: 1;
+      border-inline-start: 0;
+      border-block-end: 0;
+      padding: 0 10px 0 12px;
       display: grid;
       align-items: end;
-      gap: 8px;
-      background:
-        linear-gradient(to top, rgba(212, 218, 215, 0.6) 1px, transparent 1px) 0 0 / 100% calc((100% - 24px) / var(--grid-lines, 4)),
-        transparent;
+      gap: 3px;
+      background: transparent;
+    }
+
+    .plot::before {
+      content: "";
+      position: absolute;
+      inset-block: 0;
+      inset-inline-start: 0;
+      width: 1px;
+      background: rgba(180, 190, 187, 0.72);
+      pointer-events: none;
+    }
+
+    .plot-grid {
+      position: absolute;
+      inset: 0;
+      pointer-events: none;
+      z-index: 0;
+    }
+
+    .plot-grid-line {
+      position: absolute;
+      inset-inline: 0;
+      height: 1px;
+      border-top: 1px dashed rgba(174, 186, 181, 0.58);
     }
 
     /* Empty state for chart */
@@ -211,7 +319,7 @@
       height: 100%;
       gap: 6px;
       color: var(--muted);
-      font-size: 12px;
+      font-size: 10px;
       text-align: center;
     }
 
@@ -233,28 +341,60 @@
       display: flex;
       align-items: end;
       justify-content: center;
+      z-index: 1;
     }
 
     .bar {
       width: 100%;
-      max-width: 22px;
-      border-radius: 8px 8px 3px 3px;
+      max-width: 7px;
+      border-radius: 4px 4px 2px 2px;
       background: linear-gradient(180deg, color-mix(in oklch, var(--accent) 60%, white), var(--accent));
       box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
     }
 
-    .bar.zero { opacity: 0.35; }
+    .bar.zero { opacity: 0; }
 
     .bar.peak {
       background: linear-gradient(180deg, color-mix(in oklch, var(--accent) 85%, white), var(--accent-strong));
     }
 
     .bar-label {
-      position: absolute;
-      inset-block-end: -20px;
       font-family: var(--font-mono);
-      font-size: 10px;
+      font-size: 9px;
       color: var(--muted);
+    }
+
+    .x-axis {
+      grid-column: 2;
+      grid-row: 2;
+      display: grid;
+      align-items: start;
+      padding: 0 10px 0 12px;
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--muted);
+    }
+
+    .x-axis-label {
+      justify-self: center;
+      position: relative;
+      line-height: 1;
+      white-space: nowrap;
+    }
+
+    .x-axis-label::before {
+      content: "";
+      position: absolute;
+      inset-block-start: -7px;
+      inset-inline-start: 50%;
+      width: 1px;
+      height: 4px;
+      background: rgba(150, 162, 158, 0.46);
+      transform: translateX(-50%);
+    }
+
+    .x-axis-label.is-unlabeled {
+      color: transparent;
     }
 
     .bar-tip {
@@ -270,62 +410,168 @@
       white-space: nowrap;
     }
 
+    .usage-panel {
+      flex: 0 0 auto;
+      padding: 6px 0 3px;
+      overflow: visible;
+      border-bottom: 1px solid rgba(211, 218, 215, 0.82);
+    }
+
+    .usage-panel:last-of-type {
+      flex: 1 1 auto;
+      border-bottom: 0;
+    }
+
+    .usage-panel + .usage-panel {
+      border-bottom: 0;
+    }
+
+    .usage-title {
+      margin: 0;
+      font-size: 13px;
+      font-weight: 700;
+    }
+
+    .usage-header {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 44px 44px 50px;
+      align-items: center;
+      gap: 8px;
+      margin-bottom: 4px;
+    }
+
+    .usage-header-stat {
+      font-family: var(--font-mono);
+      font-size: 9px;
+      color: var(--muted);
+      text-align: right;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .usage-list {
+      display: grid;
+      gap: 1px;
+    }
+
+    .usage-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 44px 44px 50px;
+      align-items: center;
+      gap: 8px;
+      min-height: 21px;
+      border-bottom: 0;
+      font-size: 11px;
+    }
+
+    .usage-row + .usage-row {
+      box-shadow: none;
+    }
+
+    .usage-name {
+      min-width: 0;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      color: var(--fg);
+      font-weight: 500;
+    }
+
+    .usage-stat {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      white-space: nowrap;
+      text-align: right;
+    }
+
+    .usage-stat.input { color: color-mix(in oklch, var(--accent-strong) 76%, black); }
+    .usage-stat.output { color: oklch(45% 0.13 255); }
+    .usage-stat.cached { color: oklch(62% 0.15 75); }
+
+    .usage-empty {
+      padding: 12px 0 11px;
+      color: var(--muted);
+      font-size: 12px;
+      text-align: center;
+    }
+
     .actions {
       display: grid;
       grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 8px;
-      align-self: end;
+      gap: 0;
+      margin-top: auto;
+      margin-inline: -24px;
+      padding: 3px 18px 4px;
+      border-top: 1px solid var(--border);
+      background: rgba(248, 250, 249, 0.86);
     }
 
     .action {
       appearance: none;
-      border: 1px solid var(--border);
-      border-radius: 14px;
-      min-height: 42px;
-      padding: 0 14px;
+      border: 0;
+      border-radius: 10px;
+      min-height: 25px;
+      padding: 0 6px;
       font-family: var(--font-body);
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 11px;
+      font-weight: 500;
       cursor: pointer;
       transition: transform 160ms ease, background-color 160ms ease, border-color 160ms ease, opacity 160ms ease;
+      background: transparent;
+      color: var(--muted);
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
     }
 
-    .action:hover { transform: translateY(-1px); }
+    .action:hover { background: rgba(233, 238, 235, 0.72); }
     .action:disabled { opacity: 0.6; cursor: default; transform: none; }
 
-    .action.primary {
-      background: #1f2423;
-      border-color: #1f2423;
-      color: white;
+    .action-icon {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      width: 15px;
+      height: 15px;
+      margin-right: 6px;
+      vertical-align: -1px;
     }
 
-    .action.secondary {
-      background: rgba(255, 255, 255, 0.94);
-      color: var(--fg);
+    .action-icon svg {
+      width: 15px;
+      height: 15px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
     }
+
+    .action.primary,
+    .action.secondary { color: var(--muted); }
 
     .drawer-overlay {
       position: absolute;
       inset: 0;
-      background: transparent;
+      background: rgba(255, 255, 255, 0.76);
+      border: 1px solid rgba(255, 255, 255, 0.72);
+      border-radius: var(--radius-shell);
       opacity: 0;
       pointer-events: none;
       transition: opacity 200ms ease;
       overflow: hidden;
-      border-radius: var(--radius-shell);
+      backdrop-filter: blur(28px);
     }
 
     .drawer {
       height: 100%;
-      display: grid;
-      grid-template-rows: auto 1fr auto;
-      gap: 14px;
-      padding: 14px;
+      display: flex;
+      flex-direction: column;
+      padding: 0 24px;
       border-radius: var(--radius-shell);
-      background: rgba(255, 255, 255, 0.96);
-      backdrop-filter: blur(20px);
-      border: 1px solid rgba(255, 255, 255, 0.84);
-      box-shadow: 0 18px 48px rgba(20, 28, 38, 0.14);
+      background: linear-gradient(180deg, rgba(250, 252, 251, 0.85), rgba(244, 247, 245, 0.7));
+      border: none;
+      box-shadow: none;
       transform: translateY(10px);
       opacity: 0;
       transition: transform 220ms ease, opacity 220ms ease;
@@ -344,36 +590,67 @@
     .drawer-header {
       display: flex;
       align-items: center;
-      justify-content: flex-start;
+      gap: 8px;
+      min-height: 48px;
+      border-bottom: 1px solid var(--border);
     }
 
     .drawer-back {
       appearance: none;
-      border: 1px solid var(--border);
-      background: rgba(255, 255, 255, 0.94);
-      color: var(--fg);
+      border: 0;
+      background: transparent;
+      color: var(--muted);
       display: inline-flex;
       align-items: center;
-      gap: 4px;
-      min-width: auto;
-      height: 32px;
-      padding: 0 12px;
-      border-radius: 999px;
-      font-size: 13px;
-      font-weight: 600;
+      justify-content: center;
+      width: 22px;
+      height: 22px;
+      padding: 0;
+      margin-left: -4px;
+      border-radius: 6px;
+      font-size: 0;
       font-family: var(--font-body);
       cursor: pointer;
+      transition: background-color 160ms ease, color 160ms ease;
+    }
+
+    .drawer-back:hover {
+      background: rgba(233, 238, 235, 0.72);
+      color: var(--fg);
     }
 
     .drawer-back-arrow {
-      font-size: 17px;
-      line-height: 1;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .drawer-back-arrow svg {
+      width: 15px;
+      height: 15px;
+      stroke: currentColor;
+      fill: none;
+      stroke-width: 2;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+    }
+
+    .drawer-heading {
+      min-width: 0;
+    }
+
+    .drawer-title {
+      margin: 0;
+      font-size: 15px;
+      line-height: 1.1;
+      font-weight: 700;
     }
 
     .settings-list {
       display: grid;
       align-content: start;
-      gap: 8px;
+      gap: 0;
+      padding: 7px 0 0;
     }
 
     .settings-row {
@@ -381,15 +658,14 @@
       align-items: center;
       justify-content: space-between;
       gap: 12px;
-      padding: 12px 14px;
-      border-radius: 14px;
-      border: 1px solid var(--border);
-      background: rgba(250, 252, 251, 0.94);
+      min-height: 48px;
+      padding: 6px 0;
+      border-bottom: 1px solid var(--border);
+      background: transparent;
     }
 
     .settings-row.has-update {
-      border-color: color-mix(in oklch, var(--notice) 38%, var(--border));
-      background: color-mix(in oklch, var(--notice) 8%, white);
+      border-color: color-mix(in oklch, var(--notice) 30%, var(--border));
     }
 
     .settings-copy {
@@ -398,8 +674,8 @@
 
     .settings-label {
       margin: 0;
-      font-size: 13px;
-      font-weight: 600;
+      font-size: 12px;
+      font-weight: 700;
     }
 
     .settings-title-line {
@@ -411,7 +687,7 @@
     .update-pill {
       display: none;
       padding: 2px 6px;
-      border-radius: 999px;
+      border-radius: 7px;
       background: color-mix(in oklch, var(--notice) 20%, white);
       color: color-mix(in oklch, var(--notice) 82%, black);
       font-family: var(--font-mono);
@@ -427,18 +703,19 @@
 
     .settings-meta {
       margin: 3px 0 0;
-      font-size: 11px;
+      font-size: 10px;
       color: var(--muted);
+      line-height: 1.25;
     }
 
     .settings-value {
       display: inline-flex;
       align-items: center;
       justify-content: center;
-      min-height: 28px;
-      min-width: 58px;
+      min-height: 26px;
+      min-width: 54px;
       padding-inline: 10px;
-      border-radius: 999px;
+      border-radius: 9px;
       border: 1px solid var(--border);
       background: rgba(255, 255, 255, 0.96);
       color: var(--muted);
@@ -450,6 +727,11 @@
     .settings-value.button {
       cursor: pointer;
       color: var(--fg);
+      transition: background-color 160ms ease, border-color 160ms ease;
+    }
+
+    .settings-value.button:hover {
+      background: rgba(247, 249, 248, 0.96);
     }
 
     .settings-value.button.primary-update {
@@ -459,90 +741,12 @@
       font-weight: 700;
     }
 
-    /* Agent filter dropdown */
-    .agent-dropdown-wrap {
-      position: relative;
-    }
-
-    .agent-dropdown-trigger {
-      cursor: pointer;
-      color: var(--fg);
-      padding-right: 24px;
-      position: relative;
-    }
-
-    .agent-dropdown-trigger::after {
-      content: "▾";
-      position: absolute;
-      right: 10px;
-      font-size: 10px;
-      top: 50%;
-      transform: translateY(-50%);
-    }
-
-    .agent-dropdown-menu {
-      display: none;
-      position: absolute;
-      right: 0;
-      top: calc(100% + 6px);
-      min-width: 160px;
-      padding: 6px;
-      border-radius: 14px;
-      border: 1px solid var(--border);
-      background: white;
-      box-shadow: 0 8px 24px rgba(20, 28, 38, 0.12);
-      z-index: 10;
-    }
-
-    .agent-dropdown-menu.open { display: block; }
-
-    .agent-option {
-      display: flex;
-      align-items: center;
-      gap: 8px;
-      padding: 8px 10px;
-      border-radius: 10px;
-      cursor: pointer;
-      font-size: 13px;
-      font-weight: 500;
-      transition: background 120ms ease;
-    }
-
-    .agent-option:hover { background: rgba(240, 244, 242, 0.9); }
-
-    .agent-checkbox {
-      width: 16px;
-      height: 16px;
-      border-radius: 4px;
-      border: 1.5px solid var(--border);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      font-size: 10px;
-      flex-shrink: 0;
-      transition: background 120ms ease, border-color 120ms ease;
-    }
-
-    .agent-checkbox.checked {
-      background: color-mix(in oklch, var(--accent) 72%, white);
-      border-color: var(--accent);
-    }
-
-    .agent-checkbox.checked::after {
-      content: "✓";
-      color: white;
-      font-weight: 700;
-      font-size: 10px;
-    }
-
     .settings-divider {
-      height: 1px;
-      background: var(--border);
-      margin: 4px 0;
+      height: 8px;
     }
 
     .settings-quit-row {
-      border-color: rgba(192, 57, 43, 0.15);
+      border-bottom: 0;
     }
 
     .settings-quit-btn {
@@ -550,19 +754,21 @@
     }
 
     .settings-version {
-      text-align: center;
+      margin-top: auto;
+      border-top: 1px solid var(--border);
+      text-align: left;
       font-family: var(--font-mono);
-      font-size: 11px;
+      font-size: 10px;
       color: var(--muted);
-      letter-spacing: 0.06em;
-      text-transform: uppercase;
-      padding-block: 2px 6px;
+      letter-spacing: 0;
+      text-transform: none;
+      padding-block: 10px 13px;
     }
 
     .switch {
       position: relative;
-      width: 44px;
-      height: 26px;
+      width: 42px;
+      height: 24px;
       border-radius: 999px;
       border: 1px solid color-mix(in srgb, #000 7%, transparent);
       background: rgba(228, 231, 229, 0.9);
@@ -575,8 +781,8 @@
       position: absolute;
       inset-block-start: 2px;
       inset-inline-start: 2px;
-      width: 20px;
-      height: 20px;
+      width: 18px;
+      height: 18px;
       border-radius: 50%;
       background: white;
       box-shadow: 0 1px 3px rgba(20, 28, 38, 0.18);
@@ -595,7 +801,8 @@
 <body>
   <main class="shell" aria-label="Token dashboard menu" data-view="main">
     <header class="toolbar">
-      <p class="toolbar-label">Today <span id="date"></span></p>
+      <p class="toolbar-label"><strong>Today</strong> · <span id="date"></span></p>
+      <div class="cache-pill" id="cache-pill">cache --</div>
     </header>
 
     <div class="error-banner" id="error-banner">
@@ -604,22 +811,27 @@
 
     <section class="content" id="content">
       <section class="summary" aria-label="Summary metrics">
-        <article class="card">
-          <p class="card-label">Total</p>
-          <p class="card-value" id="total-tokens"><span class="skeleton"></span></p>
-        </article>
-        <article class="card">
-          <p class="card-label">Input</p>
-          <p class="card-value" id="input"><span class="skeleton"></span></p>
-        </article>
-        <article class="card">
-          <p class="card-label">Output</p>
-          <p class="card-value" id="output"><span class="skeleton"></span></p>
-        </article>
-        <article class="card">
-          <p class="card-label">Hit rate</p>
-          <p class="card-value" id="cache-rate"><span class="skeleton"></span></p>
-        </article>
+        <div class="summary-top">
+          <div>
+            <p class="card-label">Total</p>
+            <p class="card-value" id="total-tokens"><span class="skeleton"></span></p>
+          </div>
+          <p class="cost-value" id="total-cost">$--</p>
+        </div>
+        <div class="mini-metrics" aria-label="Token breakdown">
+          <div class="mini-metric">
+            <p class="mini-label">In</p>
+            <p class="mini-value input" id="input"><span class="skeleton"></span></p>
+          </div>
+          <div class="mini-metric">
+            <p class="mini-label">Out</p>
+            <p class="mini-value output" id="output"><span class="skeleton"></span></p>
+          </div>
+          <div class="mini-metric">
+            <p class="mini-label">Cached</p>
+            <p class="mini-value cached" id="cached"><span class="skeleton"></span></p>
+          </div>
+        </div>
       </section>
 
       <section class="chart-panel" aria-label="Hourly usage">
@@ -630,17 +842,41 @@
           <div class="y-axis" id="y-axis" aria-hidden="true"></div>
           <div class="plot" id="plot">
             <div class="chart-empty">
-              <div class="chart-empty-icon">&#x1F4CA;</div>
               <div class="chart-empty-title">No usage yet</div>
               <div>Start a session to see your hourly breakdown.</div>
             </div>
           </div>
+          <div class="x-axis" id="x-axis" aria-hidden="true"></div>
+        </div>
+      </section>
+
+      <section class="usage-panel" aria-label="Projects">
+        <div class="usage-header">
+          <span class="usage-title">Projects</span>
+          <span class="usage-header-stat">in</span>
+          <span class="usage-header-stat">out</span>
+          <span class="usage-header-stat">cached</span>
+        </div>
+        <div class="usage-list" id="projects-list">
+          <div class="usage-empty">Loading projects...</div>
+        </div>
+      </section>
+
+      <section class="usage-panel" aria-label="Agents">
+        <div class="usage-header">
+          <span class="usage-title">Agents</span>
+          <span class="usage-header-stat">in</span>
+          <span class="usage-header-stat">out</span>
+          <span class="usage-header-stat">cached</span>
+        </div>
+        <div class="usage-list" id="agents-list">
+          <div class="usage-empty">Loading agents...</div>
         </div>
       </section>
 
       <section class="actions" aria-label="Primary actions">
-        <button class="action primary" type="button" id="open-dashboard">Open Dashboard</button>
-        <button class="action secondary" type="button" id="open-settings">Settings</button>
+        <button class="action primary" type="button" id="open-dashboard"><span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3 3v18h18"/><path d="M18 17V9"/><path d="M13 17V5"/><path d="M8 17v-3"/></svg></span>Dashboard</button>
+        <button class="action secondary" type="button" id="open-settings"><span class="action-icon" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg></span>Settings</button>
       </section>
     </section>
 
@@ -648,8 +884,9 @@
       <section class="drawer" aria-label="Settings drawer">
         <div class="drawer-header">
           <button class="drawer-back" type="button" aria-label="Back" id="close-settings">
-            <span class="drawer-back-arrow">&lsaquo;</span>
+            <span class="drawer-back-arrow"><svg viewBox="0 0 24 24"><path d="m15 18-6-6 6-6"/></svg></span>
           </button>
+          <p class="drawer-title">Settings</p>
         </div>
 
         <div class="settings-list">
@@ -670,17 +907,6 @@
               <p class="settings-meta">Keep TokenDash in the menu bar after sign in.</p>
             </div>
             <button class="switch" type="button" id="launch-at-login" role="switch" aria-checked="false" aria-label="Launch at login"></button>
-          </article>
-
-          <article class="settings-row" id="agent-filter-row">
-            <div class="settings-copy">
-              <p class="settings-label">Data sources</p>
-              <p class="settings-meta">Filter which agents contribute to metrics.</p>
-            </div>
-            <div class="agent-dropdown-wrap">
-              <button class="settings-value button agent-dropdown-trigger" type="button" id="agent-dropdown-btn">All</button>
-              <div class="agent-dropdown-menu" id="agent-dropdown-menu"></div>
-            </div>
           </article>
 
           <div class="settings-divider"></div>
@@ -704,22 +930,45 @@
     var port = window.location.port || '3456';
     var apiBase = 'http://localhost:' + port;
     var appInfo = { version: '--', launchAtLogin: false };
-    var availableAgents = [];
-    var selectedAgents = [];
-    var isFirstLoad = true;
     var updateInfo = null;
 
     // --- Helpers ---
 
     function formatNumber(n) {
       if (!Number.isFinite(n) || n <= 0) return '0';
-      if (n >= 1e6) return (n / 1e6).toFixed(1) + 'M';
-      if (n >= 1e3) return (n / 1e3).toFixed(1) + 'K';
+      if (n >= 1e6) return trimTrailingZero((n / 1e6).toFixed(n >= 10e6 ? 1 : 2)) + 'M';
+      if (n >= 1e3) return trimTrailingZero((n / 1e3).toFixed(n >= 100e3 ? 0 : 1)) + 'K';
       return String(Math.round(n));
     }
 
     function formatPercent(n) {
       return (Number.isFinite(n) ? n : 0).toFixed(1) + '%';
+    }
+
+    function formatCost(n) {
+      var value = Number(n) || 0;
+      if (value >= 100) return '$' + Math.round(value);
+      if (value >= 10) return '$' + value.toFixed(1);
+      return '$' + value.toFixed(2);
+    }
+
+    function trimTrailingZero(value) {
+      return String(value).replace(/\.0+$/, '').replace(/(\.\d*[1-9])0+$/, '$1');
+    }
+
+    function formatProjectName(path) {
+      var value = String(path || 'Unknown');
+      var parts = value.split('/').filter(Boolean);
+      return parts[parts.length - 1] || value;
+    }
+
+    function escapeHtml(value) {
+      return String(value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
     }
 
     function getTodayString() {
@@ -740,17 +989,9 @@
     // --- Dynamic chart hours based on current time ---
 
     function getChartHours() {
-      var now = new Date();
-      var currentHour = now.getHours();
       var hours = [];
-      for (var h = 0; h <= currentHour; h += 2) {
+      for (var h = 0; h < 24; h += 1) {
         hours.push(h);
-      }
-      // At least 4 bars
-      while (hours.length < 4) {
-        var next = hours[hours.length - 1] + 2;
-        if (next > 23) break;
-        hours.push(next);
       }
       return hours;
     }
@@ -758,7 +999,7 @@
     // --- Loading & Error states ---
 
     function showSkeletons() {
-      ['total-tokens', 'input', 'output', 'cache-rate'].forEach(function(id) {
+      ['total-tokens', 'input', 'output', 'cached'].forEach(function(id) {
         var el = document.getElementById(id);
         if (el && !el.querySelector('.skeleton')) return; // already has data
         if (el) el.innerHTML = '<span class="skeleton"></span>';
@@ -802,11 +1043,13 @@
       setCardValue('total-tokens', formatNumber(totalTokens), totalTokens === 0);
       setCardValue('input', formatNumber(totalInput), totalInput === 0);
       setCardValue('output', formatNumber(totalOutput), totalOutput === 0);
-      setCardValue('cache-rate', formatPercent(cacheRate), cacheRate === 0);
+      setCardValue('cached', formatNumber(totalCacheRead), totalCacheRead === 0);
+      document.getElementById('total-cost').textContent = formatCost(totalCost);
+      applyMetricFit(document.getElementById('total-cost'), formatCost(totalCost));
+      document.getElementById('cache-pill').textContent = 'cache ' + formatPercent(cacheRate);
 
       return {
         today: todayStr,
-        agentKey: selectedAgents.slice().sort().join(','),
         totalTokens: totalTokens,
         totalInput: totalInput,
         totalCost: totalCost,
@@ -818,6 +1061,24 @@
       var el = document.getElementById(id);
       el.textContent = text;
       el.classList.toggle('empty', isEmpty);
+      applyMetricFit(el, text);
+    }
+
+    function applyMetricFit(el, text) {
+      if (!el) return;
+      var length = String(text || '').length;
+
+      if (el.id === 'total-tokens') {
+        el.style.fontSize = length >= 8 ? '27px' : length >= 6 ? '29px' : '32px';
+        return;
+      }
+
+      if (el.id === 'total-cost') {
+        el.style.fontSize = length >= 8 ? '21px' : length >= 6 ? '23px' : '25px';
+        return;
+      }
+
+      el.style.fontSize = length >= 8 ? '13px' : '15px';
     }
 
     // --- Chart rendering ---
@@ -848,13 +1109,14 @@
 
       var plot = document.getElementById('plot');
       var axis = document.getElementById('y-axis');
+      var xAxis = document.getElementById('x-axis');
 
       // Empty state
       if (maxValue === 0) {
         axis.innerHTML = '';
+        xAxis.innerHTML = '';
         plot.innerHTML = '';
         plot.style.gridTemplateColumns = '';
-        plot.style.removeProperty('--grid-lines');
         plot.innerHTML = '<div class="chart-empty">' +
           '<div class="chart-empty-title">No usage yet</div>' +
           '<div>Start a session to see your hourly breakdown.</div>' +
@@ -867,7 +1129,7 @@
       var maxEntry = selected.reduce(function(max, entry) {
         return !max || entry.value > max.value ? entry : max;
       }, null);
-      renderBars(selected, axisInfo.top, maxEntry);
+      renderBars(selected, axisInfo, maxEntry);
     }
 
     function niceIncrement(rawStep) {
@@ -900,30 +1162,39 @@
 
     function renderAxis(info) {
       var axis = document.getElementById('y-axis');
-      var plot = document.getElementById('plot');
       axis.innerHTML = info.ticks.map(function(tick) {
-        return '<span>' + formatNumber(tick) + '</span>';
+        var top = ((info.top - tick) / info.top) * 100;
+        return '<span style="top: ' + top + '%">' + formatNumber(tick) + '</span>';
       }).join('');
-      plot.style.setProperty('--grid-lines', Math.max(info.ticks.length - 1, 1));
     }
 
-    function renderBars(selected, maxValue, maxEntry) {
+    function renderBars(selected, axisInfo, maxEntry) {
       var plot = document.getElementById('plot');
+      var xAxis = document.getElementById('x-axis');
       plot.innerHTML = '';
-      plot.style.gridTemplateColumns = 'repeat(' + selected.length + ', minmax(0, 1fr))';
+      plot.style.gridTemplateColumns = 'repeat(24, minmax(0, 1fr))';
+      xAxis.innerHTML = '';
+      xAxis.style.gridTemplateColumns = 'repeat(24, minmax(0, 1fr))';
+      renderGrid(plot, axisInfo);
 
-      // Adjust gap based on number of bars
-      var gap = selected.length > 10 ? '4px' : selected.length > 6 ? '6px' : '8px';
+      // Dynamic gap and bar width based on bar count
+      var count = selected.filter(function(entry) { return entry.value > 0; }).length;
+      var gap = '2px';
+      var barMaxWidth = count > 10 ? '7px' : count > 6 ? '9px' : '12px';
       plot.style.gap = gap;
+      xAxis.style.gap = gap;
 
       selected.forEach(function(entry) {
-        var height = entry.value > 0 ? Math.max(8, (entry.value / maxValue) * 100) : 3;
+        if (entry.value <= 0) return;
+        var height = entry.value > 0 ? Math.max(8, (entry.value / axisInfo.top) * 100) : 0;
         var wrap = document.createElement('div');
         wrap.className = 'bar-wrap';
+        wrap.style.gridColumn = String(entry.hour + 1);
         wrap.style.setProperty('--height', height + '%');
 
         var bar = document.createElement('div');
         bar.className = 'bar';
+        bar.style.maxWidth = barMaxWidth + 'px';
         if (entry.value === 0) {
           bar.classList.add('zero');
         } else if (maxEntry && entry.hour === maxEntry.hour && entry.value === maxEntry.value) {
@@ -939,12 +1210,148 @@
           wrap.appendChild(tip);
         }
 
-        var label = document.createElement('span');
-        label.className = 'bar-label';
-        label.textContent = String(entry.hour).padStart(2, '0');
-        wrap.appendChild(label);
-
         plot.appendChild(wrap);
+      });
+
+      renderActiveHourLabels(xAxis, selected, maxEntry);
+    }
+
+    function renderGrid(plot, info) {
+      var grid = document.createElement('div');
+      grid.className = 'plot-grid';
+
+      info.ticks.forEach(function(tick) {
+        var line = document.createElement('span');
+        line.className = 'plot-grid-line';
+        line.style.top = (((info.top - tick) / info.top) * 100) + '%';
+        grid.appendChild(line);
+      });
+
+      plot.appendChild(grid);
+    }
+
+    function renderActiveHourLabels(xAxis, selected, maxEntry) {
+      var active = selected.filter(function(entry) { return entry.value > 0; });
+      var labeledHours = [];
+
+      active.forEach(function(entry) {
+        var isPeak = maxEntry && entry.hour === maxEntry.hour;
+        var hasRoom = labeledHours.every(function(hour) {
+          return Math.abs(entry.hour - hour) >= 3;
+        });
+        var shouldLabel = isPeak || hasRoom;
+
+        if (shouldLabel) labeledHours.push(entry.hour);
+
+        var label = document.createElement('span');
+        label.className = 'x-axis-label' + (shouldLabel ? '' : ' is-unlabeled');
+        label.style.gridColumn = String(entry.hour + 1);
+        label.textContent = String(entry.hour).padStart(2, '0') + ':00';
+        xAxis.appendChild(label);
+      });
+    }
+
+    function renderProjects(allProjects) {
+      var todayStr = getTodayString();
+      var totals = {};
+
+      (allProjects || []).forEach(function(data) {
+        var projects = data && data.projects;
+        if (!projects) return;
+
+        Object.keys(projects).forEach(function(projectPath) {
+          var todayEntries = (projects[projectPath] || []).filter(function(entry) {
+            return entry && entry.date === todayStr;
+          });
+          if (todayEntries.length === 0) return;
+
+          if (!totals[projectPath]) {
+            totals[projectPath] = { path: projectPath, input: 0, output: 0, cached: 0, total: 0 };
+          }
+          todayEntries.forEach(function(entry) {
+            totals[projectPath].input += entry.inputTokens || 0;
+            totals[projectPath].output += entry.outputTokens || 0;
+            totals[projectPath].cached += entry.cacheReadTokens || 0;
+            totals[projectPath].total += entry.totalTokens || 0;
+          });
+        });
+      });
+
+      var rows = Object.keys(totals).map(function(key) { return totals[key]; })
+        .sort(function(a, b) { return b.total - a.total; })
+        .slice(0, 4);
+      var list = document.getElementById('projects-list');
+
+      if (rows.length === 0) {
+        list.innerHTML = '<div class="usage-empty">No project usage today.</div>';
+        return;
+      }
+
+      list.innerHTML = '';
+      rows.forEach(function(row) {
+        var item = document.createElement('div');
+        item.className = 'usage-row';
+        item.innerHTML =
+          '<span class="usage-name" title="' + escapeHtml(row.path) + '">' + escapeHtml(formatProjectName(row.path)) + '</span>' +
+          '<span class="usage-stat input">' + formatNumber(row.input) + '</span>' +
+          '<span class="usage-stat output">' + formatNumber(row.output) + '</span>' +
+          '<span class="usage-stat cached">' + formatNumber(row.cached) + '</span>';
+        list.appendChild(item);
+      });
+    }
+
+    function formatAgentName(agent) {
+      var names = {
+        claude: 'Claude Code',
+        codex: 'Codex',
+        openclaw: 'OpenClaw',
+        opencode: 'OpenCode'
+      };
+      return names[agent] || agent;
+    }
+
+    function renderAgents(allDaily, agents) {
+      var todayStr = getTodayString();
+      var rows = (agents || []).map(function(agent, index) {
+        var data = (allDaily || [])[index];
+        var entry = null;
+        if (data && Array.isArray(data.daily)) {
+          entry = data.daily.find(function(day) { return day && day.date === todayStr; });
+        }
+        var input = entry ? (entry.inputTokens || 0) : 0;
+        var output = entry ? (entry.outputTokens || 0) : 0;
+        var cached = entry ? (entry.cacheReadTokens || 0) : 0;
+        return {
+          name: formatAgentName(agent),
+          input: input,
+          output: output,
+          cached: cached,
+          total: entry ? (entry.totalTokens || input + output + cached) : 0
+        };
+      }).filter(function(row) {
+        return row.total > 0 || row.input > 0 || row.output > 0;
+      }).sort(function(a, b) {
+        return b.total - a.total;
+      });
+
+      var list = document.getElementById('agents-list');
+      if (!list) return;
+
+      if (rows.length === 0) {
+        list.innerHTML = '<div class="usage-empty">No agent usage today.</div>';
+        return;
+      }
+
+      list.innerHTML = '';
+      rows.forEach(function(row) {
+        var item = document.createElement('div');
+        item.className = 'usage-row';
+        item.innerHTML =
+          '<span class="usage-name" title="' + escapeHtml(row.name) + '">' + escapeHtml(row.name) + '</span>' +
+          '<span class="usage-stat input">' + formatNumber(row.input) + '</span>' +
+          '<span class="usage-stat output">' + formatNumber(row.output) + '</span>' +
+          '<span class="usage-stat cached">' + formatNumber(row.cached) + '</span>';
+        list.appendChild(item);
       });
     }
 
@@ -1039,87 +1446,6 @@
       });
     }
 
-    // --- Agent filter ---
-
-    function loadSelectedAgents() {
-      try {
-        var saved = localStorage.getItem('tokendash:selected-agents');
-        if (saved) return JSON.parse(saved);
-      } catch(e) {}
-      return null;
-    }
-
-    function saveSelectedAgents() {
-      try {
-        localStorage.setItem('tokendash:selected-agents', JSON.stringify(selectedAgents));
-      } catch(e) {}
-      // Sync to main process for tray badge updates
-      if (window.electronAPI && window.electronAPI.setSelectedAgents) {
-        window.electronAPI.setSelectedAgents(selectedAgents);
-      }
-    }
-
-    function updateAgentDropdownLabel() {
-      var btn = document.getElementById('agent-dropdown-btn');
-      if (selectedAgents.length === availableAgents.length) {
-        btn.textContent = 'All';
-      } else {
-        btn.textContent = selectedAgents.length + ' of ' + availableAgents.length;
-      }
-    }
-
-    function renderAgentDropdown() {
-      var menu = document.getElementById('agent-dropdown-menu');
-      menu.innerHTML = '';
-
-      availableAgents.forEach(function(agent) {
-        var isChecked = selectedAgents.indexOf(agent) !== -1;
-        var option = document.createElement('div');
-        option.className = 'agent-option';
-        option.innerHTML =
-          '<div class="agent-checkbox' + (isChecked ? ' checked' : '') + '"></div>' +
-          '<span>' + agent.charAt(0).toUpperCase() + agent.slice(1) + '</span>';
-
-        option.addEventListener('click', function(e) {
-          e.stopPropagation();
-          var idx = selectedAgents.indexOf(agent);
-          if (idx !== -1) {
-            // Don't allow deselecting the last agent
-            if (selectedAgents.length <= 1) return;
-            selectedAgents.splice(idx, 1);
-          } else {
-            selectedAgents.push(agent);
-          }
-          saveSelectedAgents();
-          renderAgentDropdown();
-          updateAgentDropdownLabel();
-          fetchData();
-        });
-
-        menu.appendChild(option);
-      });
-
-      updateAgentDropdownLabel();
-
-      // Show/hide the row if only 1 agent available
-      var row = document.getElementById('agent-filter-row');
-      row.style.display = availableAgents.length <= 1 ? 'none' : '';
-    }
-
-    function initAgentFilter(agents) {
-      availableAgents = agents;
-      var saved = loadSelectedAgents();
-      if (saved) {
-        // Filter saved to only include agents that are actually available
-        selectedAgents = saved.filter(function(a) { return agents.indexOf(a) !== -1; });
-        if (selectedAgents.length === 0) selectedAgents = agents.slice(); // fallback
-      } else {
-        selectedAgents = agents.slice(); // default: all selected
-      }
-      renderAgentDropdown();
-      saveSelectedAgents();
-    }
-
     // --- Data fetching ---
 
     function fetchData() {
@@ -1130,30 +1456,30 @@
         .then(function(agentData) {
           var agents = (agentData && agentData.available) ? agentData.available : ['claude'];
 
-          // Init agent filter on first load or if agents changed
-          if (isFirstLoad || agents.length !== availableAgents.length) {
-            initAgentFilter(agents);
-            isFirstLoad = false;
-          }
-
-          // Use filtered agents
-          var fetchAgents = selectedAgents.length > 0 ? selectedAgents : agents;
-
-          return Promise.all(fetchAgents.map(function(agent) {
+          return Promise.all(agents.map(function(agent) {
             return fetchJson(apiBase + '/api/daily?agent=' + agent).catch(function() { return null; });
           })).then(function(dailyResults) {
-            // Also fetch blocks for all selected agents
-            var blockPromises = fetchAgents.map(function(agent) {
+            var blockPromises = agents.map(function(agent) {
               return fetchJson(apiBase + '/api/blocks?agent=' + agent).catch(function() { return null; });
             });
-            return Promise.all(blockPromises).then(function(blockResults) {
-              return { dailyResults: dailyResults, blockResults: blockResults };
+            var projectPromises = agents.map(function(agent) {
+              return fetchJson(apiBase + '/api/projects?agent=' + agent).catch(function() { return null; });
+            });
+            return Promise.all([Promise.all(blockPromises), Promise.all(projectPromises)]).then(function(results) {
+              return {
+                agents: agents,
+                dailyResults: dailyResults,
+                blockResults: results[0],
+                projectResults: results[1]
+              };
             });
           });
         })
         .then(function(data) {
           var traySnapshot = renderMetrics(data.dailyResults);
           renderChart(data.blockResults);
+          renderProjects(data.projectResults);
+          renderAgents(data.dailyResults, data.agents);
           if (window.electronAPI && window.electronAPI.updateTraySnapshot && traySnapshot.totalTokens > 0) {
             window.electronAPI.updateTraySnapshot(traySnapshot).catch(function() {});
           }
@@ -1210,24 +1536,6 @@
       if (window.electronAPI && window.electronAPI.quitApp) {
         window.electronAPI.quitApp();
       }
-    });
-
-    // Agent dropdown toggle
-    document.getElementById('agent-dropdown-btn').addEventListener('click', function(e) {
-      e.stopPropagation();
-      var menu = document.getElementById('agent-dropdown-menu');
-      menu.classList.toggle('open');
-    });
-
-    // Close dropdown on outside click
-    document.addEventListener('click', function() {
-      var menu = document.getElementById('agent-dropdown-menu');
-      if (menu) menu.classList.remove('open');
-    });
-
-    // Prevent dropdown from closing when clicking inside it
-    document.getElementById('agent-dropdown-menu').addEventListener('click', function(e) {
-      e.stopPropagation();
     });
 
     if (window.electronAPI && window.electronAPI.onUpdateDownloadProgress) {

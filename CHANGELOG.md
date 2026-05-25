@@ -1,5 +1,10 @@
 # Changelog
 
+### v1.6.0
+- **Popover dashboard redesign** — refreshed the menu bar popover with a more native macOS developer-dashboard layout, compact summary metrics, and project/agent usage tables.
+- **Hourly usage chart polish** — aligned Y-axis labels with dashed grid lines, kept peak labels visible, and only shows time labels for hours with usage to reduce chart clutter.
+- **Tray popover fit fixes** — tightened vertical spacing so the Projects, Agents, and bottom action bar remain visible inside the fixed menu bar window.
+
 ### v1.5.0
 - **Project name fix** — correctly display project names with dashes (e.g. `ccusage-dashboard` instead of `dashboard`) using filesystem-based path decoding (#14)
 - **Tool call trend fix** — fill missing tool values with 0 so chart lines don't break when a tool has no data for a given day (#13)

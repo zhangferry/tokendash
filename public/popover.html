@@ -553,7 +553,8 @@
     .drawer-overlay {
       position: absolute;
       inset: 0;
-      background: rgba(255, 255, 255, 0.76);
+      z-index: 20;
+      background: rgba(250, 252, 251, 0.96);
       border: 1px solid rgba(255, 255, 255, 0.72);
       border-radius: var(--radius-shell);
       opacity: 0;
@@ -569,7 +570,7 @@
       flex-direction: column;
       padding: 0 24px;
       border-radius: var(--radius-shell);
-      background: linear-gradient(180deg, rgba(250, 252, 251, 0.85), rgba(244, 247, 245, 0.7));
+      background: linear-gradient(180deg, rgba(250, 252, 251, 0.98), rgba(244, 247, 245, 0.96));
       border: none;
       box-shadow: none;
       transform: translateY(10px);
@@ -1246,7 +1247,7 @@
         var label = document.createElement('span');
         label.className = 'x-axis-label' + (shouldLabel ? '' : ' is-unlabeled');
         label.style.gridColumn = String(entry.hour + 1);
-        label.textContent = String(entry.hour).padStart(2, '0') + ':00';
+        label.textContent = String(entry.hour).padStart(2, '0');
         xAxis.appendChild(label);
       });
     }

@@ -23,11 +23,23 @@ const CLI_USAGE = [
   '  tokendash --tray [--port <number>]',
 ].join('\n');
 
+const PACKAGE_NAME = '@zhangferry-dev/tokendash';
+
 function getPackageVersion(): string {
   const __filename = fileURLToPath(import.meta.url);
   const __dirname = dirname(__filename);
-  const packageJson = JSON.parse(readFileSync(join(__dirname, '..', '..', 'package.json'), 'utf8')) as { version?: string };
-  return packageJson.version ?? 'unknown';
+  const packageJsonPaths = [
+    join(__dirname, '..', '..', 'package.json'), // dist/server/index.js
+    join(__dirname, '..', 'package.json'), // dist/electron-server.cjs
+  ];
+
+  for (const packageJsonPath of packageJsonPaths) {
+    if (!existsSync(packageJsonPath)) continue;
+    const packageJson = JSON.parse(readFileSync(packageJsonPath, 'utf8')) as { version?: string };
+    if (packageJson.version) return packageJson.version;
+  }
+
+  return 'unknown';
 }
 
 function exitWithCliError(message: string): never {
@@ -165,7 +177,11 @@ export function createApp(_port: number, baseDir?: string): Express {
   const router = express.Router();
 
   // Register API routes
-  registerApiRoutes(router);
+  registerApiRoutes(router, {
+    packageName: PACKAGE_NAME,
+    version: getPackageVersion(),
+    dashboardUrl: `http://localhost:${resolvePort(_port)}`,
+  });
   app.use('/api', router);
 
   const { baseDir: _baseDir, isProduction } = resolveStaticAssetBaseDir(import.meta.url, baseDir);

@@ -15,6 +15,14 @@ const { compareVersions, getReleaseUpdateInfo, selectMacDmgAsset } = require('..
   getReleaseUpdateInfo: (release: any, currentVersion: string, arch?: string) => any;
   selectMacDmgAsset: (assets: any[], arch?: string) => any;
 };
+const { buildNpmInstallArgs, shouldInstallPackage } = require('../../../electron/npmSync.cjs') as {
+  buildNpmInstallArgs: (packageName: string, version: string) => string[];
+  shouldInstallPackage: (installedVersion: string | null | undefined, targetVersion: string) => boolean;
+};
+const { getDashboardUrl, isCompatibleServerInfo } = require('../../../electron/serverReuse.cjs') as {
+  getDashboardUrl: (port: number | string | null | undefined) => string;
+  isCompatibleServerInfo: (info: any, expectedVersion: string, expectedPackageName: string) => boolean;
+};
 
 describe('createApp', () => {
   it('returns an Express app', () => {
@@ -33,6 +41,25 @@ describe('createApp', () => {
     try {
       const data = await fetchJson(`http://localhost:${port}/api/agents`);
       expect(data).toHaveProperty('available');
+    } finally {
+      server.close();
+    }
+  });
+
+  it('exposes package version and dashboard URL for CLI/Electron coordination', async () => {
+    const app = createApp(4567);
+    const server = app.listen(0);
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('no address');
+    const port = address.port;
+
+    try {
+      const data = await fetchJson(`http://localhost:${port}/api/app-info`);
+      expect(data).toMatchObject({
+        packageName: '@zhangferry-dev/tokendash',
+        version: '1.6.0',
+        dashboardUrl: `http://localhost:${port}`,
+      });
     } finally {
       server.close();
     }
@@ -85,6 +112,22 @@ describe('resolveStaticAssetBaseDir', () => {
       baseDir: '/opt/homebrew/lib/node_modules/@zhangferry-dev/tokendash/dist',
       isProduction: true,
     });
+  });
+
+  it('reads package metadata from bundled Electron server output', async () => {
+    const app = createApp(7890, '/app/dist');
+    const server = app.listen(0);
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('no address');
+    const port = address.port;
+
+    try {
+      const data = await fetchJson(`http://localhost:${port}/api/app-info`);
+      expect(data.version).toBe('1.6.0');
+      expect(data.dashboardUrl).toBe(`http://localhost:${port}`);
+    } finally {
+      server.close();
+    }
   });
 
   it('keeps explicit production base directories unchanged', () => {
@@ -215,6 +258,36 @@ describe('updateService', () => {
       size: 123,
       url: 'https://example.com/TokenDash.dmg',
     });
+  });
+});
+
+describe('npm package sync helpers', () => {
+  it('installs the exact app version of the npm package', () => {
+    expect(buildNpmInstallArgs('@zhangferry-dev/tokendash', '1.6.0')).toEqual([
+      'install',
+      '-g',
+      '@zhangferry-dev/tokendash@1.6.0',
+    ]);
+  });
+
+  it('skips npm install only when the installed version already matches', () => {
+    expect(shouldInstallPackage('1.6.0', '1.6.0')).toBe(false);
+    expect(shouldInstallPackage('1.5.0', '1.6.0')).toBe(true);
+    expect(shouldInstallPackage(null, '1.6.0')).toBe(true);
+  });
+});
+
+describe('Electron server reuse helpers', () => {
+  it('builds the dashboard URL from the active server port', () => {
+    expect(getDashboardUrl(3456)).toBe('http://localhost:3456');
+    expect(getDashboardUrl('4567')).toBe('http://localhost:4567');
+    expect(getDashboardUrl(undefined)).toBe('http://localhost:3456');
+  });
+
+  it('reuses only matching TokenDash servers', () => {
+    expect(isCompatibleServerInfo({ packageName: '@zhangferry-dev/tokendash', version: '1.6.0' }, '1.6.0', '@zhangferry-dev/tokendash')).toBe(true);
+    expect(isCompatibleServerInfo({ packageName: '@zhangferry-dev/tokendash', version: '1.5.0' }, '1.6.0', '@zhangferry-dev/tokendash')).toBe(false);
+    expect(isCompatibleServerInfo({ packageName: 'other', version: '1.6.0' }, '1.6.0', '@zhangferry-dev/tokendash')).toBe(false);
   });
 });
 

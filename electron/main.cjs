@@ -19,6 +19,8 @@ try {
 
 const { formatTokens } = require('./trayBadge.cjs');
 const { checkForUpdates, downloadUpdateAsset } = require('./updateService.cjs');
+const { syncNpmPackageVersion } = require('./npmSync.cjs');
+const { findCompatibleServer, getDashboardUrl } = require('./serverReuse.cjs');
 
 // Resolve trayHelper binary: extract from asar if needed
 function resolveTrayHelperPath() {
@@ -52,6 +54,7 @@ let server = null;
 let trayProcess = null;
 let selectedAgents = null; // null = use all available agents
 let serverPort = parseInt(process.env.TOKENDASH_PORT || '3456', 10);
+let dashboardUrl = getDashboardUrl(serverPort);
 let lastUpdateInfo = null;
 let isDownloadingUpdate = false;
 const POPOVER_WIDTH = 380;
@@ -97,6 +100,10 @@ function fetchJson(url) {
       });
     }).on('error', reject);
   });
+}
+
+function getServerBaseUrl() {
+  return dashboardUrl || getDashboardUrl(serverPort);
 }
 
 function getAppInfo() {
@@ -245,7 +252,8 @@ function updateTrayBadge() {
   const d = new Date(); const today = d.getFullYear() + "-" + String(d.getMonth()+1).padStart(2,"0") + "-" + String(d.getDate()).padStart(2,"0");
 
   // Fetch agents list, then fetch daily data for each agent in parallel
-  fetchJson(`http://localhost:${serverPort}/api/agents`)
+  const serverBaseUrl = getServerBaseUrl();
+  fetchJson(`${serverBaseUrl}/api/agents`)
     .then((agentData) => {
       let agents = (agentData && Array.isArray(agentData.available)) ? agentData.available : ['claude'];
       if (agents.length === 0) {
@@ -262,7 +270,7 @@ function updateTrayBadge() {
       const agentKey = getTrayAgentKey(agents);
       return Promise.all(
         agents.map(agent =>
-          fetchJson(`http://localhost:${serverPort}/api/daily?agent=${agent}`)
+          fetchJson(`${serverBaseUrl}/api/daily?agent=${agent}`)
             .catch(() => null)
         )
       ).then(results => ({ agentKey, results }));
@@ -350,7 +358,7 @@ function createPopoverWindow() {
     },
   });
 
-  popover.loadURL(`http://localhost:${serverPort}/popover.html`);
+  popover.loadURL(`${getServerBaseUrl()}/popover.html`);
 
   popover.on('blur', () => {
     popover.hide();
@@ -366,8 +374,7 @@ function createPopoverWindow() {
 
 function registerIpcHandlers() {
   ipcMain.handle('tokendash:open-dashboard', (_event, url) => {
-    const target = typeof url === 'string' && url.length > 0 ? url : `http://localhost:${serverPort}`;
-    return shell.openExternal(target);
+    return shell.openExternal(getServerBaseUrl());
   });
 
   ipcMain.handle('tokendash:get-app-info', () => {
@@ -462,15 +469,34 @@ app.whenReady().then(async () => {
     if (server) server.close();
   });
 
-  // Create and bind Express server
-  // Pass dist/ directory so createApp resolves client assets correctly
+  const currentVersion = getAppInfo().version;
+  syncNpmPackageVersion(PACKAGE_NAME, currentVersion).then((result) => {
+    if (!result || result.ok) return;
+    console.warn('Could not sync npm package version:', result.error || 'unknown error');
+  }).catch((error) => {
+    console.warn('Could not sync npm package version:', error instanceof Error ? error.message : String(error));
+  });
+
+  const existingServer = await findCompatibleServer(serverPort, currentVersion, PACKAGE_NAME);
+  if (existingServer) {
+    serverPort = existingServer.port;
+    dashboardUrl = existingServer.dashboardUrl;
+    console.log(`tokendash reusing CLI server on ${dashboardUrl}`);
+    startTrayHelper();
+    createPopoverWindow();
+    return;
+  }
+
+  // Create and bind Express server.
+  // Pass dist/ directory so createApp resolves client assets correctly.
   const distDir = path.join(__dirname, '..', 'dist');
   const expressApp = createApp(serverPort, distDir);
   try {
     const result = await listenWithFallback(expressApp, serverPort);
     server = result.server;
     serverPort = result.port;
-    console.log(`tokendash running on http://localhost:${result.port}`);
+    dashboardUrl = getDashboardUrl(result.port);
+    console.log(`tokendash running on ${dashboardUrl}`);
   } catch (err) {
     console.error('Failed to start server:', err);
     app.quit();

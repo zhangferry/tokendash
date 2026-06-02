@@ -1,5 +1,9 @@
 # Changelog
 
+### v1.6.1
+- **CLI and menu bar dashboard sync** — reuse a compatible same-version CLI/npm service from the macOS menu bar app and keep the globally installed package aligned with the DMG version.
+- **Update check fallback** — keep the menu bar update checker working after GitHub REST API rate limits by falling back to the public latest-release redirect.
+
 ### v1.6.0
 - **Popover dashboard redesign** — refreshed the menu bar popover with a more native macOS developer-dashboard layout, compact summary metrics, and project/agent usage tables.
 - **Hourly usage chart polish** — aligned Y-axis labels with dashed grid lines, kept peak labels visible, and only shows time labels for hours with usage to reduce chart clutter.

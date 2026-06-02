@@ -6,6 +6,7 @@ import { createRequire } from 'node:module';
 import { join } from 'node:path';
 
 const require = createRequire(import.meta.url);
+const { version: packageVersion } = require('../../../package.json') as { version: string };
 const { formatCost, formatTokens } = require('../../../electron/trayBadge.cjs') as {
   formatCost: (cost: number) => string;
   formatTokens: (tokens: number) => string;
@@ -65,7 +66,7 @@ describe('createApp', () => {
       const data = await fetchJson(`http://localhost:${port}/api/app-info`);
       expect(data).toMatchObject({
         packageName: '@zhangferry-dev/tokendash',
-        version: '1.6.0',
+        version: packageVersion,
         dashboardUrl: `http://localhost:${port}`,
       });
     } finally {
@@ -131,7 +132,7 @@ describe('resolveStaticAssetBaseDir', () => {
 
     try {
       const data = await fetchJson(`http://localhost:${port}/api/app-info`);
-      expect(data.version).toBe('1.6.0');
+      expect(data.version).toBe(packageVersion);
       expect(data.dashboardUrl).toBe(`http://localhost:${port}`);
     } finally {
       server.close();

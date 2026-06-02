@@ -30,6 +30,35 @@ function fetchHttpsJson(url) {
   });
 }
 
+function fetchLatestReleaseUrl(repo) {
+  const url = `https://github.com/${repo}/releases/latest`;
+  return new Promise((resolve, reject) => {
+    const opts = new URL(url);
+    const reqOpts = {
+      hostname: opts.hostname,
+      path: opts.pathname + opts.search,
+      method: 'HEAD',
+      headers: {
+        'User-Agent': 'TokenDash',
+      },
+    };
+
+    https.request(reqOpts, (res) => {
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+        resolve(new URL(res.headers.location, url).toString());
+        return;
+      }
+
+      if (res.statusCode && res.statusCode >= 400) {
+        reject(new Error(`HTTP ${res.statusCode}`));
+        return;
+      }
+
+      resolve(url);
+    }).on('error', reject).end();
+  });
+}
+
 function compareVersions(a, b) {
   const aParts = String(a).replace(/^v/, '').split(/[.-]/).map((part) => parseInt(part, 10) || 0);
   const bParts = String(b).replace(/^v/, '').split(/[.-]/).map((part) => parseInt(part, 10) || 0);
@@ -78,9 +107,50 @@ function getReleaseUpdateInfo(release, currentVersion, arch = process.arch) {
   };
 }
 
-async function checkForUpdates({ repo, currentVersion, arch = process.arch }) {
-  const release = await fetchHttpsJson(`https://api.github.com/repos/${repo}/releases/latest`);
-  return getReleaseUpdateInfo(release, currentVersion, arch);
+function buildDmgAssetFromVersion(repo, tagName, arch = process.arch) {
+  const version = String(tagName || '').replace(/^v/, '');
+  const archSuffix = arch === 'arm64' ? 'arm64' : arch === 'x64' ? 'x64' : 'universal';
+  const name = `TokenDash-${version}-${archSuffix}.dmg`;
+
+  return {
+    name,
+    size: 0,
+    url: `https://github.com/${repo}/releases/download/${tagName}/${name}`,
+  };
+}
+
+function getRedirectReleaseUpdateInfo(repo, releaseUrl, currentVersion, arch = process.arch) {
+  const parsedUrl = new URL(releaseUrl);
+  const tagMatch = parsedUrl.pathname.match(/\/releases\/tag\/([^/]+)\/?$/);
+  if (!tagMatch) throw new Error('Unable to determine the latest release tag.');
+
+  const tagName = decodeURIComponent(tagMatch[1]);
+  const latestVersion = tagName.replace(/^v/, '');
+  const upToDate = compareVersions(currentVersion, latestVersion) >= 0;
+
+  return {
+    currentVersion,
+    latestVersion,
+    upToDate,
+    releaseUrl: parsedUrl.toString(),
+    asset: upToDate ? null : buildDmgAssetFromVersion(repo, tagName, arch),
+  };
+}
+
+async function checkForUpdates({
+  repo,
+  currentVersion,
+  arch = process.arch,
+  fetchReleaseJson = fetchHttpsJson,
+  fetchLatestReleaseUrl: fetchLatestReleaseUrlOverride = fetchLatestReleaseUrl,
+}) {
+  try {
+    const release = await fetchReleaseJson(`https://api.github.com/repos/${repo}/releases/latest`);
+    return getReleaseUpdateInfo(release, currentVersion, arch);
+  } catch (error) {
+    const releaseUrl = await fetchLatestReleaseUrlOverride(repo);
+    return getRedirectReleaseUpdateInfo(repo, releaseUrl, currentVersion, arch);
+  }
 }
 
 function safeDownloadName(name) {
@@ -143,6 +213,8 @@ module.exports = {
   checkForUpdates,
   compareVersions,
   downloadUpdateAsset,
+  fetchLatestReleaseUrl,
+  getRedirectReleaseUpdateInfo,
   getReleaseUpdateInfo,
   selectMacDmgAsset,
 };

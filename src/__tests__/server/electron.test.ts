@@ -10,8 +10,16 @@ const { formatCost, formatTokens } = require('../../../electron/trayBadge.cjs') 
   formatCost: (cost: number) => string;
   formatTokens: (tokens: number) => string;
 };
-const { compareVersions, getReleaseUpdateInfo, selectMacDmgAsset } = require('../../../electron/updateService.cjs') as {
+const { checkForUpdates, compareVersions, getRedirectReleaseUpdateInfo, getReleaseUpdateInfo, selectMacDmgAsset } = require('../../../electron/updateService.cjs') as {
+  checkForUpdates: (options: {
+    repo: string;
+    currentVersion: string;
+    arch?: string;
+    fetchReleaseJson?: (url: string) => Promise<any>;
+    fetchLatestReleaseUrl?: (repo: string) => Promise<string>;
+  }) => Promise<any>;
   compareVersions: (a: string, b: string) => number;
+  getRedirectReleaseUpdateInfo: (repo: string, releaseUrl: string, currentVersion: string, arch?: string) => any;
   getReleaseUpdateInfo: (release: any, currentVersion: string, arch?: string) => any;
   selectMacDmgAsset: (assets: any[], arch?: string) => any;
 };
@@ -257,6 +265,47 @@ describe('updateService', () => {
       name: 'TokenDash-1.6.0-arm64.dmg',
       size: 123,
       url: 'https://example.com/TokenDash.dmg',
+    });
+  });
+
+  it('builds update info from the public latest-release redirect when the API is unavailable', () => {
+    const info = getRedirectReleaseUpdateInfo(
+      'zhangferry/tokendash',
+      'https://github.com/zhangferry/tokendash/releases/tag/v1.7.0',
+      '1.6.0',
+      'arm64',
+    );
+
+    expect(info).toEqual({
+      currentVersion: '1.6.0',
+      latestVersion: '1.7.0',
+      upToDate: false,
+      releaseUrl: 'https://github.com/zhangferry/tokendash/releases/tag/v1.7.0',
+      asset: {
+        name: 'TokenDash-1.7.0-arm64.dmg',
+        size: 0,
+        url: 'https://github.com/zhangferry/tokendash/releases/download/v1.7.0/TokenDash-1.7.0-arm64.dmg',
+      },
+    });
+  });
+
+  it('falls back to the public latest-release redirect when the GitHub API is rate-limited', async () => {
+    const info = await checkForUpdates({
+      repo: 'zhangferry/tokendash',
+      currentVersion: '1.6.0',
+      arch: 'arm64',
+      fetchReleaseJson: async () => {
+        throw new Error('HTTP 403');
+      },
+      fetchLatestReleaseUrl: async () => 'https://github.com/zhangferry/tokendash/releases/tag/v1.7.0',
+    });
+
+    expect(info.latestVersion).toBe('1.7.0');
+    expect(info.upToDate).toBe(false);
+    expect(info.error).toBeUndefined();
+    expect(info.asset).toMatchObject({
+      name: 'TokenDash-1.7.0-arm64.dmg',
+      url: 'https://github.com/zhangferry/tokendash/releases/download/v1.7.0/TokenDash-1.7.0-arm64.dmg',
     });
   });
 });

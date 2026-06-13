@@ -1,9 +1,9 @@
 import SwiftUI
 
-/// Coding Plan quota section — shows the remaining balance of each configured
-/// provider's subscription (Claude Code, Codex, GLM, MiniMax, Kimi). Replaces
-/// the old per-agent token breakdown. Only providers that are configured
-/// locally appear here; the server filters the rest out.
+/// Coding Plan quota section. Each configured provider is one card, and every
+/// quota window (5h / Weekly / MCP …) renders as a compact inline chip on a
+/// single row — preserving all the information while collapsing the old
+/// one-window-per-line layout.
 struct CodingPlanSection: View {
     let quotas: [QuotaSnapshot]
 
@@ -20,7 +20,7 @@ struct CodingPlanSection: View {
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
                     .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 12)
+                    .padding(.vertical, 10)
             } else {
                 VStack(spacing: 8) {
                     ForEach(quotas) { quota in
@@ -36,6 +36,7 @@ struct CodingPlanSection: View {
 
     private func providerCard(_ quota: QuotaSnapshot) -> some View {
         VStack(alignment: .leading, spacing: 7) {
+            // Title row: name + plan + freshness
             HStack(alignment: .firstTextBaseline) {
                 Text(quota.displayName)
                     .font(.system(size: 12, weight: .semibold))
@@ -43,130 +44,120 @@ struct CodingPlanSection: View {
                     .lineLimit(1)
                 if let plan = quota.planName {
                     Text(plan)
-                        .font(.system(size: 10, weight: .medium))
+                        .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(Color.tertiaryLabel)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 2)
+                        .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(Color.accentGreen.opacity(0.12))
                         .clipShape(Capsule())
                 }
                 Spacer()
-                if let stale = freshnessLabel(quota.freshness) {
-                    Text(stale)
+                if quota.freshness == "stale" {
+                    Text("stale")
                         .font(.system(size: 9, weight: .medium))
                         .foregroundStyle(Color.cachedColor)
                 }
             }
 
-            if quota.status.state == "ok" || quota.windows.isEmpty == false {
-                if quota.windows.isEmpty {
-                    Text("No active limits reported.")
-                        .font(.system(size: 11))
-                        .foregroundStyle(.secondary)
-                } else {
-                    VStack(spacing: 6) {
-                        ForEach(quota.windows) { window in
-                            windowRow(window)
-                        }
+            if quota.status.state == "ok" && !quota.windows.isEmpty {
+                // Inline window chips — all windows on one row (wrap if many).
+                FlowLayout(spacing: 8, lineSpacing: 6) {
+                    ForEach(quota.windows) { window in
+                        windowChip(window)
                     }
                 }
+            } else if quota.status.state != "ok" {
+                statusMessage(quota.status)
             } else {
-                statusRow(quota.status)
+                Text("No active limits reported.")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.secondary)
             }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.barTrackColor)
+        .background(Color.barTrackColor.opacity(1.5))
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    private func windowRow(_ window: QuotaWindow) -> some View {
+    /// One compact chip: short tag, mini progress bar, percent.
+    private func windowChip(_ window: QuotaWindow) -> some View {
         VStack(alignment: .leading, spacing: 3) {
-            HStack(spacing: 6) {
-                Text(window.label)
-                    .font(.system(size: 10, weight: .medium))
+            HStack(spacing: 4) {
+                Text(shortWindowTag(window))
+                    .font(.system(size: 9, weight: .semibold))
                     .foregroundStyle(Color.secondaryLabel)
-                    .lineLimit(1)
-                Spacer()
-                Text(window.isUnlimited == true ? "Unlimited" : "\(Int(window.usedPercent.rounded()))% used")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(usageColor(window.usedPercent))
-                    .monospacedDigit()
+                Spacer(minLength: 0)
+                if window.isUnlimited == true {
+                    Text("∞").font(.system(size: 10, weight: .bold)).foregroundStyle(Color.accentGreen)
+                } else {
+                    Text("\(Int(window.usedPercent.rounded()))%")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(usageColor(window.usedPercent))
+                        .monospacedDigit()
+                }
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
-                    Capsule()
-                        .fill(Color.barTrackColor.opacity(2.5))
+                    Capsule().fill(Color.barTrackColor.opacity(2.5))
                     if window.isUnlimited != true {
-                        Capsule()
-                            .fill(usageColor(window.usedPercent))
-                            .frame(width: max(2, geo.size.width * CGFloat(window.usedPercent / 100)))
-                            .animation(.easeOut(duration: 0.5), value: window.usedPercent)
+                        Capsule().fill(usageColor(window.usedPercent))
+                            .frame(width: max(1.5, geo.size.width * CGFloat(window.usedPercent / 100)))
+                            .animation(.easeOut(duration: 0.4), value: window.usedPercent)
                     }
                 }
             }
-            .frame(height: 5)
-            if let resets = window.resetsAt, let countdown = formatResetCountdown(resets) {
-                Text("resets \(countdown)")
-                    .font(.system(size: 9))
-                    .foregroundStyle(Color.tertiaryLabel)
-            }
+            .frame(height: 4)
         }
+        .frame(width: 92)
     }
 
-    private func statusRow(_ status: QuotaProviderStatus) -> some View {
-        HStack(spacing: 5) {
+    private func statusMessage(_ status: QuotaProviderStatus) -> some View {
+        let msg: String = {
+            switch status.state {
+            case "auth_failed": return "Authentication failed — check credentials"
+            case "upstream_unavailable": return "Provider unavailable right now"
+            case "rate_limited": return "Provider throttled the request"
+            case "timed_out": return "Provider timed out"
+            case "malformed_response": return "Unexpected provider response"
+            default: return status.message ?? "Unavailable"
+            }
+        }()
+        return HStack(spacing: 5) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 9))
                 .foregroundStyle(Color.cachedColor)
-            Text(statusMessage(status))
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .lineLimit(2)
+            Text(msg).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(2)
             Spacer()
         }
     }
 
-    private func statusMessage(_ status: QuotaProviderStatus) -> String {
-        switch status.state {
-        case "auth_failed": return "Authentication failed — check credentials"
-        case "upstream_unavailable": return "Provider unavailable right now"
-        case "rate_limited": return "Provider throttled the request"
-        case "timed_out": return "Provider timed out"
-        case "not_configured": return "Not configured"
-        case "malformed_response": return "Unexpected provider response"
-        default: return status.message ?? "Unavailable"
-        }
-    }
-
     private func usageColor(_ usedPercent: Double) -> Color {
-        if usedPercent >= 80 { return Color(red: 0.831, green: 0.247, blue: 0.247) } // red
-        if usedPercent >= 50 { return Color.cachedColor }                              // amber
-        return Color.accentGreen                                                       // green
-    }
-
-    private func freshnessLabel(_ freshness: String) -> String? {
-        switch freshness {
-        case "stale": return "stale"
-        default: return nil
-        }
+        if usedPercent >= 80 { return Color(red: 0.831, green: 0.247, blue: 0.247) }
+        if usedPercent >= 50 { return Color.cachedColor }
+        return Color.accentGreen
     }
 }
 
-// MARK: - Countdown
+/// Derive a short tag from a window: 5h / Wk / MCP / Opus.
+func shortWindowTag(_ window: QuotaWindow) -> String {
+    let l = (window.label + " " + window.id).lowercased()
+    if l.contains("5-hour") || l.contains("5h") { return "5h" }
+    if l.contains("weekly") || l.contains("7d") || l.contains("7-day") { return "Wk" }
+    if l.contains("mcp") { return "MCP" }
+    if l.contains("opus") { return "Opus" }
+    if l.contains("primary") { return "Now" }
+    // Fallback: first token of the label.
+    return window.label.split(separator: " ").first.map(String.init) ?? window.label
+}
 
-/// Format a reset countdown from an ISO timestamp.
-/// < 1h → "in 34m", < 1d → "in 2h 34m", < 7d → "in 3d", else → "on Jun 18".
+// MARK: - Countdown (kept for potential detail expansion)
+
 func formatResetCountdown(_ iso: String) -> String? {
     let formatter = ISO8601DateFormatter()
     formatter.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
     var date = formatter.date(from: iso)
-    if date == nil {
-        let fallback = ISO8601DateFormatter()
-        date = fallback.date(from: iso)
-    }
+    if date == nil { date = ISO8601DateFormatter().date(from: iso) }
     guard let resetsAt = date else { return nil }
-
     let secs = resetsAt.timeIntervalSinceNow
     if secs <= 0 { return "soon" }
     let mins = Int(secs / 60)
@@ -176,8 +167,41 @@ func formatResetCountdown(_ iso: String) -> String? {
     if hours < 24 { return remMins > 0 ? "in \(hours)h \(remMins)m" : "in \(hours)h" }
     let days = hours / 24
     if days < 7 { return "in \(days)d" }
-
     let df = DateFormatter()
     df.dateFormat = "MMM d"
     return "on \(df.string(from: resetsAt))"
+}
+
+/// Minimal left-to-right flow layout so window chips wrap onto a second line
+/// only when a provider has more windows than fit.
+struct FlowLayout: Layout {
+    var spacing: CGFloat = 8
+    var lineSpacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxWidth = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0
+        for sub in subviews {
+            let size = sub.sizeThatFits(.unspecified)
+            if x + size.width > maxWidth && x > 0 {
+                x = 0; y += lineHeight + lineSpacing; lineHeight = 0
+            }
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+        return CGSize(width: maxWidth == .infinity ? x : maxWidth, height: y + lineHeight)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, lineHeight: CGFloat = 0
+        for sub in subviews {
+            let size = sub.sizeThatFits(.unspecified)
+            if x + size.width > bounds.maxX && x > bounds.minX {
+                x = bounds.minX; y += lineHeight + lineSpacing; lineHeight = 0
+            }
+            sub.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
+            x += size.width + spacing
+            lineHeight = max(lineHeight, size.height)
+        }
+    }
 }

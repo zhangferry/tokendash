@@ -37,10 +37,10 @@ struct PopoverView: View {
             HourlyChartView(data: state.hourlyData)
                 .sectionDivider()
 
-            BreakdownSection(summary: state.todaySummary)
+            UsageSection(summary: state.todaySummary, models: state.models)
                 .sectionDivider()
 
-            ProjectsSection(projects: state.projects)
+            TrendSection(trend: state.trend)
                 .sectionDivider()
 
             CodingPlanSection(quotas: state.quotas)

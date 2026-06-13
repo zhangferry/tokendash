@@ -120,6 +120,8 @@ import AppKit
                 )
                 let hourly = computeHourly(blocks: blockResults, today: today)
                 let projectRows = computeProjects(projects: projectResults, today: today)
+                let modelRows = computeModels(daily: dailyResults, today: today)
+                let trendPoints = computeTrend(daily: dailyResults)
 
                 NSLog("[TokenDash] Today: \(tokenStr) tokens, \(formatCost(totalCost)), cache \(formatPercent(cacheRate))")
 
@@ -144,6 +146,8 @@ import AppKit
                 self.state.errorMessage = nil
                 self.state.hourlyData = hourly
                 self.state.projects = projectRows
+                self.state.models = modelRows
+                self.state.trend = trendPoints
                 self.state.quotas = quotaSnapshots
 
                 // Low-quota notifications (no-op if disabled in settings).
@@ -195,6 +199,50 @@ import AppKit
         return totals.map { path, t in
             ProjectRow(name: formatProjectName(path), fullPath: path, input: t.input, output: t.output, cached: t.cached, total: t.total)
         }.sorted { $0.total > $1.total }.prefix(4).map { $0 }
+    }
+
+    /// Aggregate today's per-model usage across all agents (uses modelBreakdowns
+    /// that the summary loop discards). Token count = input + output + cacheRead.
+    private func computeModels(daily: [DailyResponse], today: String) -> [ModelRow] {
+        var totals: [String: (tokens: Int, cost: Double)] = [:]
+        for data in daily {
+            guard let entry = data.daily.first(where: { $0.date == today }) else { continue }
+            for b in entry.modelBreakdowns ?? [] {
+                let name = shortModelName(b.modelName)
+                var t = totals[name] ?? (0, 0)
+                t.tokens += b.inputTokens + b.outputTokens + b.cacheReadTokens
+                t.cost += b.cost
+                totals[name] = t
+            }
+        }
+        return totals.map { name, t in
+            ModelRow(name: name, tokens: t.tokens, cost: t.cost)
+        }.sorted { $0.tokens > $1.tokens }.prefix(5).map { $0 }
+    }
+
+    /// Last 7 days (oldest → newest) aggregated cost + tokens across all agents.
+    private func computeTrend(daily: [DailyResponse]) -> [TrendPoint] {
+        var byDate: [String: (tokens: Int, cost: Double)] = [:]
+        for data in daily {
+            for entry in data.daily {
+                var t = byDate[entry.date] ?? (0, 0)
+                t.tokens += entry.totalTokens
+                t.cost += entry.totalCost
+                byDate[entry.date] = t
+            }
+        }
+        let fmt = DateFormatter()
+        fmt.dateFormat = "yyyy-MM-dd"
+        let cal = Calendar.current
+        let todayStart = cal.startOfDay(for: Date())
+        return (0..<7).reversed().map { i in
+            guard let d = cal.date(byAdding: .day, value: -i, to: todayStart) else {
+                return TrendPoint(date: "", tokens: 0, cost: 0)
+            }
+            let key = fmt.string(from: d)
+            let t = byDate[key] ?? (0, 0)
+            return TrendPoint(date: key, tokens: t.tokens, cost: t.cost)
+        }
     }
 
     // MARK: - Badge image rendering

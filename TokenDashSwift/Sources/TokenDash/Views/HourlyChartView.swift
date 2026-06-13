@@ -121,7 +121,7 @@ struct HourlyChartView: View {
             }
         }
         .chartXAxis {
-            AxisMarks(values: [0, 4, 8, 12, 16, 20, 23]) { value in
+            AxisMarks(values: [0, 3, 6, 9, 12, 15, 18, 21]) { value in
                 if let hour = value.as(Int.self) {
                     AxisGridLine(stroke: StrokeStyle(lineWidth: 0.5, dash: [3, 3]))
                         .foregroundStyle(.primary.opacity(0.03))

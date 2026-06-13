@@ -23,6 +23,8 @@ import Combine
     var todaySummary: TodaySummary?
     var hourlyData: [HourBucket] = []
     var projects: [ProjectRow] = []
+    var models: [ModelRow] = []
+    var trend: [TrendPoint] = []
     var quotas: [QuotaSnapshot] = []
 
     // Settings

@@ -81,6 +81,24 @@ struct QuotaProviderStatus: Codable {
     let category: String?
 }
 
+// MARK: - Model + Trend UI models
+
+/// One model's share of today's usage (aggregated across all agents).
+struct ModelRow: Identifiable {
+    let name: String
+    let tokens: Int
+    let cost: Double
+    var id: String { name }
+}
+
+/// One day in the 7-day cost/token trend.
+struct TrendPoint: Identifiable {
+    let date: String   // "yyyy-MM-dd"
+    let tokens: Int
+    let cost: Double
+    var id: String { date }
+}
+
 // MARK: - Derived UI Models
 
 struct TodaySummary {

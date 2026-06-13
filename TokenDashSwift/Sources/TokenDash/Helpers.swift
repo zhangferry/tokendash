@@ -54,6 +54,21 @@ func formatProjectName(_ path: String) -> String {
     return parts.last ?? path
 }
 
+/// Shorten a model id for display: claude-sonnet-4-6 → "Sonnet 4", GLM-5.1 → "GLM-5.1".
+func shortModelName(_ id: String) -> String {
+    let lower = id.lowercased()
+    let type: String
+    if lower.contains("opus") { type = "Opus" }
+    else if lower.contains("sonnet") { type = "Sonnet" }
+    else if lower.contains("haiku") { type = "Haiku" }
+    else { return id }  // non-Claude (GLM, gpt, …): show as-is
+    // First version number (4, 4.6, 3.5, …)
+    if let m = id.range(of: #"\d+(\.\d+)?"#, options: .regularExpression) {
+        return "\(type) \(id[m])"
+    }
+    return type
+}
+
 func todayString() -> String {
     let f = DateFormatter()
     f.dateFormat = "yyyy-MM-dd"

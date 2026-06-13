@@ -60,8 +60,10 @@ struct CodingPlanSection: View {
 
             if quota.status.state == "ok" && !quota.windows.isEmpty {
                 // Inline window chips — all windows on one row (wrap if many).
+                // Drop MCP/tool-call limits: not a general capability, low value.
+                let shown = quota.windows.filter { !isMCPWindow($0) }
                 FlowLayout(spacing: 8, lineSpacing: 6) {
-                    ForEach(quota.windows) { window in
+                    ForEach(shown) { window in
                         windowChip(window)
                     }
                 }
@@ -79,7 +81,7 @@ struct CodingPlanSection: View {
         .clipShape(RoundedRectangle(cornerRadius: 8))
     }
 
-    /// One compact chip: short tag, mini progress bar, percent.
+    /// One compact chip: short tag + percent, mini progress bar, reset countdown.
     private func windowChip(_ window: QuotaWindow) -> some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 4) {
@@ -107,8 +109,24 @@ struct CodingPlanSection: View {
                 }
             }
             .frame(height: 4)
+            // Reset countdown (or a spacer so chips stay aligned when absent).
+            Text(resetLabel(window))
+                .font(.system(size: 8))
+                .foregroundStyle(Color.tertiaryLabel)
+                .lineLimit(1)
         }
         .frame(width: 92)
+    }
+
+    private func resetLabel(_ window: QuotaWindow) -> String {
+        if let iso = window.resetsAt, let c = formatResetCountdown(iso) { return c }
+        return " "
+    }
+
+    /// MCP / tool-call limits aren't a general coding capability — hide them.
+    private func isMCPWindow(_ w: QuotaWindow) -> Bool {
+        let l = (w.id + " " + w.label).lowercased()
+        return l.contains("mcp") || l.contains("time_limit") || l.contains("monthly-tool")
     }
 
     private func statusMessage(_ status: QuotaProviderStatus) -> some View {

@@ -1,22 +1,21 @@
 import SwiftUI
 import Charts
 
-/// 7-day cost + token sparklines. Uses the daily history the summary loop used
-/// to discard. Compact: two thin lines with weekly totals.
+/// 7-day TOKEN bar chart (today highlighted) with a weekly total + daily avg.
+///
+/// Token, not cost: cost tracks tokens near-linearly so a cost line added no
+/// information, and tokens are the more meaningful unit for coding work.
 struct TrendSection: View {
     let trend: [TrendPoint]
 
-    private var weekCost: Double { trend.map(\.cost).reduce(0, +) }
     private var weekTokens: Int { trend.map(\.tokens).reduce(0, +) }
+    private var activeDays: Int { max(trend.filter { $0.tokens > 0 }.count, 1) }
+    private var dailyAvg: Int { weekTokens / activeDays }
+    private var todayKey: String { todayString() }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            Text("7-DAY TREND")
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.5)
-                .foregroundStyle(Color.sectionTitleColor)
-                .padding(.bottom, 10)
-
+        VStack(alignment: .leading, spacing: 8) {
+            header
             if trend.allSatisfy({ $0.tokens == 0 }) {
                 Text("No history yet.")
                     .font(.system(size: 12))
@@ -24,10 +23,7 @@ struct TrendSection: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 10)
             } else {
-                VStack(alignment: .leading, spacing: 8) {
-                    costRow
-                    tokensRow
-                }
+                chart
             }
         }
         .padding(.horizontal, 20)
@@ -35,41 +31,46 @@ struct TrendSection: View {
         .padding(.bottom, 8)
     }
 
-    private var costRow: some View {
-        HStack(spacing: 10) {
-            metricLabel("Cost", formatCost(weekCost))
-            Chart(trend) { point in
-                LineMark(x: .value("Day", point.date), y: .value("Cost", point.cost))
-                    .foregroundStyle(Color.accentGreen)
-                    .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                    .interpolationMethod(.catmullRom)
-            }
-            .chartXAxis(.hidden)
-            .chartYAxis(.hidden)
-            .frame(height: 26)
+    private var header: some View {
+        HStack(alignment: .firstTextBaseline) {
+            Text("7-DAY TOKENS")
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.5)
+                .foregroundStyle(Color.sectionTitleColor)
+            Spacer()
+            Text("\(formatTokens(weekTokens)) wk · \(formatTokens(dailyAvg))/day")
+                .font(.system(size: 10, weight: .medium))
+                .monospacedDigit()
+                .foregroundStyle(Color.secondaryLabel)
         }
     }
 
-    private var tokensRow: some View {
-        HStack(spacing: 10) {
-            metricLabel("Tokens", formatTokens(weekTokens))
-            Chart(trend) { point in
-                LineMark(x: .value("Day", point.date), y: .value("Tokens", point.tokens))
-                    .foregroundStyle(Color.outputColor)
-                    .lineStyle(StrokeStyle(lineWidth: 1.5, lineCap: .round))
-                    .interpolationMethod(.catmullRom)
+    private var chart: some View {
+        Chart(trend) { point in
+            BarMark(
+                x: .value("Day", weekdayShort(point.date)),
+                y: .value("Tokens", point.tokens)
+            )
+            .foregroundStyle(point.date == todayKey ? Color.accentGreen : Color.accentGreen.opacity(0.3))
+            .cornerRadius(2)
+        }
+        .chartXAxis {
+            AxisMarks { value in
+                AxisValueLabel()
+                    .font(.system(size: 9))
             }
-            .chartXAxis(.hidden)
-            .chartYAxis(.hidden)
-            .frame(height: 26)
         }
+        .chartYAxis(.hidden)
+        .frame(height: 54)
     }
+}
 
-    private func metricLabel(_ label: String, _ value: String) -> some View {
-        VStack(alignment: .leading, spacing: 1) {
-            Text(label).font(.system(size: 10)).foregroundStyle(Color.secondaryLabel)
-            Text(value).font(.system(size: 12, weight: .semibold)).monospacedDigit().foregroundStyle(.primary)
-        }
-        .frame(width: 64, alignment: .leading)
-    }
+/// "2026-06-13" → "Fri" (short weekday).
+func weekdayShort(_ yyyy_mm_dd: String) -> String {
+    let parse = DateFormatter()
+    parse.dateFormat = "yyyy-MM-dd"
+    guard let d = parse.date(from: yyyy_mm_dd) else { return "" }
+    let out = DateFormatter()
+    out.dateFormat = "EEE"
+    return out.string(from: d)
 }

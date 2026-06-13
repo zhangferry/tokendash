@@ -7,16 +7,15 @@ struct SettingsView: View {
     @State private var showCredentialSheet = false
 
     var body: some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 0) {
-                header
+        VStack(spacing: 0) {
+            // Sticky header — stays fixed while the list scrolls below it.
+            header
 
+            ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     generalCard
-                    appearanceCard
                     codingPlansCard
                     notificationsCard
-                    updatesCard
                     aboutCard
                 }
                 .padding(.horizontal, 16)
@@ -30,7 +29,7 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Header
+    // MARK: - Sticky header
 
     private var header: some View {
         HStack(spacing: 8) {
@@ -51,126 +50,71 @@ struct SettingsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
+        .background(Color.popoverBackground)
+        .overlay(alignment: .bottom) {
+            Rectangle().fill(Color.dividerColor).frame(height: 0.5)
+        }
     }
 
-    // MARK: - General
+    // MARK: - General (merged with Appearance)
 
     private var generalCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsSectionHeader(title: "General")
             SettingsCard {
                 SettingsRow(icon: "power", title: "Launch at login",
-                            subtitle: "Keep TokenDash in the menu bar after sign in.",
+                            subtitle: "Open in the menu bar after sign in.",
                             showDivider: true) {
                     Toggle("", isOn: Binding(
                         get: { state.isLaunchAtLoginEnabled },
                         set: { setLaunchAtLogin($0) }
                     ))
-                    .toggleStyle(.switch)
-                    .controlSize(.small)
-                    .labelsHidden()
+                    .toggleStyle(.switch).controlSize(.small).labelsHidden()
                 }
                 SettingsRow(icon: "arrow.clockwise", title: "Refresh interval",
-                            subtitle: "How often usage and quota are re-fetched.",
-                            showDivider: false) {
+                            subtitle: "Usage and quota re-fetch cadence.",
+                            showDivider: true) {
                     Picker("", selection: $settings.refreshInterval) {
                         ForEach(SettingsStore.RefreshInterval.allCases) { interval in
                             Text(interval.label).tag(interval)
                         }
                     }
-                    .pickerStyle(.menu)
-                    .controlSize(.small)
-                    .frame(width: 110)
-                    .labelsHidden()
+                    .pickerStyle(.menu).controlSize(.small).frame(width: 110).labelsHidden()
                 }
-            }
-        }
-    }
-
-    // MARK: - Appearance
-
-    private var appearanceCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SettingsSectionHeader(title: "Appearance")
-            SettingsCard {
                 SettingsRow(icon: "circle.lefthalf.filled", title: "Theme",
-                            subtitle: "Popover color scheme.",
+                            subtitle: "Light, dark, or match system.",
                             showDivider: false) {
                     Picker("", selection: $settings.appearance) {
                         ForEach(SettingsStore.Appearance.allCases) { a in
                             Text(a.label).tag(a)
                         }
                     }
-                    .pickerStyle(.menu)
-                    .controlSize(.small)
-                    .frame(width: 120)
-                    .labelsHidden()
+                    .pickerStyle(.menu).controlSize(.small).frame(width: 120).labelsHidden()
                 }
             }
         }
     }
 
-    // MARK: - Coding Plans
+    // MARK: - Coding Plans (single Manage row; status lives in the main popover)
 
     private var codingPlansCard: some View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsSectionHeader(title: "Coding Plans")
             SettingsCard {
-                ForEach(Array(providerRows.enumerated()), id: \.element.id) { index, row in
-                    SettingsRow(icon: row.icon, title: row.name, subtitle: row.status, showDivider: index < providerRows.count - 1) {
-                        EmptyView()
-                    }
-                }
-                if !providerRows.isEmpty {
-                    SettingsRow(icon: "key.fill", title: "Manage credentials",
-                                subtitle: "Add or edit API keys for GLM / Kimi / MiniMax.",
-                                showDivider: false) {
-                        Button("Configure") { showCredentialSheet = true }
-                            .font(.system(size: 11, weight: .medium))
-                            .controlSize(.small)
-                    }
-                } else {
-                    SettingsRow(icon: "key.fill", title: "Configure credentials",
-                                subtitle: "Add an API key to enable a Coding Plan provider.",
-                                showDivider: false) {
-                        Button("Add") { showCredentialSheet = true }
-                            .font(.system(size: 11, weight: .medium))
-                            .controlSize(.small)
-                    }
+                SettingsRow(icon: "key.fill", title: "API credentials",
+                            subtitle: codingPlansSubtitle, showDivider: false) {
+                    Button("Manage") { showCredentialSheet = true }
+                        .font(.system(size: 11, weight: .medium))
+                        .controlSize(.small)
                 }
             }
         }
     }
 
-    private struct ProviderStatusRow: Identifiable {
-        let id: String
-        let name: String
-        let icon: String
-        let status: String
-    }
-
-    private var providerRows: [ProviderStatusRow] {
-        guard !state.quotas.isEmpty else { return [] }
-        return state.quotas.map { q in
-            let isOk = q.status.state == "ok"
-            return ProviderStatusRow(
-                id: q.provider,
-                name: q.displayName,
-                icon: providerIcon(q.provider),
-                status: isOk ? (q.planName.map { "\($0) · connected" } ?? "Connected") : "Check credentials"
-            )
-        }
-    }
-
-    private func providerIcon(_ provider: String) -> String {
-        switch provider {
-        case "claude": return "c.circle.fill"
-        case "codex": return "o.circle.fill"
-        case "glm": return "g.circle.fill"
-        case "kimi": return "k.circle.fill"
-        case "minimax": return "m.circle.fill"
-        default: return "creditcard.fill"
-        }
+    private var codingPlansSubtitle: String {
+        let count = state.quotas.filter { $0.status.state == "ok" }.count
+        if count == 0 { return "No providers connected." }
+        return "\(count) provider\(count > 1 ? "s" : "") connected."
     }
 
     // MARK: - Notifications
@@ -183,9 +127,7 @@ struct SettingsView: View {
                             subtitle: "Notify when a provider crosses the threshold.",
                             showDivider: true) {
                     Toggle("", isOn: $settings.lowQuotaNotificationsEnabled)
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .labelsHidden()
+                        .toggleStyle(.switch).controlSize(.small).labelsHidden()
                 }
                 SettingsRow(icon: "percent", title: "Threshold",
                             subtitle: "Usage percentage that triggers an alert.",
@@ -198,51 +140,31 @@ struct SettingsView: View {
         }
     }
 
-    // MARK: - Updates
+    // MARK: - About & Updates (merged)
 
-    private var updatesCard: some View {
+    private var aboutCard: some View {
         VStack(alignment: .leading, spacing: 0) {
-            SettingsSectionHeader(title: "Updates")
+            SettingsSectionHeader(title: "About & Updates")
             SettingsCard {
-                SettingsRow(icon: "tag", title: "TokenDash",
-                            subtitle: "Version \(state.appVersion)",
-                            showDivider: true) { EmptyView() }
+                SettingsRow(icon: "tag", title: "Version",
+                            subtitle: state.appVersion,
+                            showDivider: true) {
+                    Button("Check for Updates") { UpdaterController.shared.checkForUpdates() }
+                        .font(.system(size: 11, weight: .medium))
+                        .controlSize(.small)
+                }
                 SettingsRow(icon: "checkmark.circle", title: "Automatically check",
                             subtitle: "Check for new releases in the background.",
                             showDivider: true) {
                     Toggle("", isOn: $settings.autoCheckUpdates)
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                        .labelsHidden()
+                        .toggleStyle(.switch).controlSize(.small).labelsHidden()
                         .onChange(of: settings.autoCheckUpdates) { _, _ in
                             UpdaterController.shared.applyAutoCheck()
                         }
                 }
-                SettingsRow(icon: "arrow.triangle.2.circlepath", title: "Check for updates",
-                            subtitle: "Sparkle verifies the signature and installs in place.",
-                            showDivider: false) {
-                    Button("Check") { UpdaterController.shared.checkForUpdates() }
-                        .font(.system(size: 11, weight: .medium))
-                        .controlSize(.small)
-                }
-            }
-        }
-    }
-
-    // MARK: - About
-
-    private var aboutCard: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            SettingsSectionHeader(title: "About")
-            SettingsCard {
-                SettingsRow(icon: "info.circle", title: "TokenDash",
-                            subtitle: "Version \(state.appVersion)",
-                            showDivider: true) { EmptyView() }
                 linkRow(icon: "globe", title: "GitHub Repository", url: "https://github.com/zhangferry/tokendash", divider: true)
-                linkRow(icon: "doc.text", title: "Release Notes", url: "https://github.com/zhangferry/tokendash/releases", divider: false)
                 SettingsRow(icon: "xmark.circle", title: "Quit TokenDash",
-                            subtitle: "Close the app and stop background services.",
-                            showDivider: false) {
+                            subtitle: nil, showDivider: false) {
                     Button("Quit") { NSApp.terminate(nil) }
                         .font(.system(size: 11, weight: .medium))
                         .controlSize(.small)

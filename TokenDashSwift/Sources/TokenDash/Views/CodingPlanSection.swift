@@ -59,10 +59,10 @@ struct CodingPlanSection: View {
             }
 
             if quota.status.state == "ok" && !quota.windows.isEmpty {
-                // Inline window chips — all windows on one row (wrap if many).
-                // Drop MCP/tool-call limits: not a general capability, low value.
+                // Window chips split the card width evenly. MCP/tool-call limits
+                // are dropped (not a general capability, low value).
                 let shown = quota.windows.filter { !isMCPWindow($0) }
-                FlowLayout(spacing: 8, lineSpacing: 6) {
+                HStack(alignment: .top, spacing: 10) {
                     ForEach(shown) { window in
                         windowChip(window)
                     }
@@ -115,7 +115,7 @@ struct CodingPlanSection: View {
                 .foregroundStyle(Color.tertiaryLabel)
                 .lineLimit(1)
         }
-        .frame(width: 92)
+        .frame(maxWidth: .infinity)
     }
 
     private func resetLabel(_ window: QuotaWindow) -> String {
@@ -188,38 +188,4 @@ func formatResetCountdown(_ iso: String) -> String? {
     let df = DateFormatter()
     df.dateFormat = "MMM d"
     return "on \(df.string(from: resetsAt))"
-}
-
-/// Minimal left-to-right flow layout so window chips wrap onto a second line
-/// only when a provider has more windows than fit.
-struct FlowLayout: Layout {
-    var spacing: CGFloat = 8
-    var lineSpacing: CGFloat = 6
-
-    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
-        let maxWidth = proposal.width ?? .infinity
-        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0
-        for sub in subviews {
-            let size = sub.sizeThatFits(.unspecified)
-            if x + size.width > maxWidth && x > 0 {
-                x = 0; y += lineHeight + lineSpacing; lineHeight = 0
-            }
-            x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
-        }
-        return CGSize(width: maxWidth == .infinity ? x : maxWidth, height: y + lineHeight)
-    }
-
-    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
-        var x = bounds.minX, y = bounds.minY, lineHeight: CGFloat = 0
-        for sub in subviews {
-            let size = sub.sizeThatFits(.unspecified)
-            if x + size.width > bounds.maxX && x > bounds.minX {
-                x = bounds.minX; y += lineHeight + lineSpacing; lineHeight = 0
-            }
-            sub.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(size))
-            x += size.width + spacing
-            lineHeight = max(lineHeight, size.height)
-        }
-    }
 }

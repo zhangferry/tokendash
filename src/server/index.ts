@@ -6,7 +6,6 @@ import { fileURLToPath } from 'node:url';
 import { basename, dirname, join, resolve } from 'node:path';
 import { registerApiRoutes } from './routes/api.js';
 import { detectAvailableAgents } from './agentDetection.js';
-import open from 'open';
 
 interface CliArgs {
   port?: number;
@@ -208,21 +207,32 @@ async function main() {
   const version = getPackageVersion();
   const preferredPort = resolvePort(args.port ?? (process.env.PORT ? parseInt(process.env.PORT, 10) : undefined));
 
-  // --tray mode: launch Electron
+  // --tray mode: launch native Swift menu bar app
   if (args.tray) {
     if (process.platform !== 'darwin') {
       console.error('Error: --tray is only supported on macOS.');
       process.exit(1);
     }
     console.log(`Starting tokendash v${version} in tray mode...`);
-    // @ts-ignore -- electron is installed separately for tray mode
-    const { default: electronPath } = await import('electron');
     const { spawn } = await import('node:child_process');
-    const child = spawn(electronPath as unknown as string, ['.'], {
+    const { resolve } = await import('node:path');
+    const { existsSync } = await import('node:fs');
+
+    // Find Swift binary: check packaged app first, then dev build
+    const moduleDir = dirname(fileURLToPath(import.meta.url));
+    const packagedPath = resolve(moduleDir, '..', '..', 'TokenDashSwift', '.build', 'debug', 'TokenDash');
+    const devPath = resolve(moduleDir, '..', '..', 'TokenDashSwift', '.build', 'debug', 'TokenDash');
+    const swiftBin = existsSync(packagedPath) ? packagedPath : devPath;
+
+    if (!existsSync(swiftBin)) {
+      console.error('Error: TokenDash Swift binary not found. Run "npm run build:swift" first.');
+      process.exit(1);
+    }
+
+    const child = spawn(swiftBin, [], {
       env: {
         ...process.env,
         TOKENDASH_PORT: String(preferredPort),
-        TOKENDASH_TRAY: '1',
       },
       stdio: 'inherit',
     });
@@ -260,11 +270,14 @@ async function main() {
   // Open browser if requested
   if (shouldOpenBrowser) {
     // Small delay to ensure server is ready
-    setTimeout(() => {
+    setTimeout(async () => {
       console.log('Opening dashboard in your browser...');
-      open(`http://localhost:${port}`).catch((err) => {
+      try {
+        const { default: open } = await import('open');
+        await open(`http://localhost:${port}`);
+      } catch (err: any) {
         console.warn('Could not open browser:', err.message);
-      });
+      }
     }, 100);
   } else {
     console.log('Browser auto-open disabled (--no-open)');

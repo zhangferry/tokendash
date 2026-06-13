@@ -1,0 +1,639 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>TokenDash Popover Design Prototype</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: -apple-system, 'SF Pro Display', 'Inter', system-ui, sans-serif;
+    background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%);
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* Simulated macOS menu bar at top */
+  .menubar {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 25px;
+    background: rgba(30, 30, 30, 0.85);
+    backdrop-filter: blur(20px);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 0 12px;
+    z-index: 100;
+  }
+  .menubar-items {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    color: rgba(255,255,255,0.85);
+    font-size: 13px;
+  }
+  .menubar .badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    background: rgba(255,255,255,0.1);
+    padding: 2px 8px;
+    border-radius: 4px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: 'SF Mono', 'Menlo', monospace;
+  }
+  .badge svg { width: 14px; height: 14px; }
+
+  /* Popover container */
+  .popover-wrapper {
+    position: relative;
+    margin-top: 40px;
+  }
+
+  /* Arrow pointing up */
+  .popover-arrow {
+    width: 0; height: 0;
+    border-left: 10px solid transparent;
+    border-right: 10px solid transparent;
+    border-bottom: 8px solid rgba(246, 246, 246, 0.92);
+    position: absolute;
+    top: -8px;
+    right: 24px;
+  }
+
+  .popover {
+    width: 380px;
+    background: rgba(246, 246, 246, 0.92);
+    backdrop-filter: blur(40px) saturate(180%);
+    border-radius: 12px;
+    border: 0.5px solid rgba(0,0,0,0.12);
+    box-shadow:
+      0 20px 60px rgba(0,0,0,0.3),
+      0 0 0 0.5px rgba(0,0,0,0.08),
+      inset 0 0.5px 0 rgba(255,255,255,0.4);
+    overflow: hidden;
+  }
+
+  /* ========== HEADER ========== */
+  .header {
+    padding: 14px 20px 12px;
+    background: rgba(255,255,255,0.5);
+    border-bottom: 0.5px solid rgba(0,0,0,0.06);
+  }
+  .header-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+  }
+  .header-left { display: flex; flex-direction: column; gap: 2px; }
+  .header-tokens {
+    font-size: 28px;
+    font-weight: 700;
+    letter-spacing: -0.5px;
+    color: #1d1d1f;
+    font-variant-numeric: tabular-nums;
+  }
+  .header-date {
+    font-size: 12px;
+    color: rgba(0,0,0,0.45);
+    font-weight: 500;
+  }
+  .header-right { display: flex; flex-direction: column; align-items: flex-end; gap: 6px; }
+  .header-cost {
+    font-size: 22px;
+    font-weight: 600;
+    color: #2d8a6e;
+    font-variant-numeric: tabular-nums;
+  }
+  .header-cache {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 10px;
+    font-weight: 600;
+    color: #2d8a6e;
+    padding: 2px 7px;
+    border-radius: 6px;
+    background: rgba(45, 138, 110, 0.08);
+  }
+  .refresh-btn {
+    position: absolute;
+    top: 16px;
+    right: 20px;
+    width: 22px;
+    height: 22px;
+    border: none;
+    background: rgba(0,0,0,0.04);
+    border-radius: 6px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: rgba(0,0,0,0.35);
+    transition: all 0.15s;
+  }
+  .refresh-btn:hover { background: rgba(0,0,0,0.08); color: rgba(0,0,0,0.55); }
+
+  /* ========== AREA CHART ========== */
+  .section { padding: 12px 20px 6px; }
+  .section.chart-section { padding-bottom: 8px; }
+  .section-divider {
+    height: 0.5px;
+    background: rgba(0,0,0,0.06);
+    margin: 0 20px;
+  }
+  .section-title {
+    font-size: 11px;
+    font-weight: 600;
+    color: rgba(0,0,0,0.4);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin-bottom: 10px;
+  }
+
+  .chart-container {
+    position: relative;
+    margin: 0 -4px;
+  }
+  .chart-svg { width: 100%; height: 80px; display: block; }
+  .chart-time {
+    display: flex;
+    justify-content: space-between;
+    padding: 14px 0 0;
+  }
+  .chart-time span {
+    font-size: 10px;
+    font-weight: 500;
+    color: rgba(0,0,0,0.28);
+    font-variant-numeric: tabular-nums;
+    width: 28px;
+    text-align: center;
+  }
+  .chart-time span.now {
+    color: #2d8a6e;
+    font-weight: 600;
+  }
+  .chart-time span.future {
+    color: rgba(0,0,0,0.12);
+  }
+  body.dark .chart-time span { color: rgba(255,255,255,0.3); }
+  body.dark .chart-time span.now { color: #4aca9b; }
+  body.dark .chart-time span.future { color: rgba(255,255,255,0.12); }
+
+  /* ========== BREAKDOWN ========== */
+  .breakdown-list { display: flex; flex-direction: column; gap: 8px; }
+  .breakdown-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .breakdown-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .breakdown-label {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(0,0,0,0.6);
+    width: 52px;
+    flex-shrink: 0;
+  }
+  .breakdown-bar-track {
+    flex: 1;
+    height: 6px;
+    background: rgba(0,0,0,0.04);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+  .breakdown-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .breakdown-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1d1d1f;
+    font-variant-numeric: tabular-nums;
+    width: 48px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+  .breakdown-pct {
+    font-size: 10px;
+    font-weight: 500;
+    color: rgba(0,0,0,0.35);
+    width: 32px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  /* ========== PROJECTS ========== */
+  .project-list { display: flex; flex-direction: column; gap: 6px; }
+  .project-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .project-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(0,0,0,0.7);
+    width: 140px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    flex-shrink: 0;
+  }
+  .project-bar-track {
+    flex: 1;
+    height: 4px;
+    background: rgba(0,0,0,0.04);
+    border-radius: 2px;
+    overflow: hidden;
+  }
+  .project-bar-fill {
+    height: 100%;
+    border-radius: 2px;
+    background: rgba(45, 138, 110, 0.5);
+    transition: width 0.6s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+  .project-value {
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(0,0,0,0.5);
+    font-variant-numeric: tabular-nums;
+    width: 44px;
+    text-align: right;
+    flex-shrink: 0;
+  }
+
+  /* ========== AGENTS ========== */
+  .agent-list { display: flex; flex-direction: column; gap: 5px; }
+  .agent-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 3px 0;
+  }
+  .agent-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .agent-name {
+    font-size: 12px;
+    font-weight: 500;
+    color: rgba(0,0,0,0.7);
+    flex: 1;
+  }
+  .agent-value {
+    font-size: 12px;
+    font-weight: 600;
+    color: #1d1d1f;
+    font-variant-numeric: tabular-nums;
+  }
+  .agent-pct {
+    font-size: 10px;
+    font-weight: 500;
+    color: rgba(0,0,0,0.3);
+    width: 32px;
+    text-align: right;
+  }
+
+  /* ========== ACTION BUTTONS ========== */
+  .actions {
+    display: flex;
+    border-top: 0.5px solid rgba(0,0,0,0.06);
+    background: rgba(255,255,255,0.3);
+  }
+  .action-btn {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 5px;
+    padding: 9px 0;
+    border: none;
+    background: transparent;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 500;
+    color: rgba(0,0,0,0.45);
+    transition: all 0.12s;
+  }
+  .action-btn:hover { background: rgba(0,0,0,0.04); color: rgba(0,0,0,0.65); }
+  .action-btn:first-child { border-right: 0.5px solid rgba(0,0,0,0.06); }
+  .action-btn svg { width: 13px; height: 13px; }
+
+  /* ========== DARK MODE TOGGLE ========== */
+  .mode-toggle {
+    position: fixed;
+    bottom: 30px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    gap: 8px;
+    background: rgba(255,255,255,0.1);
+    padding: 6px;
+    border-radius: 10px;
+    backdrop-filter: blur(10px);
+  }
+  .mode-btn {
+    padding: 6px 16px;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.2s;
+    color: rgba(255,255,255,0.5);
+    background: transparent;
+  }
+  .mode-btn.active {
+    background: rgba(255,255,255,0.15);
+    color: white;
+  }
+
+  /* ========== DARK MODE ========== */
+  body.dark .popover {
+    background: rgba(40, 40, 42, 0.92);
+    border-color: rgba(255,255,255,0.08);
+    box-shadow:
+      0 20px 60px rgba(0,0,0,0.5),
+      0 0 0 0.5px rgba(255,255,255,0.06),
+      inset 0 0.5px 0 rgba(255,255,255,0.08);
+  }
+  body.dark .popover-arrow { border-bottom-color: rgba(40, 40, 42, 0.92); }
+  body.dark .header { background: rgba(255,255,255,0.04); border-bottom-color: rgba(255,255,255,0.06); }
+  body.dark .header-tokens { color: #f5f5f7; }
+  body.dark .header-date { color: rgba(255,255,255,0.4); }
+  body.dark .header-cost { color: #4aca9b; }
+  body.dark .header-cache { color: #4aca9b; background: rgba(74, 202, 155, 0.1); }
+  body.dark .section-title { color: rgba(255,255,255,0.35); }
+  body.dark .section-divider { background: rgba(255,255,255,0.06); }
+  body.dark .breakdown-label { color: rgba(255,255,255,0.5); }
+  body.dark .breakdown-bar-track { background: rgba(255,255,255,0.06); }
+  body.dark .breakdown-value { color: #f5f5f7; }
+  body.dark .breakdown-pct { color: rgba(255,255,255,0.3); }
+  body.dark .project-name { color: rgba(255,255,255,0.6); }
+  body.dark .project-bar-track { background: rgba(255,255,255,0.06); }
+  body.dark .project-value { color: rgba(255,255,255,0.45); }
+  body.dark .agent-name { color: rgba(255,255,255,0.6); }
+  body.dark .agent-value { color: #f5f5f7; }
+  body.dark .agent-pct { color: rgba(255,255,255,0.25); }
+  body.dark .actions { border-top-color: rgba(255,255,255,0.06); background: rgba(255,255,255,0.02); }
+  body.dark .action-btn { color: rgba(255,255,255,0.4); }
+  body.dark .action-btn:hover { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.6); }
+  body.dark .action-btn:first-child { border-right-color: rgba(255,255,255,0.06); }
+  body.dark .refresh-btn { background: rgba(255,255,255,0.06); color: rgba(255,255,255,0.3); }
+  body.dark .refresh-btn:hover { background: rgba(255,255,255,0.1); color: rgba(255,255,255,0.5); }
+
+  /* ========== ANIMATIONS ========== */
+  @keyframes fadeInUp {
+    from { opacity: 0; transform: translateY(8px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+  .section { animation: fadeInUp 0.4s ease-out both; }
+  .section:nth-child(2) { animation-delay: 0.05s; }
+  .section:nth-child(3) { animation-delay: 0.1s; }
+  .section:nth-child(4) { animation-delay: 0.15s; }
+  .section:nth-child(5) { animation-delay: 0.2s; }
+  .section:nth-child(6) { animation-delay: 0.25s; }
+  .section:nth-child(7) { animation-delay: 0.3s; }
+
+  @keyframes barGrow {
+    from { width: 0; }
+  }
+  .breakdown-bar-fill, .project-bar-fill {
+    animation: barGrow 0.8s cubic-bezier(0.16, 1, 0.3, 1) 0.3s both;
+  }
+</style>
+</head>
+<body>
+  <!-- Fake macOS menu bar -->
+  <div class="menubar">
+    <div class="menubar-items">
+      <span>Wi-Fi</span>
+      <span>Battery</span>
+      <span>10:37 PM</span>
+      <div class="badge">
+        <svg viewBox="0 0 64 64" fill="none" stroke="white" stroke-width="5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 32 C6 32, 18 32, 24.5 25 C27 23, 30 14, 34 14 C38 14, 40.5 22, 44 22 C46 22, 49 14, 52 8 C55 14, 57.5 19, 60 22"/>
+        </svg>
+        42.6M
+      </div>
+    </div>
+  </div>
+
+  <!-- Popover -->
+  <div class="popover-wrapper">
+    <div class="popover-arrow"></div>
+    <div class="popover">
+      <!-- HEADER -->
+      <div class="header" style="position:relative;">
+        <div class="header-row">
+          <div class="header-left">
+            <div class="header-tokens">42.6M</div>
+            <div class="header-date">Today &middot; Jun 10, 12:00</div>
+          </div>
+          <div class="header-right">
+            <div class="header-cost">$28.45</div>
+            <div class="header-cache">
+              <svg width="10" height="10" viewBox="0 0 16 16" fill="currentColor"><path d="M8 1a7 7 0 100 14A7 7 0 008 1zm0 2.5a.75.75 0 01.75.75v3.69l2.28 2.28a.75.75 0 11-1.06 1.06l-2.5-2.5A.75.75 0 017 8.25V4.25A.75.75 0 018 3.5z"/></svg>
+              cache 38.6%
+            </div>
+          </div>
+        </div>
+        <button class="refresh-btn" title="Refresh">
+          <svg width="12" height="12" viewBox="0 0 16 16" fill="currentColor"><path d="M8 2.5a5.48 5.48 0 00-4.14 1.89.75.75 0 01-1.13-.98A6.98 6.98 0 018 1a7 7 0 017 7 7 7 0 01-7 7 6.98 6.98 0 01-5.27-2.41.75.75 0 111.13-.98A5.48 5.48 0 008 13.5 5.5 5.5 0 1013.5 8a5.48 5.48 0 00-1.14-3.39L11 5.97V2.5h3.47l-1.24 1.24A6.97 6.97 0 008 2.5z"/></svg>
+        </button>
+      </div>
+
+      <!-- HOURLY CHART -->
+      <div class="section chart-section">
+        <div class="section-title">Hourly</div>
+        <div class="chart-container">
+          <svg class="chart-svg" viewBox="0 0 340 80" preserveAspectRatio="none">
+            <defs>
+              <linearGradient id="areaGrad" x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stop-color="#2d8a6e" stop-opacity="0.3"/>
+                <stop offset="100%" stop-color="#2d8a6e" stop-opacity="0.02"/>
+              </linearGradient>
+            </defs>
+            <!-- Horizontal grid -->
+            <line x1="0" y1="26" x2="340" y2="26" stroke="rgba(0,0,0,0.04)" stroke-width="0.5"/>
+            <line x1="0" y1="52" x2="340" y2="52" stroke="rgba(0,0,0,0.04)" stroke-width="0.5"/>
+            <!-- Future zone subtle background (hours 12-23, x=170 to 340) -->
+            <rect x="170" y="0" width="170" height="78" fill="rgba(0,0,0,0.015)"/>
+            <!-- Vertical guides every 4h: 4, 8, 16, 20 -->
+            <line x1="56.7" y1="0" x2="56.7" y2="76" stroke="rgba(0,0,0,0.03)" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="113.3" y1="0" x2="113.3" y2="76" stroke="rgba(0,0,0,0.03)" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="226.7" y1="0" x2="226.7" y2="76" stroke="rgba(0,0,0,0.015)" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <line x1="283.3" y1="0" x2="283.3" y2="76" stroke="rgba(0,0,0,0.015)" stroke-width="0.5" stroke-dasharray="3,3"/>
+            <!-- Area fill: data only for hours 0-11 (morning usage ramping up) -->
+            <path d="M0,76 L14,74 L28,72 L43,70 L57,66 L71,58 L85,48 L99,36 L113,24 L128,18 L142,14 L156,16 L170,20 L170,78 L0,78 Z" fill="url(#areaGrad)"/>
+            <!-- Line -->
+            <path d="M0,76 L14,74 L28,72 L43,70 L57,66 L71,58 L85,48 L99,36 L113,24 L128,18 L142,14 L156,16 L170,20" fill="none" stroke="#2d8a6e" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
+            <!-- End-of-data dot (current hour) -->
+            <circle cx="170" cy="20" r="5" fill="#2d8a6e" opacity="0.12"/>
+            <circle cx="170" cy="20" r="2.5" fill="#2d8a6e"/>
+            <!-- Now indicator line at hour 12 (x=170) -->
+            <line x1="170" y1="0" x2="170" y2="76" stroke="#2d8a6e" stroke-width="0.8" stroke-dasharray="2,2" opacity="0.35"/>
+          </svg>
+          <div class="chart-time">
+            <span>0</span>
+            <span>2</span>
+            <span>4</span>
+            <span>6</span>
+            <span>8</span>
+            <span>10</span>
+            <span>12</span>
+            <span class="future">14</span>
+            <span class="future">16</span>
+            <span class="future">18</span>
+            <span class="future">20</span>
+            <span class="future">22</span>
+          </div>
+        </div>
+      </div>
+      <div class="section-divider"></div>
+
+      <!-- BREAKDOWN -->
+      <div class="section">
+        <div class="section-title">Breakdown</div>
+        <div class="breakdown-list">
+          <div class="breakdown-row">
+            <div class="breakdown-dot" style="background:#2d8a6e;"></div>
+            <div class="breakdown-label">Input</div>
+            <div class="breakdown-bar-track">
+              <div class="breakdown-bar-fill" style="width:72%; background:#2d8a6e;"></div>
+            </div>
+            <div class="breakdown-value">25.8M</div>
+            <div class="breakdown-pct">61%</div>
+          </div>
+          <div class="breakdown-row">
+            <div class="breakdown-dot" style="background:#5b7ee5;"></div>
+            <div class="breakdown-label">Output</div>
+            <div class="breakdown-bar-track">
+              <div class="breakdown-bar-fill" style="width:36%; background:#5b7ee5;"></div>
+            </div>
+            <div class="breakdown-value">12.3M</div>
+            <div class="breakdown-pct">29%</div>
+          </div>
+          <div class="breakdown-row">
+            <div class="breakdown-dot" style="background:#d4922a;"></div>
+            <div class="breakdown-label">Cached</div>
+            <div class="breakdown-bar-track">
+              <div class="breakdown-bar-fill" style="width:12%; background:#d4922a;"></div>
+            </div>
+            <div class="breakdown-value">4.5M</div>
+            <div class="breakdown-pct">11%</div>
+          </div>
+        </div>
+      </div>
+      <div class="section-divider"></div>
+
+      <!-- PROJECTS -->
+      <div class="section">
+        <div class="section-title">Projects</div>
+        <div class="project-list">
+          <div class="project-row">
+            <div class="project-name">ccusage-dashboard</div>
+            <div class="project-bar-track">
+              <div class="project-bar-fill" style="width:100%;"></div>
+            </div>
+            <div class="project-value">24.8M</div>
+          </div>
+          <div class="project-row">
+            <div class="project-name">swift-toolkit</div>
+            <div class="project-bar-track">
+              <div class="project-bar-fill" style="width:38%;"></div>
+            </div>
+            <div class="project-value">9.5M</div>
+          </div>
+          <div class="project-row">
+            <div class="project-name">omc-plugin</div>
+            <div class="project-bar-track">
+              <div class="project-bar-fill" style="width:22%;"></div>
+            </div>
+            <div class="project-value">5.4M</div>
+          </div>
+          <div class="project-row">
+            <div class="project-name">blog-generator</div>
+            <div class="project-bar-track">
+              <div class="project-bar-fill" style="width:12%;"></div>
+            </div>
+            <div class="project-value">2.9M</div>
+          </div>
+        </div>
+      </div>
+      <div class="section-divider"></div>
+
+      <!-- AGENTS -->
+      <div class="section">
+        <div class="section-title">Agents</div>
+        <div class="agent-list">
+          <div class="agent-row">
+            <div class="agent-dot" style="background:#2d8a6e;"></div>
+            <div class="agent-name">Claude Code</div>
+            <div class="agent-value">38.2M</div>
+            <div class="agent-pct">90%</div>
+          </div>
+          <div class="agent-row">
+            <div class="agent-dot" style="background:#5b7ee5;"></div>
+            <div class="agent-name">Codex</div>
+            <div class="agent-value">3.1M</div>
+            <div class="agent-pct">7%</div>
+          </div>
+          <div class="agent-row">
+            <div class="agent-dot" style="background:#9b6dd7;"></div>
+            <div class="agent-name">OpenCode</div>
+            <div class="agent-value">1.3M</div>
+            <div class="agent-pct">3%</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ACTIONS -->
+      <div class="actions">
+        <button class="action-btn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M2 4h12v8H2V4zm1 1v6h10V5H3z"/></svg>
+          Dashboard
+        </button>
+        <button class="action-btn">
+          <svg viewBox="0 0 16 16" fill="currentColor"><path d="M8 4.754a3.246 3.246 0 100 6.492 3.246 3.246 0 000-6.492zM5.754 8a2.246 2.246 0 114.492 0 2.246 2.246 0 01-4.492 0z"/><path d="M9.796 1.343c-.527-1.79-3.065-1.79-3.592 0l-.094.319a.873.873 0 01-1.255.52l-.292-.16c-1.64-.892-3.433.902-2.54 2.541l.159.292a.873.873 0 01-.52 1.255l-.319.094c-1.79.527-1.79 3.065 0 3.592l.319.094a.873.873 0 01.52 1.255l-.16.292c-.892 1.64.901 3.434 2.541 2.54l.292-.159a.873.873 0 011.255.52l.094.319c.527 1.79 3.065 1.79 3.592 0l.094-.319a.873.873 0 011.255-.52l.292.16c1.64.893 3.434-.902 2.54-2.541l-.159-.292a.873.873 0 01.52-1.255l.319-.094c1.79-.527 1.79-3.065 0-3.592l-.319-.094a.873.873 0 01-.52-1.255l.16-.292c.893-1.64-.902-3.433-2.541-2.54l-.292.159a.873.873 0 01-1.255-.52l-.094-.319z"/></svg>
+          Settings
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Dark mode toggle -->
+  <div class="mode-toggle">
+    <button class="mode-btn active" onclick="setMode('light')">Light</button>
+    <button class="mode-btn" onclick="setMode('dark')">Dark</button>
+  </div>
+
+  <script>
+    function setMode(mode) {
+      document.body.classList.toggle('dark', mode === 'dark');
+      document.querySelectorAll('.mode-btn').forEach(btn => btn.classList.remove('active'));
+      event.target.classList.add('active');
+    }
+  </script>
+</body>
+</html>

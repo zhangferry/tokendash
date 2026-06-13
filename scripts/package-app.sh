@@ -1,0 +1,89 @@
+#!/bin/bash
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+BUILD_DIR="$REPO_ROOT/TokenDashSwift/.build/release"
+DIST_DIR="$REPO_ROOT/dist"
+APP_NAME="TokenDash"
+APP_BUNDLE="$REPO_ROOT/release/$APP_NAME.app"
+
+echo "==> Packaging $APP_NAME.app..."
+
+# Verify binaries exist
+if [ ! -f "$BUILD_DIR/TokenDash" ]; then
+    echo "Error: Swift binary not found at $BUILD_DIR/TokenDash"
+    echo "Run 'npm run build:swift' first."
+    exit 1
+fi
+
+if [ ! -d "$DIST_DIR" ]; then
+    echo "Error: Node.js dist not found at $DIST_DIR"
+    echo "Run 'npm run build' first."
+    exit 1
+fi
+
+# Remove old bundle
+rm -rf "$APP_BUNDLE"
+
+# Create .app bundle structure
+APP_MACOS="$APP_BUNDLE/Contents/MacOS"
+APP_RESOURCES="$APP_BUNDLE/Contents/Resources"
+mkdir -p "$APP_MACOS" "$APP_RESOURCES"
+
+# Copy Swift binary
+cp "$BUILD_DIR/TokenDash" "$APP_MACOS/$APP_NAME"
+chmod +x "$APP_MACOS/$APP_NAME"
+
+# Copy Node.js server dist into Resources/server/
+SERVER_DIR="$APP_RESOURCES/server"
+mkdir -p "$SERVER_DIR"
+cp -R "$DIST_DIR" "$SERVER_DIR/dist"
+
+# Install only the runtime dependencies the daemon needs (express + zod)
+# The web client is pre-built in dist/client/ and doesn't need react/recharts at runtime
+echo "   Installing minimal runtime dependencies..."
+cd "$SERVER_DIR"
+npm init -y --silent 2>/dev/null
+npm install express zod --production --no-package-lock --silent 2>/dev/null
+cd "$REPO_ROOT"
+
+# Copy package.json for version info
+cp "$REPO_ROOT/package.json" "$SERVER_DIR/package.json"
+
+# Generate Info.plist
+cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleExecutable</key>
+    <string>TokenDash</string>
+    <key>CFBundleIdentifier</key>
+    <string>com.zhangferry-dev.tokendash</string>
+    <key>CFBundleName</key>
+    <string>TokenDash</string>
+    <key>CFBundleDisplayName</key>
+    <string>TokenDash</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleShortVersionString</key>
+    <string>2.0.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+    <key>LSMinimumSystemVersion</key>
+    <string>14.0</string>
+    <key>LSUIElement</key>
+    <true/>
+    <key>NSHighResolutionCapable</key>
+    <true/>
+    <key>NSSupportsAutomaticGraphicsSwitching</key>
+    <true/>
+</dict>
+</plist>
+PLIST
+
+echo "✅ $APP_NAME.app created at $APP_BUNDLE"
+echo "   Binary: $(du -sh "$APP_MACOS/$APP_NAME" | cut -f1)"
+echo "   Bundle: $(du -sh "$APP_BUNDLE" | cut -f1)"

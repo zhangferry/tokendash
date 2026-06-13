@@ -19,3 +19,4 @@ electron/main.js
 electron/trayBadge.js
 electron/trayHelper
 release/
+TokenDashSwift/.build/

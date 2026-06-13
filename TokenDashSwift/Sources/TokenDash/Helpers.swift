@@ -1,0 +1,101 @@
+import Foundation
+import SwiftUI
+
+// MARK: - Adaptive Colors (Light / Dark)
+
+extension Color {
+    // Accent green
+    static let accentGreen = Color(red: 0.176, green: 0.541, blue: 0.431)
+    static let accentGreenLight = Color(red: 0.176, green: 0.541, blue: 0.431).opacity(0.5)
+    // Breakdown colors
+    static let inputColor = Color(red: 0.176, green: 0.541, blue: 0.431)
+    static let outputColor = Color(red: 0.357, green: 0.494, blue: 0.898)
+    static let cachedColor = Color(red: 0.831, green: 0.573, blue: 0.165)
+    // Agent dot colors
+    static let claudeAgentColor = Color(red: 0.176, green: 0.541, blue: 0.431)
+    static let codexAgentColor = Color(red: 0.357, green: 0.494, blue: 0.898)
+    static let openclawAgentColor = Color(red: 0.608, green: 0.427, blue: 0.843)
+    static let opencodeAgentColor = Color(red: 0.608, green: 0.427, blue: 0.843)
+    // Semantic adaptive colors
+    static let sectionTitleColor: Color = .primary.opacity(0.4)
+    static let dividerColor: Color = .primary.opacity(0.06)
+    static let futureLabelColor: Color = .primary.opacity(0.15)
+    static let barTrackColor: Color = .primary.opacity(0.04)
+    static let secondaryLabel: Color = .primary.opacity(0.45)
+    static let tertiaryLabel: Color = .primary.opacity(0.3)
+    // Fixed opaque backgrounds — prevents desktop bleed-through in dark mode
+    static let popoverBackground = Color(nsColor: .windowBackgroundColor)
+    static let headerBackground = Color(nsColor: .controlBackgroundColor)
+}
+
+// MARK: - Number formatting
+
+func formatTokens(_ tokens: Int) -> String {
+    if tokens >= 1_000_000 { return String(format: "%.1fM", Double(tokens) / 1_000_000) }
+    if tokens >= 1_000 { return String(format: "%.1fK", Double(tokens) / 1_000) }
+    if tokens > 0 { return String(tokens) }
+    return "0"
+}
+
+func formatCost(_ cost: Double) -> String {
+    let value = abs(cost)
+    if value < 0.05 { return "$0" }
+    if value < 10 { return String(format: "$%.2f", cost) }
+    if value < 100 { return String(format: "$%.1f", cost) }
+    return String(format: "$%.0f", cost)
+}
+
+func formatPercent(_ value: Double) -> String {
+    String(format: "%.1f%%", value)
+}
+
+func formatProjectName(_ path: String) -> String {
+    let parts = path.split(separator: "/").map(String.init)
+    return parts.last ?? path
+}
+
+func formatAgentName(_ agent: String) -> String {
+    switch agent {
+    case "claude": return "Claude Code"
+    case "codex": return "Codex"
+    case "openclaw": return "OpenClaw"
+    case "opencode": return "OpenCode"
+    default: return agent.capitalized
+    }
+}
+
+func todayString() -> String {
+    let f = DateFormatter()
+    f.dateFormat = "yyyy-MM-dd"
+    return f.string(from: Date())
+}
+
+func todayLabel() -> String {
+    let f = DateFormatter()
+    f.dateFormat = "MMM d, HH:mm"
+    return f.string(from: Date())
+}
+
+func trimTrailingZero(_ value: String) -> String {
+    var s = value
+    if s.hasSuffix(".0") { s = String(s.dropLast(2)) }
+    if let dot = s.lastIndex(of: ".") {
+        let after = s.index(after: dot)
+        let fraction = s[after...]
+        let trimmed = fraction.replacingOccurrences(of: "0+$", with: "", options: .regularExpression)
+        if trimmed.isEmpty {
+            s = String(s[..<dot])
+        }
+    }
+    return s
+}
+
+func agentColor(forKey key: String) -> Color {
+    switch key {
+    case "claude": return .claudeAgentColor
+    case "codex": return .codexAgentColor
+    case "openclaw": return .openclawAgentColor
+    case "opencode": return .opencodeAgentColor
+    default: return .secondary
+    }
+}

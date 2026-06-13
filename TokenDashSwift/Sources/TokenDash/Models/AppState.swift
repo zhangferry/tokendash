@@ -27,14 +27,12 @@ import Combine
 
     // Settings
     var isLaunchAtLoginEnabled = false
-    var isCheckingUpdates = false
-    var updateMessage: String?
-    var updateAvailable: UpdateInfo?
-    var isDownloading = false
-    var downloadProgress: Double?
 
     // Navigation
     var showSettings = false
+
+    /// Lets the credential sheet trigger an immediate quota refresh after saving.
+    @ObservationIgnored weak var badgeUpdater: BadgeUpdater?
 
     // Version
     var appVersion: String = {

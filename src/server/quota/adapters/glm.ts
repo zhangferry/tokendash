@@ -5,6 +5,7 @@ import type { QuotaSnapshot } from '../types.js';
 import type { QuotaAdapter } from '../adapter.js';
 import { QuotaError, baseSnapshot } from '../adapter.js';
 import { fetchJsonWithTimeout, HttpError, classifyHttpError, windowFromPercent, windowFromCounts, unixToIso } from '../helpers.js';
+import { readStoredCredential } from '../credentialsFile.js';
 
 /**
  * GLM (Zhipu) Coding Plan adapter.
@@ -110,6 +111,10 @@ function classifyFetchError(err: unknown): QuotaError {
 }
 
 function resolveCredential(): { key: string; base: string } | null {
+  // 0. Key entered in-app (via the credential sheet) — highest priority.
+  const stored = readStoredCredential('glm');
+  if (stored) return { key: stored.apiKey, base: stored.baseUrl || 'https://open.bigmodel.cn' };
+
   // 1. Explicit GLM Coding Plan API keys.
   const zai = envOrConfig('ZAI_API_KEY');
   if (zai) return { key: zai, base: envOrConfig('ZAI_BASE_URL') || 'https://api.z.ai' };

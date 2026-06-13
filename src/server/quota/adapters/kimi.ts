@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
+import { readStoredCredential } from '../credentialsFile.js';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
 import type { QuotaSnapshot } from '../types.js';
@@ -175,6 +176,13 @@ function credentialsPath(): string {
 }
 
 function readCredentials(): KimiCredentials | null {
+  // 0. Token entered in-app (via the credential sheet) — highest priority.
+  // Treated as a bare access token; no refresh token, so it's used as-is.
+  const stored = readStoredCredential('kimi');
+  if (stored?.apiKey) {
+    return { access_token: stored.apiKey, token_type: 'Bearer' };
+  }
+
   const path = credentialsPath();
   if (!existsSync(path)) return null;
   try {

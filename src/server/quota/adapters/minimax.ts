@@ -2,6 +2,7 @@ import type { QuotaSnapshot } from '../types.js';
 import type { QuotaAdapter } from '../adapter.js';
 import { QuotaError, baseSnapshot } from '../adapter.js';
 import { fetchJsonWithTimeout, HttpError, classifyHttpError, windowFromCounts, unixToIso } from '../helpers.js';
+import { readStoredCredential } from '../credentialsFile.js';
 
 /**
  * MiniMax Coding Plan (Token Plan) adapter.
@@ -107,6 +108,14 @@ function classifyFetchError(err: unknown): QuotaError {
 }
 
 function resolveCredential(): { key: string; base: string } | null {
+  // 0. Key entered in-app (via the credential sheet) — highest priority.
+  const stored = readStoredCredential('minimax');
+  if (stored) {
+    const region = (process.env.MINIMAX_REGION || '').toLowerCase();
+    const base = stored.baseUrl || (region === 'cn' ? 'https://www.minimaxi.com' : 'https://www.minimax.io');
+    return { key: stored.apiKey, base };
+  }
+
   const key = process.env.MINIMAX_API_KEY || process.env.MINIMAX_SUBSCRIPTION_KEY;
   if (!key) return null;
   // minimax.io = global, minimaxi.com = China.

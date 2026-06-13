@@ -2,6 +2,7 @@ import SwiftUI
 
 struct PopoverView: View {
     @Environment(AppState.self) private var state
+    @Bindable var settings = SettingsStore.shared
 
     var body: some View {
         Group {
@@ -14,6 +15,15 @@ struct PopoverView: View {
         .frame(width: 380)
         .background(Color.popoverBackground)
         .clipShape(RoundedRectangle(cornerRadius: 10))
+        .preferredColorScheme(resolvedScheme)
+    }
+
+    private var resolvedScheme: ColorScheme? {
+        switch settings.appearance {
+        case .system: return nil
+        case .light: return .light
+        case .dark: return .dark
+        }
     }
 
     private var mainContent: some View {

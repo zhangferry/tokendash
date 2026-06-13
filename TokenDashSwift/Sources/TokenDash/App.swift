@@ -35,6 +35,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Hide from Dock — menu bar only
         NSApp.setActivationPolicy(.accessory)
 
+        // Ask for notification permission up front (low-quota alerts).
+        NotificationService.shared.requestAuthorization()
+
+        // Start Sparkle auto-updater (no-ops in dev runs without a bundle).
+        UpdaterController.shared.start()
+
         // ── Status Item ──
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         statusItem.button?.title = "0"
@@ -67,6 +73,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
 
         let updater = BadgeUpdater(state: state)
         self.badgeUpdater = updater
+        state.badgeUpdater = updater
 
         badgePollTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
             DispatchQueue.main.async {

@@ -7,7 +7,10 @@ import AppKit
     private let state: AppState
     private var apiClient: APIClient?
     private var timer: Timer?
-    private let updateInterval: TimeInterval = 5.0
+    /// Heartbeat cadence (cheap — just checks the clock). Actual fetch cadence
+    /// follows SettingsStore.refreshInterval so manual mode disables auto-refresh.
+    private let tickInterval: TimeInterval = 5.0
+    private var lastUpdate: Date = .distantPast
 
     init(state: AppState) {
         self.state = state
@@ -18,8 +21,8 @@ import AppKit
         self.state.daemonPort = port
         self.state.isDaemonReady = true
         update()
-        timer = Timer.scheduledTimer(withTimeInterval: updateInterval, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.update() }
+        timer = Timer.scheduledTimer(withTimeInterval: tickInterval, repeats: true) { [weak self] _ in
+            Task { @MainActor in self?.tick() }
         }
     }
 
@@ -33,6 +36,14 @@ import AppKit
         update()
     }
 
+    private func tick() {
+        let interval = SettingsStore.shared.refreshInterval
+        if interval == .manual { return }
+        if Date().timeIntervalSince(lastUpdate) >= interval.rawValue {
+            update()
+        }
+    }
+
     // MARK: - Update cycle
 
     private func update() {
@@ -40,6 +51,7 @@ import AppKit
             NSLog("[TokenDash] update() called but apiClient is nil")
             return
         }
+        lastUpdate = Date()
         let port = state.daemonPort
         // Use a regular Task (inherits MainActor) instead of Task.detached
         // This ensures state updates trigger SwiftUI observation correctly.
@@ -133,6 +145,9 @@ import AppKit
                 self.state.hourlyData = hourly
                 self.state.projects = projectRows
                 self.state.quotas = quotaSnapshots
+
+                // Low-quota notifications (no-op if disabled in settings).
+                NotificationService.shared.evaluate(quotas: quotaSnapshots)
 
             } catch {
                 NSLog("[TokenDash] update() error: \(error.localizedDescription)")

@@ -50,8 +50,35 @@ cd "$REPO_ROOT"
 # Copy package.json for version info
 cp "$REPO_ROOT/package.json" "$SERVER_DIR/package.json"
 
+# Embed Sparkle.framework (auto-update). SwiftPM links it but doesn't place it
+# in the bundle; copy from the checkout with its symlink structure preserved.
+APP_FRAMEWORKS="$APP_BUNDLE/Contents/Frameworks"
+mkdir -p "$APP_FRAMEWORKS"
+SPARKLE_FW=$(find "$REPO_ROOT/TokenDashSwift/.build" -type d -name "Sparkle.framework" -path "*artifacts*" 2>/dev/null | head -1)
+if [ -n "$SPARKLE_FW" ] && [ -d "$SPARKLE_FW" ]; then
+    cp -R "$SPARKLE_FW" "$APP_FRAMEWORKS/Sparkle.framework"
+    echo "   Embedded Sparkle.framework"
+else
+    echo "   ⚠️ Sparkle.framework not found — run 'npm run build:swift' first (needs the Sparkle dep resolved)."
+fi
+
+# Resolve version + Sparkle config for Info.plist.
+# CFBundleVersion MUST be an incrementing integer (Sparkle compares these).
+APP_VERSION=$(node -p "require('$REPO_ROOT/package.json').version" 2>/dev/null || echo "2.0.0")
+BUILD_NUMBER=$(git -C "$REPO_ROOT" rev-list --count HEAD 2>/dev/null || echo "1")
+SPARKLE_FEED_URL="${SPARKLE_FEED_URL:-https://zhangferry.github.io/tokendash/appcast.xml}"
+# EdDSA public key: from env, or ~/.tokendash/eddsa_pub.key, or empty (warn).
+SPARKLE_EDDSA_PUB="${SPARKLE_EDDSA_PUB:-}"
+if [ -z "$SPARKLE_EDDSA_PUB" ] && [ -f ~/.tokendash/eddsa_pub.key ]; then
+    SPARKLE_EDDSA_PUB="$(cat ~/.tokendash/eddsa_pub.key)"
+fi
+if [ -z "$SPARKLE_EDDSA_PUB" ]; then
+    echo "   ⚠️ SUPublicEDKey not set. Auto-update will reject updates until you generate keys."
+    echo "      Run scripts/sparkle-keys.sh and re-package (see docs/updating.md)."
+fi
+
 # Generate Info.plist
-cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
+cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
@@ -69,9 +96,9 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
-    <string>2.0.0</string>
+    <string>$APP_VERSION</string>
     <key>CFBundleVersion</key>
-    <string>1</string>
+    <string>$BUILD_NUMBER</string>
     <key>LSMinimumSystemVersion</key>
     <string>14.0</string>
     <key>LSUIElement</key>
@@ -80,6 +107,12 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << 'PLIST'
     <true/>
     <key>NSSupportsAutomaticGraphicsSwitching</key>
     <true/>
+    <key>SUFeedURL</key>
+    <string>$SPARKLE_FEED_URL</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUPublicEDKey</key>
+    <string>$SPARKLE_EDDSA_PUB</string>
 </dict>
 </plist>
 PLIST

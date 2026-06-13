@@ -8,6 +8,20 @@ import { getAnalytics } from './analytics.js';
 import { detectAvailableAgents } from '../agentDetection.js';
 import { isOpenClawAccessible } from '../openclawParser.js';
 import { isOpencodeAccessible } from '../opencodeParser.js';
+import { quotaService } from '../quota/index.js';
+
+async function getQuota(_req: Request, res: Response): Promise<void> {
+  // Fresh data only — quotaService handles cache, stale retention, and per-provider
+  // failure isolation internally. One provider's error never fails the whole response.
+  const force = _req.query.refresh === '1' || _req.query.refresh === 'true';
+  try {
+    const data = force ? await quotaService.refreshAll() : await quotaService.fetchAll();
+    res.json(data);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: 'Failed to fetch quota', hint: message });
+  }
+}
 
 function getAgents(_req: Request, res: Response): void {
   try {
@@ -32,4 +46,5 @@ export function registerApiRoutes(router: Router): void {
   router.get('/projects', getProjects);
   router.get('/blocks', getBlocks);
   router.get('/analytics', getAnalytics);
+  router.get('/quota', getQuota);
 }

@@ -45,6 +45,42 @@ struct ProjectsResponse: Codable {
     let projects: [String: [DailyEntry]]
 }
 
+// MARK: - Quota (Coding Plan) Models
+
+struct QuotaResponse: Codable {
+    let providers: [QuotaSnapshot]
+}
+
+struct QuotaSnapshot: Codable, Identifiable {
+    let provider: String
+    let displayName: String
+    let planName: String?
+    let fetchedAt: String
+    let freshness: String
+    let windows: [QuotaWindow]
+    let status: QuotaProviderStatus
+    var id: String { provider }
+}
+
+struct QuotaWindow: Codable, Identifiable {
+    let id: String
+    let label: String
+    let usedPercent: Double
+    let remainingPercent: Double
+    let used: Int?
+    let limit: Int?
+    let durationMins: Int?
+    let resetsAt: String?
+    let isUnlimited: Bool?
+    let modelName: String?
+}
+
+struct QuotaProviderStatus: Codable {
+    let state: String
+    let message: String?
+    let category: String?
+}
+
 // MARK: - Derived UI Models
 
 struct TodaySummary {
@@ -71,14 +107,4 @@ struct ProjectRow: Identifiable {
     let cached: Int
     let total: Int
     var id: String { fullPath }
-}
-
-struct AgentRow: Identifiable {
-    let name: String
-    let key: String
-    let input: Int
-    let output: Int
-    let cached: Int
-    let total: Int
-    var id: String { key }
 }

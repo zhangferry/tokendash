@@ -54,16 +54,6 @@ func formatProjectName(_ path: String) -> String {
     return parts.last ?? path
 }
 
-func formatAgentName(_ agent: String) -> String {
-    switch agent {
-    case "claude": return "Claude Code"
-    case "codex": return "Codex"
-    case "openclaw": return "OpenClaw"
-    case "opencode": return "OpenCode"
-    default: return agent.capitalized
-    }
-}
-
 func todayString() -> String {
     let f = DateFormatter()
     f.dateFormat = "yyyy-MM-dd"
@@ -88,14 +78,4 @@ func trimTrailingZero(_ value: String) -> String {
         }
     }
     return s
-}
-
-func agentColor(forKey key: String) -> Color {
-    switch key {
-    case "claude": return .claudeAgentColor
-    case "codex": return .codexAgentColor
-    case "openclaw": return .openclawAgentColor
-    case "opencode": return .opencodeAgentColor
-    default: return .secondary
-    }
 }

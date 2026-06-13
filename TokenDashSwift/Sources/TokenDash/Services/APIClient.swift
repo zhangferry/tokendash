@@ -24,6 +24,10 @@ actor APIClient {
         try await fetch("/projects?agent=\(agent)")
     }
 
+    func getQuota() async throws -> QuotaResponse {
+        try await fetch("/quota")
+    }
+
     /// Health check — returns true if the API is responding.
     func healthCheck() async -> Bool {
         do {

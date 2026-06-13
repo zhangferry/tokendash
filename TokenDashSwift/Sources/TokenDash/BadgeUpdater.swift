@@ -108,9 +108,20 @@ import AppKit
                 )
                 let hourly = computeHourly(blocks: blockResults, today: today)
                 let projectRows = computeProjects(projects: projectResults, today: today)
-                let agentRows = computeAgents(agents: agents, daily: dailyResults, today: today)
 
                 NSLog("[TokenDash] Today: \(tokenStr) tokens, \(formatCost(totalCost)), cache \(formatPercent(cacheRate))")
+
+                // Coding Plan quotas — independent of the daily usage fetch above.
+                // Failures are isolated per-provider by the server, so a missing
+                // credential never breaks the rest of the popover.
+                var quotaSnapshots: [QuotaSnapshot] = []
+                do {
+                    let quotaResp = try await api.getQuota()
+                    quotaSnapshots = quotaResp.providers
+                    NSLog("[TokenDash] Quota: \(quotaSnapshots.count) providers")
+                } catch {
+                    NSLog("[TokenDash] Quota fetch failed (non-fatal): \(error)")
+                }
 
                 // Direct state update — we're on MainActor, observation will fire
                 self.state.badgeImage = badgeImage
@@ -121,7 +132,7 @@ import AppKit
                 self.state.errorMessage = nil
                 self.state.hourlyData = hourly
                 self.state.projects = projectRows
-                self.state.agents = agentRows
+                self.state.quotas = quotaSnapshots
 
             } catch {
                 NSLog("[TokenDash] update() error: \(error.localizedDescription)")
@@ -169,21 +180,6 @@ import AppKit
         return totals.map { path, t in
             ProjectRow(name: formatProjectName(path), fullPath: path, input: t.input, output: t.output, cached: t.cached, total: t.total)
         }.sorted { $0.total > $1.total }.prefix(4).map { $0 }
-    }
-
-    private func computeAgents(agents: [String], daily: [DailyResponse], today: String) -> [AgentRow] {
-        var rows: [AgentRow] = []
-        for (i, agent) in agents.enumerated() {
-            guard i < daily.count else { continue }
-            let entry = daily[i].daily.first { $0.date == today }
-            let input = entry?.inputTokens ?? 0
-            let output = entry?.outputTokens ?? 0
-            let cached = entry?.cacheReadTokens ?? 0
-            let total = entry?.totalTokens ?? 0
-            guard total > 0 || input > 0 else { continue }
-            rows.append(AgentRow(name: formatAgentName(agent), key: agent, input: input, output: output, cached: cached, total: total))
-        }
-        return rows.sorted { $0.total > $1.total }
     }
 
     // MARK: - Badge image rendering

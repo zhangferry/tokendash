@@ -33,7 +33,7 @@ struct PopoverView: View {
             ProjectsSection(projects: state.projects)
                 .sectionDivider()
 
-            AgentsSection(agents: state.agents)
+            CodingPlanSection(quotas: state.quotas)
 
             ActionButtons()
                 .frame(height: 32)

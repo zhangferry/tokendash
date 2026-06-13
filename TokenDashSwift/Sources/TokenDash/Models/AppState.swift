@@ -23,7 +23,7 @@ import Combine
     var todaySummary: TodaySummary?
     var hourlyData: [HourBucket] = []
     var projects: [ProjectRow] = []
-    var agents: [AgentRow] = []
+    var quotas: [QuotaSnapshot] = []
 
     // Settings
     var isLaunchAtLoginEnabled = false

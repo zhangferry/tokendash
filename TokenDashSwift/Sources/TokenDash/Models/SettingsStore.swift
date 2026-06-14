@@ -8,7 +8,6 @@ import SwiftUI
 
     /// How often the badge/popover re-fetches usage + quota.
     enum RefreshInterval: Double, CaseIterable, Identifiable {
-        case manual = 0
         case thirtySeconds = 30
         case oneMinute = 60
         case fiveMinutes = 300
@@ -16,7 +15,6 @@ import SwiftUI
         var id: Double { rawValue }
         var label: String {
             switch self {
-            case .manual: return "Manual"
             case .thirtySeconds: return "30 seconds"
             case .oneMinute: return "1 minute"
             case .fiveMinutes: return "5 minutes"

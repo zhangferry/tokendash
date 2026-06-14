@@ -8,7 +8,7 @@ import AppKit
     private var apiClient: APIClient?
     private var timer: Timer?
     /// Heartbeat cadence (cheap — just checks the clock). Actual fetch cadence
-    /// follows SettingsStore.refreshInterval so manual mode disables auto-refresh.
+    /// follows SettingsStore.refreshInterval.
     private let tickInterval: TimeInterval = 5.0
     private var lastUpdate: Date = .distantPast
 
@@ -38,7 +38,6 @@ import AppKit
 
     private func tick() {
         let interval = SettingsStore.shared.refreshInterval
-        if interval == .manual { return }
         if Date().timeIntervalSince(lastUpdate) >= interval.rawValue {
             update()
         }
@@ -278,33 +277,33 @@ import AppKit
         let image = NSImage(size: size)
         image.lockFocus()
 
+        let inset = min(size.width, size.height) * 0.08
+        let circleRect = NSRect(
+            x: inset,
+            y: inset,
+            width: size.width - inset * 2,
+            height: size.height - inset * 2
+        )
+        NSColor.black.setFill()
+        NSBezierPath(ovalIn: circleRect).fill()
+
+        // Cut the app icon's pulse line out of the circular token mark.
         let sx = size.width / 64.0
         let sy = size.height / 64.0
-
         let path = NSBezierPath()
-        path.move(to: NSPoint(x: 6 * sx, y: (64 - 32) * sy))
-        path.line(to: NSPoint(x: 18 * sx, y: (64 - 32) * sy))
-        path.curve(to: NSPoint(x: 24.5 * sx, y: (64 - 39) * sy),
-                   controlPoint1: NSPoint(x: 21 * sx, y: (64 - 32) * sy),
-                   controlPoint2: NSPoint(x: 22.5 * sx, y: (64 - 34) * sy))
-        path.curve(to: NSPoint(x: 34 * sx, y: (64 - 50) * sy),
-                   controlPoint1: NSPoint(x: 27 * sx, y: (64 - 45.5) * sy),
-                   controlPoint2: NSPoint(x: 30 * sx, y: (64 - 50) * sy))
-        path.curve(to: NSPoint(x: 44 * sx, y: (64 - 22) * sy),
-                   controlPoint1: NSPoint(x: 38 * sx, y: (64 - 50) * sy),
-                   controlPoint2: NSPoint(x: 40.5 * sx, y: (64 - 42) * sy))
-        path.curve(to: NSPoint(x: 52 * sx, y: (64 - 8) * sy),
-                   controlPoint1: NSPoint(x: 46 * sx, y: (64 - 11) * sy),
-                   controlPoint2: NSPoint(x: 49 * sx, y: (64 - 8) * sy))
-        path.curve(to: NSPoint(x: 60 * sx, y: (64 - 22) * sy),
-                   controlPoint1: NSPoint(x: 55 * sx, y: (64 - 8) * sy),
-                   controlPoint2: NSPoint(x: 57.5 * sx, y: (64 - 13) * sy))
-
-        path.lineWidth = 5 * sx
+        path.move(to: NSPoint(x: 7 * sx, y: 32 * sy))
+        path.line(to: NSPoint(x: 25 * sx, y: 32 * sy))
+        path.line(to: NSPoint(x: 31 * sx, y: 47 * sy))
+        path.line(to: NSPoint(x: 38 * sx, y: 17 * sy))
+        path.line(to: NSPoint(x: 44 * sx, y: 32 * sy))
+        path.line(to: NSPoint(x: 57 * sx, y: 32 * sy))
+        path.lineWidth = 5.5 * sx
         path.lineCapStyle = .round
         path.lineJoinStyle = .round
-        NSColor.black.setStroke()
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current?.compositingOperation = .clear
         path.stroke()
+        NSGraphicsContext.restoreGraphicsState()
 
         image.unlockFocus()
         image.isTemplate = true

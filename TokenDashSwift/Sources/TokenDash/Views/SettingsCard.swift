@@ -17,11 +17,10 @@ struct SettingsCard<Content: View>: View {
     }
 }
 
-/// A single row inside a SettingsCard. Leading title/subtitle, trailing control.
+/// A compact single-line row inside a SettingsCard.
 struct SettingsRow<Trailing: View>: View {
     var icon: String? = nil
     let title: String
-    var subtitle: String? = nil
     var showDivider: Bool = true
     @ViewBuilder var trailing: Trailing
 
@@ -33,22 +32,14 @@ struct SettingsRow<Trailing: View>: View {
                     .foregroundStyle(Color.accentGreen)
                     .frame(width: 18)
             }
-            VStack(alignment: .leading, spacing: 2) {
-                Text(title)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.primary)
-                if let subtitle {
-                    Text(subtitle)
-                        .font(.system(size: 10))
-                        .foregroundStyle(Color.secondaryLabel)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
+            Text(title)
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(.primary)
+                .lineLimit(1)
             Spacer(minLength: 8)
             trailing
         }
-        .padding(.vertical, 10)
+        .padding(.vertical, 8)
         .overlay(alignment: .bottom) {
             if showDivider {
                 Rectangle()

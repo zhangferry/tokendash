@@ -12,6 +12,11 @@ dist
 test-results/
 *.png
 resources/
+!resources/
+resources/*
+!resources/icon.png
+!resources/icon-1024.png
+!resources/readme-hero.png
 .wolf/
 CLAUDE.md
 main.js

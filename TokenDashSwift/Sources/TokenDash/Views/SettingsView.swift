@@ -4,6 +4,7 @@ import ServiceManagement
 struct SettingsView: View {
     @Environment(AppState.self) private var state
     @Bindable var settings = SettingsStore.shared
+    @Bindable var updater = UpdaterController.shared
     @State private var showCredentialSheet = false
 
     var body: some View {
@@ -26,6 +27,9 @@ struct SettingsView: View {
         .background(Color.popoverBackground)
         .sheet(isPresented: $showCredentialSheet) {
             CredentialSheet()
+        }
+        .task {
+            syncLaunchAtLoginStatus()
         }
     }
 
@@ -62,18 +66,14 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsSectionHeader(title: "General")
             SettingsCard {
-                SettingsRow(icon: "power", title: "Launch at login",
-                            subtitle: "Open in the menu bar after sign in.",
-                            showDivider: true) {
+                SettingsRow(icon: "power", title: "Launch at Login", showDivider: true) {
                     Toggle("", isOn: Binding(
                         get: { state.isLaunchAtLoginEnabled },
                         set: { setLaunchAtLogin($0) }
                     ))
                     .toggleStyle(.switch).controlSize(.small).labelsHidden()
                 }
-                SettingsRow(icon: "arrow.clockwise", title: "Refresh interval",
-                            subtitle: "Usage and quota re-fetch cadence.",
-                            showDivider: true) {
+                SettingsRow(icon: "arrow.clockwise", title: "Refresh Usage", showDivider: true) {
                     Picker("", selection: $settings.refreshInterval) {
                         ForEach(SettingsStore.RefreshInterval.allCases) { interval in
                             Text(interval.label).tag(interval)
@@ -81,9 +81,7 @@ struct SettingsView: View {
                     }
                     .pickerStyle(.menu).controlSize(.small).frame(width: 110).labelsHidden()
                 }
-                SettingsRow(icon: "circle.lefthalf.filled", title: "Theme",
-                            subtitle: "Light, dark, or match system.",
-                            showDivider: false) {
+                SettingsRow(icon: "circle.lefthalf.filled", title: "Appearance", showDivider: false) {
                     Picker("", selection: $settings.appearance) {
                         ForEach(SettingsStore.Appearance.allCases) { a in
                             Text(a.label).tag(a)
@@ -101,8 +99,7 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsSectionHeader(title: "Coding Plans")
             SettingsCard {
-                SettingsRow(icon: "key.fill", title: "API credentials",
-                            subtitle: codingPlansSubtitle, showDivider: false) {
+                SettingsRow(icon: "key.fill", title: codingPlansTitle, showDivider: false) {
                     Button("Manage") { showCredentialSheet = true }
                         .font(.system(size: 11, weight: .medium))
                         .controlSize(.small)
@@ -111,10 +108,10 @@ struct SettingsView: View {
         }
     }
 
-    private var codingPlansSubtitle: String {
+    private var codingPlansTitle: String {
         let count = state.quotas.filter { $0.status.state == "ok" }.count
-        if count == 0 { return "No providers connected." }
-        return "\(count) provider\(count > 1 ? "s" : "") connected."
+        guard count > 0 else { return "API Credentials" }
+        return "API Credentials · \(count) Connected"
     }
 
     // MARK: - Notifications
@@ -123,15 +120,20 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsSectionHeader(title: "Notifications")
             SettingsCard {
-                SettingsRow(icon: "bell.badge", title: "Low quota alerts",
-                            subtitle: "Notify when a provider crosses the threshold.",
-                            showDivider: true) {
+                SettingsRow(icon: "bell.badge", title: "Low Quota Alerts", showDivider: true) {
                     Toggle("", isOn: $settings.lowQuotaNotificationsEnabled)
                         .toggleStyle(.switch).controlSize(.small).labelsHidden()
+                        .onChange(of: settings.lowQuotaNotificationsEnabled) { _, enabled in
+                            if enabled {
+                                NotificationService.shared.requestAuthorization { granted in
+                                    if !granted {
+                                        settings.lowQuotaNotificationsEnabled = false
+                                    }
+                                }
+                            }
+                        }
                 }
-                SettingsRow(icon: "percent", title: "Threshold",
-                            subtitle: "Usage percentage that triggers an alert.",
-                            showDivider: false) {
+                SettingsRow(icon: "percent", title: "Alert Threshold", showDivider: false) {
                     Stepper("\(settings.lowQuotaThreshold)%", value: $settings.lowQuotaThreshold, in: 50...95, step: 5)
                         .font(.system(size: 11, weight: .medium))
                         .monospacedDigit()
@@ -146,16 +148,13 @@ struct SettingsView: View {
         VStack(alignment: .leading, spacing: 0) {
             SettingsSectionHeader(title: "About & Updates")
             SettingsCard {
-                SettingsRow(icon: "tag", title: "Version",
-                            subtitle: state.appVersion,
-                            showDivider: true) {
+                SettingsRow(icon: "tag", title: "Version \(state.appVersion)", showDivider: true) {
                     Button("Check for Updates") { UpdaterController.shared.checkForUpdates() }
                         .font(.system(size: 11, weight: .medium))
                         .controlSize(.small)
+                        .disabled(!updater.canCheckForUpdates)
                 }
-                SettingsRow(icon: "checkmark.circle", title: "Automatically check",
-                            subtitle: "Check for new releases in the background.",
-                            showDivider: true) {
+                SettingsRow(icon: "checkmark.circle", title: "Automatic Update Checks", showDivider: true) {
                     Toggle("", isOn: $settings.autoCheckUpdates)
                         .toggleStyle(.switch).controlSize(.small).labelsHidden()
                         .onChange(of: settings.autoCheckUpdates) { _, _ in
@@ -163,8 +162,7 @@ struct SettingsView: View {
                         }
                 }
                 linkRow(icon: "globe", title: "GitHub Repository", url: "https://github.com/zhangferry/tokendash", divider: true)
-                SettingsRow(icon: "xmark.circle", title: "Quit TokenDash",
-                            subtitle: nil, showDivider: false) {
+                SettingsRow(icon: "xmark.circle", title: "Quit TokenDash", showDivider: false) {
                     Button("Quit") { NSApp.terminate(nil) }
                         .font(.system(size: 11, weight: .medium))
                         .controlSize(.small)
@@ -210,9 +208,14 @@ struct SettingsView: View {
             } else {
                 try SMAppService.mainApp.unregister()
             }
-            state.isLaunchAtLoginEnabled = enabled
+            syncLaunchAtLoginStatus()
         } catch {
-            state.isLaunchAtLoginEnabled = !enabled
+            syncLaunchAtLoginStatus()
+            NSLog("[TokenDash] Failed to update launch at login: \(error.localizedDescription)")
         }
+    }
+
+    private func syncLaunchAtLoginStatus() {
+        state.isLaunchAtLoginEnabled = SMAppService.mainApp.status == .enabled
     }
 }

@@ -1,5 +1,5 @@
 import Foundation
-import UserNotifications
+@preconcurrency import UserNotifications
 
 /// Fires a local macOS notification when a Coding Plan provider crosses the
 /// configured usage threshold. Dedupes per (provider, window) so a sustained
@@ -15,9 +15,30 @@ import UserNotifications
     private var isBundled: Bool { Bundle.main.bundleIdentifier != nil }
 
     /// Request notification permission (idempotent). Called once at launch.
-    func requestAuthorization() {
-        guard isBundled else { return }
-        UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound]) { _, _ in }
+    func requestAuthorization(completion: ((Bool) -> Void)? = nil) {
+        guard isBundled else {
+            completion?(false)
+            return
+        }
+
+        let center = UNUserNotificationCenter.current()
+        center.getNotificationSettings { settings in
+            switch settings.authorizationStatus {
+            case .authorized, .provisional:
+                DispatchQueue.main.async { completion?(true) }
+            case .notDetermined:
+                center.requestAuthorization(options: [.alert, .sound]) { granted, error in
+                    if let error {
+                        NSLog("[TokenDash] Notification authorization failed: \(error.localizedDescription)")
+                    }
+                    DispatchQueue.main.async { completion?(granted) }
+                }
+            case .denied:
+                DispatchQueue.main.async { completion?(false) }
+            @unknown default:
+                DispatchQueue.main.async { completion?(false) }
+            }
+        }
     }
 
     /// Inspect the latest quota snapshots; notify on threshold crossings.

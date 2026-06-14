@@ -35,8 +35,9 @@ class AppDelegate: NSObject, NSApplicationDelegate {
         // Hide from Dock — menu bar only
         NSApp.setActivationPolicy(.accessory)
 
-        // Ask for notification permission up front (low-quota alerts).
-        NotificationService.shared.requestAuthorization()
+        if SettingsStore.shared.lowQuotaNotificationsEnabled {
+            NotificationService.shared.requestAuthorization()
+        }
 
         // Start Sparkle auto-updater (no-ops in dev runs without a bundle).
         UpdaterController.shared.start()

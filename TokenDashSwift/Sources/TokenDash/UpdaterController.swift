@@ -1,4 +1,5 @@
 import Foundation
+import Combine
 import Sparkle
 
 /// Thin wrapper around Sparkle's standard updater. Sparkle owns the update
@@ -8,9 +9,11 @@ import Sparkle
 /// In a dev run (bare binary from .build/debug) there's no app bundle with
 /// SUFeedURL, so Sparkle no-ops and logs — that's fine; it only matters in the
 /// packaged .app where Info.plist carries SUFeedURL/SUPublicEDKey.
-@MainActor final class UpdaterController {
+@MainActor @Observable final class UpdaterController {
     static let shared = UpdaterController()
     private var sparkle: SPUStandardUpdaterController?
+    private var canCheckObservation: AnyCancellable?
+    private(set) var canCheckForUpdates = false
 
     /// True only inside a real .app bundle. Sparkle needs SUFeedURL from
     /// Info.plist; in a bare-binary dev run it would throw, so skip it.
@@ -18,13 +21,17 @@ import Sparkle
 
     func start() {
         guard sparkle == nil, isBundled else { return }
-        sparkle = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        let controller = SPUStandardUpdaterController(startingUpdater: true, updaterDelegate: nil, userDriverDelegate: nil)
+        sparkle = controller
+        canCheckObservation = controller.updater.publisher(for: \.canCheckForUpdates)
+            .receive(on: RunLoop.main)
+            .sink { [weak self] in self?.canCheckForUpdates = $0 }
         applyAutoCheck()
     }
 
     /// Sparkle presents its own update window.
     func checkForUpdates() {
-        guard isBundled else { return }
+        guard isBundled, canCheckForUpdates else { return }
         sparkle?.updater.checkForUpdates()
     }
 

@@ -1,128 +1,191 @@
-# tokendash
+<div align="center">
+  # TokenDash
 
-A beautiful, local web dashboard for visualizing your Claude Code, Codex, OpenClaw, and OpenCode token usage statistics.
+  **Your local command center for AI coding usage.**
 
-It runs locally and parses token usage data directly from local session files, presenting it in a clean, interactive React dashboard. No external CLI dependencies required.
+  Track tokens, costs, models, projects, and coding-plan limits from the macOS menu bar, with a detailed local dashboard when you need to dig deeper.
 
-![Web Dashboard](resources/product_screenshoot.png)
+  [![Latest release](https://img.shields.io/github/v/release/zhangferry/tokendash?style=flat-square)](https://github.com/zhangferry/tokendash/releases/latest)
+  [![npm](https://img.shields.io/npm/v/@zhangferry-dev/tokendash?style=flat-square)](https://www.npmjs.com/package/@zhangferry-dev/tokendash)
+  [![Test](https://img.shields.io/github/actions/workflow/status/zhangferry/tokendash/test.yml?branch=main&style=flat-square&label=tests)](https://github.com/zhangferry/tokendash/actions/workflows/test.yml)
+  [![License](https://img.shields.io/github/license/zhangferry/tokendash?style=flat-square)](LICENSE)
 
-## Features
+  [Download for macOS](https://github.com/zhangferry/tokendash/releases/latest) · [Run with npx](#run-the-web-dashboard) · [Features](#what-you-get) · [Development](#development)
+</div>
 
-- **Multi-Agent Support:** View usage for Claude Code, Codex, OpenClaw, and OpenCode.
-- **Direct JSONL Parsing:** Reads local session files directly — 100x faster data loading.
-- **Detailed Metrics:** Track total tokens, cost (USD), active days, cache hit rates, and output/input ratio.
-- **Today by Hour:** 24-hour token consumption panel showing hourly breakdown for the current day.
-- **Code Analytics:** Visualize code change trends, tool call frequency, and productivity KPIs.
-- **Interactive Charts:** Bar/line/area charts with tooltips, model breakdowns, and time range filtering.
-- **24-Hour Heatmap:** Activity distribution by hour and day of week, with timezone awareness.
-- **Model & Project Distribution:** See which models and projects drive your usage.
-- **Persistent Filters:** Your selected time range, project, and metric mode are saved automatically.
+<p align="center">
+  <img src="resources/icon.png" width="132" alt="TokenDash app icon">
+</p>
 
-## macOS Menu Bar App
+![TokenDash menu bar app and web dashboard](resources/readme-hero.png)
 
-TokenDash ships as a native macOS menu-bar-only application — no Dock icon, no window clutter. It lives quietly in your status bar and gives you instant access to your AI token usage at a glance.
+## Why TokenDash?
 
-![macOS Menu Bar](resources/product_menu.png)
+AI coding tools make it easy to consume millions of tokens without a clear picture of where they went. TokenDash turns local session data into an at-a-glance view of today's activity and a deeper history of your usage.
 
-**Status Bar Badge**
-- Displays real-time token count (e.g. `1.2K`, `32.0M`) directly in the macOS status bar
-- Updates every 5 seconds automatically
-- Shows cost and cache hit rate in the tooltip on hover
-- Resilient badge: transient network or data errors won't clear your existing badge value
+- **Glanceable by design** — see today's tokens, estimated cost, cache rate, model mix, and quota status without leaving the menu bar.
+- **One view across tools** — bring Claude Code, Codex, OpenClaw, and OpenCode usage into the same product.
+- **Local-first** — usage history is parsed directly from files already stored on your machine.
+- **Useful beyond totals** — understand hourly activity, model and project distribution, cache efficiency, code changes, and tool calls.
+- **No companion analytics service** — the dashboard runs on your computer and does not require an account.
 
-**Popover Dashboard**
-- Click the status bar icon to open a compact popover with today's full breakdown:
-  - Total tokens, input/output/cache metrics at a glance
-  - Hourly consumption bar chart with peak value highlight
-  - Agent filter dropdown (show only Claude Code, Codex, etc.)
-  - Settings: launch at login, check for updates, quit
-- The popover syncs rendered totals back to the status bar badge for maximum accuracy
+## Quick Start
 
-**Native Integration**
-- Written in Swift (`trayHelper.swift`) for macOS 14+ compatibility
-- Menu-bar-only (`LSUIElement: true`) — no Dock icon, runs silently in the background
-- Dark mode support with automatic theme switching
-- Custom app icon
-- Distributed as a standard macOS DMG installer
-- Port auto-detection with fallback — works even if port 3456 is already in use
+### macOS Menu Bar App
 
-## Requirements
+The native menu bar app is the recommended way to use TokenDash.
 
-- Node.js 20 or later
-- npm or another Node package manager
+1. Download the latest Apple silicon DMG from [GitHub Releases](https://github.com/zhangferry/tokendash/releases/latest).
+2. Open the DMG and drag **TokenDash** into **Applications**.
+3. Launch TokenDash. It will detect supported AI coding tools and start the local dashboard automatically.
 
-## Installation & Usage
+TokenDash requires **macOS 14 or later**. It runs as a menu-bar-only app, so it does not add an icon to the Dock.
 
-You can run the dashboard directly using `npx` without installing it globally:
+### Run the Web Dashboard
+
+On macOS, Linux, or Windows, run the local web dashboard with Node.js 20 or later:
 
 ```bash
 npx @zhangferry-dev/tokendash
 ```
 
-Or install it globally:
+TokenDash opens `http://localhost:3456` automatically. No global installation is required.
+
+## What You Get
+
+### A Native macOS Companion
+
+The menu bar keeps the information you check most often close at hand:
+
+- Live token total in the status bar
+- Today's token and estimated cost summary
+- Hourly consumption chart and seven-day trend
+- Usage breakdown by model and token type
+- Coding-plan usage with reset countdowns
+- Configurable low-quota notifications
+- Launch at login, light/dark appearance, and automatic update checks
+
+<p align="center">
+  <img src="resources/product_menu.png" width="420" alt="TokenDash macOS menu bar popover">
+</p>
+
+### A Detailed Local Dashboard
+
+Open the full dashboard when you want to investigate a spike or understand longer-term patterns:
+
+- Token and cost views across today, 7, 30, 60, or all days
+- Per-project and per-model distribution
+- Input, output, cache creation, and cache read metrics
+- Cache efficiency and estimated savings
+- Hour-by-day activity heatmap
+- Daily trends and session-level breakdowns
+- Code change, tool call, and productivity analytics where supported
+- Persistent agent, project, time-range, and metric filters
+
+![TokenDash web analytics dashboard](resources/product_screenshoot.png)
+
+## Supported Tools
+
+### Usage Analytics
+
+| Tool | Local data source | Usage history | Code analytics |
+| --- | --- | :---: | :---: |
+| Claude Code | `~/.claude/projects/` | Yes | Yes |
+| OpenAI Codex | `~/.codex/sessions/` | Yes | — |
+| OpenClaw | `~/.openclaw/sessions/` | Yes | Yes |
+| OpenCode | `~/.local/share/opencode/opencode.db` | Yes | — |
+
+TokenDash only shows tools it detects on the current machine.
+
+### Coding-Plan Quotas
+
+The macOS app can also display the current limits reported by:
+
+- Claude Code
+- OpenAI Codex
+- GLM Coding Plan
+- MiniMax Coding Plan
+- Kimi Code
+
+Claude Code and Codex reuse their existing local authentication. Credentials entered for other providers are stored in `~/.tokendash/credentials.json` with owner-only file permissions.
+
+## Privacy
+
+TokenDash is local-first:
+
+- Session history is read and processed on your machine.
+- The web dashboard and its API are served locally.
+- TokenDash does not upload usage history to a TokenDash service.
+- No TokenDash account, telemetry endpoint, or external analytics database is required.
+
+When coding-plan monitoring is enabled, TokenDash contacts the corresponding provider's API to retrieve current quota information. Only the authentication and request data required by that provider is sent; your local session history is not included.
+
+## CLI
+
+Install globally if you prefer a persistent command:
 
 ```bash
 npm install -g @zhangferry-dev/tokendash
 tokendash
 ```
 
-By default, the backend server runs on port `3456`. When running the production build or installing globally, you access the dashboard at `http://localhost:3456`.
+Available options:
 
-During development (`npm run dev`), Vite starts a separate development server on port `5173` with hot-module replacement. You should access the dashboard at `http://localhost:5173` while developing.
-
-### macOS Menu Bar App
-
-Download the latest `TokenDash-<version>-arm64.dmg` from [GitHub Releases](https://github.com/zhangferry/tokendash/releases). Open the DMG and drag TokenDash to your Applications folder. Launch it and the status bar icon appears immediately — no setup needed.
-
-### Command Line Options
-
-```bash
+```text
 tokendash [options]
 
-Options:
-  --port <number>    Port to run the server on (default: 3456 or PORT env var)
-  --no-open          Do not automatically open the browser
+--port <number>  Port for the local server (default: 3456 or PORT)
+--no-open        Start without opening a browser
+--version, -v    Print the installed version
 ```
+
+During development, Vite serves the frontend at `http://localhost:5173`; packaged and npm installations use the local server port.
+
+## How It Works
+
+TokenDash consists of three small layers:
+
+1. **Local parsers** read each supported tool's session files or database.
+2. **An Express API** validates and caches normalized usage data.
+3. **Two interfaces** present the same data: a React analytics dashboard and a native SwiftUI macOS menu bar app.
+
+Data is cached locally with a stale-while-revalidate strategy so the interface remains responsive while files are being reparsed.
 
 ## Development
 
-If you want to contribute or modify the dashboard locally:
+```bash
+git clone https://github.com/zhangferry/tokendash.git
+cd tokendash
+npm install
+npm run dev
+```
 
-1. Clone the repository:
-   ```bash
-   git clone <repository-url>
-   cd tokendash
-   ```
+Common commands:
 
-2. Install dependencies:
-   ```bash
-   npm install
-   ```
+| Command | Purpose |
+| --- | --- |
+| `npm run dev` | Start the Express and Vite development servers |
+| `npm run build` | Build the web client and server |
+| `npm run build:swift` | Build the native macOS app |
+| `npm run build:dmg` | Package the macOS app and DMG |
+| `npm run typecheck` | Type-check the server and frontend |
+| `npm test` | Run Vitest unit tests |
+| `npm run test:e2e` | Run Playwright end-to-end tests |
 
-3. Start the development servers (runs Vite for frontend and tsx for backend concurrently):
-   ```bash
-   npm run dev
-   ```
+The web client uses React, TypeScript, Tailwind CSS, Recharts, and Vite. The local server uses Express and Zod. The macOS app is built with SwiftUI and Sparkle.
 
-4. Build for production:
-   ```bash
-   npm run build
-   ```
+## Contributing
 
-5. Run the production build locally:
-   ```bash
-   npm start
-   ```
+Issues and pull requests are welcome. For a new integration, keep the parser boundary consistent by implementing daily, project, and block responses, then wire detection, API routing, and the agent switcher.
 
-## Architecture
+Before submitting a change, run:
 
-- **Frontend:** React 19, Recharts, Tailwind CSS (via Vite plugin), built with Vite.
-- **Backend:** Express, TypeScript.
-- **Data Source:** All agent data is parsed directly from local session files (`~/.claude/projects/`, `~/.codex/sessions/`) and OpenCode's SQLite database (`~/.local/share/opencode/opencode.db`). No external CLI dependencies.
-- **Caching:** Persistent disk cache (`/tmp/tokendash-cache/`) with stale-while-revalidate pattern for snappy UI updates.
-- **Testing:** Vitest (unit), Playwright (E2E). Run with `npm test` and `npm run test:e2e`.
-- **CI:** GitHub Actions pipeline for automated testing on every push and PR.
+```bash
+npm run typecheck
+npm test
+npm run test:e2e
+```
 
 ## License
 
-[MIT](./LICENSE)
+TokenDash is available under the [MIT License](LICENSE).

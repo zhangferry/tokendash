@@ -34,6 +34,9 @@ mkdir -p "$APP_MACOS" "$APP_RESOURCES"
 cp "$BUILD_DIR/TokenDash" "$APP_MACOS/$APP_NAME"
 chmod +x "$APP_MACOS/$APP_NAME"
 
+# Copy the application icon used by Finder and macOS permission prompts.
+cp "$REPO_ROOT/resources/icon.icns" "$APP_RESOURCES/TokenDash.icns"
+
 # Copy Node.js server dist into Resources/server/
 SERVER_DIR="$APP_RESOURCES/server"
 mkdir -p "$SERVER_DIR"
@@ -57,6 +60,9 @@ mkdir -p "$APP_FRAMEWORKS"
 SPARKLE_FW=$(find "$REPO_ROOT/TokenDashSwift/.build" -type d -name "Sparkle.framework" -path "*artifacts*" 2>/dev/null | head -1)
 if [ -n "$SPARKLE_FW" ] && [ -d "$SPARKLE_FW" ]; then
     cp -R "$SPARKLE_FW" "$APP_FRAMEWORKS/Sparkle.framework"
+    if ! otool -l "$APP_MACOS/$APP_NAME" | grep -q '@executable_path/../Frameworks'; then
+        install_name_tool -add_rpath '@executable_path/../Frameworks' "$APP_MACOS/$APP_NAME"
+    fi
     echo "   Embedded Sparkle.framework"
 else
     echo "   ⚠️ Sparkle.framework not found — run 'npm run build:swift' first (needs the Sparkle dep resolved)."
@@ -93,6 +99,8 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
     <string>TokenDash</string>
     <key>CFBundleDisplayName</key>
     <string>TokenDash</string>
+    <key>CFBundleIconFile</key>
+    <string>TokenDash.icns</string>
     <key>CFBundlePackageType</key>
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
@@ -116,6 +124,13 @@ cat > "$APP_BUNDLE/Contents/Info.plist" << PLIST
 </dict>
 </plist>
 PLIST
+
+# SwiftPM signs the executable before the app bundle's resources and embedded
+# framework exist. Re-sign the completed bundle so LaunchServices accepts it.
+# Release builds can provide a Developer ID identity; local builds use ad-hoc.
+CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
+codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
+echo "   Signed app bundle with identity: $CODESIGN_IDENTITY"
 
 echo "✅ $APP_NAME.app created at $APP_BUNDLE"
 echo "   Binary: $(du -sh "$APP_MACOS/$APP_NAME" | cut -f1)"

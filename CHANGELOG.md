@@ -1,5 +1,11 @@
 # Changelog
 
+### v1.6.2
+- **Native macOS menu bar app** — replace the Electron shell with a lightweight SwiftUI app, native settings, launch-at-login support, and Sparkle update handling.
+- **Coding plan quota monitoring** — track Claude, Codex, GLM, MiniMax, and Kimi usage windows with reset countdowns and configurable low-quota notifications.
+- **Richer menu bar insights** — add seven-day token trends, model usage details, refreshed summaries, and a more focused popover layout.
+- **Unified product identity** — refresh the README and align the flat cream-and-green icon across Finder, Applications, notifications, and product imagery.
+
 ### v1.6.1
 - **CLI and menu bar dashboard sync** — reuse a compatible same-version CLI/npm service from the macOS menu bar app and keep the globally installed package aligned with the DMG version.
 - **Update check fallback** — keep the menu bar update checker working after GitHub REST API rate limits by falling back to the public latest-release redirect.

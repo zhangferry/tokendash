@@ -14,7 +14,15 @@ import { glmAdapter } from './adapters/glm.js';
 import { minimaxAdapter } from './adapters/minimax.js';
 import { kimiAdapter } from './adapters/kimi.js';
 
-export type { QuotaSnapshot, QuotaWindow, QuotaProviderStatus, QuotaResponse, QuotaProviderId } from './types.js';
+export type {
+  QuotaCredentialInput,
+  QuotaCredentialValidation,
+  QuotaSnapshot,
+  QuotaWindow,
+  QuotaProviderStatus,
+  QuotaResponse,
+  QuotaProviderId,
+} from './types.js';
 
 const registry = new QuotaAdapterRegistry();
 registry.register(claudeAdapter);

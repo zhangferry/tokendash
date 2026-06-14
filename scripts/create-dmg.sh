@@ -3,7 +3,9 @@ set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 APP_BUNDLE="$REPO_ROOT/release/TokenDash.app"
-DMG_PATH="$REPO_ROOT/release/TokenDash.dmg"
+APP_VERSION=$(node -p "require('$REPO_ROOT/package.json').version")
+ARCH=$(uname -m)
+DMG_PATH="$REPO_ROOT/release/TokenDash-$APP_VERSION-$ARCH.dmg"
 
 if [ ! -d "$APP_BUNDLE" ]; then
     echo "Error: TokenDash.app not found. Run ./scripts/package-app.sh first."

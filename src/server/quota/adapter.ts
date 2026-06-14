@@ -1,4 +1,9 @@
-import type { QuotaProviderId, QuotaSnapshot, QuotaProviderStatus } from './types.js';
+import type {
+  QuotaCredentialInput,
+  QuotaProviderId,
+  QuotaSnapshot,
+  QuotaProviderStatus,
+} from './types.js';
 
 /**
  * Structured quota error. Adapters throw this (not generic Error) so the
@@ -37,7 +42,7 @@ export interface QuotaAdapter {
    * Fetch a fresh normalized snapshot. Throws QuotaError on any failure.
    * Must NOT include secrets in any field of the returned snapshot.
    */
-  fetch(): Promise<QuotaSnapshot>;
+  fetch(options?: { credential?: QuotaCredentialInput }): Promise<QuotaSnapshot>;
 }
 
 /**

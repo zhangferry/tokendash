@@ -1,4 +1,11 @@
-import type { QuotaSnapshot, QuotaProviderId, QuotaProviderStatus, QuotaResponse } from './types.js';
+import type {
+  QuotaCredentialInput,
+  QuotaCredentialValidation,
+  QuotaSnapshot,
+  QuotaProviderId,
+  QuotaProviderStatus,
+  QuotaResponse,
+} from './types.js';
 import type { QuotaAdapter, QuotaAdapterRegistry } from './adapter.js';
 import { QuotaError } from './adapter.js';
 import { QuotaCache } from './cache.js';
@@ -83,6 +90,37 @@ export class QuotaService {
     return this.fetchAll();
   }
 
+  /**
+   * Validate a credential without caching it or writing it to disk. This keeps
+   * the settings form transactional: only credentials accepted upstream are
+   * persisted by the native app.
+   */
+  async validateCredential(
+    provider: QuotaProviderId,
+    credential: QuotaCredentialInput,
+  ): Promise<QuotaCredentialValidation> {
+    const adapter = this.registry.get(provider);
+    if (!adapter) {
+      return {
+        provider,
+        valid: false,
+        status: { state: 'not_configured', message: 'Unsupported provider' },
+      };
+    }
+
+    try {
+      const snapshot = await withTimeout(
+        adapter.fetch({ credential }),
+        this.fetchTimeoutMs,
+        provider,
+      );
+      const validated = validateQuotaSnapshot(snapshot);
+      return { provider, valid: validated.status.state === 'ok', status: validated.status };
+    } catch (err) {
+      return { provider, valid: false, status: statusForError(err, this.fetchTimeoutMs) };
+    }
+  }
+
   private async fetchWithTimeout(adapter: QuotaAdapter): Promise<QuotaSnapshot> {
     try {
       const snapshot = await withTimeout(adapter.fetch(), this.fetchTimeoutMs, adapter.provider);
@@ -95,14 +133,7 @@ export class QuotaService {
   }
 
   private handleFailure(adapter: QuotaAdapter, err: unknown): QuotaSnapshot {
-    let status: QuotaProviderStatus;
-    if (err instanceof QuotaError) {
-      status = err.status;
-    } else if (err instanceof TimeoutError) {
-      status = { state: 'timed_out', message: `upstream did not respond within ${this.fetchTimeoutMs}ms` };
-    } else {
-      status = { state: 'error', message: redact(err), category: 'unexpected' };
-    }
+    const status = statusForError(err, this.fetchTimeoutMs);
 
     // Retain last good snapshot as stale.
     const stale = this.cache.getStale(adapter.provider);
@@ -119,6 +150,14 @@ export class QuotaService {
       status,
     };
   }
+}
+
+function statusForError(err: unknown, timeoutMs: number): QuotaProviderStatus {
+  if (err instanceof QuotaError) return err.status;
+  if (err instanceof TimeoutError) {
+    return { state: 'timed_out', message: `upstream did not respond within ${timeoutMs}ms` };
+  }
+  return { state: 'error', message: redact(err), category: 'unexpected' };
 }
 
 class TimeoutError extends Error {

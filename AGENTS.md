@@ -57,12 +57,12 @@ Playwright config uses `vite preview` (port 3457) to serve the built frontend, w
 
 ## Release Checklist
 
-For a standard patch release after a remote bug fix:
+For every release:
 
-1. Sync `main` with `origin/main`.
-2. Bump the patch version with `npm version patch --no-git-tag-version`.
-3. Update `CHANGELOG.md` with the released fix.
-4. Run tests and build/package the app with `npm run build:all`.
-5. Commit the version and changelog changes.
-6. Publish npm with `npm run release`.
-7. Push `main`, tag the version, and create/update the GitHub Release with the packaged DMG and blockmap.
+1. Update `package.json`, `package-lock.json`, and `CHANGELOG.md`.
+2. Run `npm run deploy:check`.
+3. Commit and push the complete release candidate to `main`.
+4. Run `npm run deploy` to publish npm, the git tag, DMG, appcast, and GitHub Release together.
+
+Do not publish npm or create the GitHub Release manually; the unified deploy
+script enforces the paired DMG/appcast requirement for Sparkle updates.

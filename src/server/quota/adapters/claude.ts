@@ -1,7 +1,8 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
+import { homedir, userInfo } from 'node:os';
 import { execFileSync } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import type { QuotaSnapshot } from '../types.js';
 import type { QuotaAdapter } from '../adapter.js';
 import { QuotaError, baseSnapshot } from '../adapter.js';
@@ -111,7 +112,7 @@ function readClaudeToken(): string | null {
   if (existsSync(credPath)) {
     try {
       const parsed = JSON.parse(readFileSync(credPath, 'utf8'));
-      return parsed?.claudeAiOauth?.accessToken ?? null;
+      return extractClaudeAccessToken(parsed);
     } catch {
       return null;
     }
@@ -120,34 +121,60 @@ function readClaudeToken(): string | null {
 }
 
 function readFromKeychain(): string | null {
-  // Keychain entries may carry a per-installation GUID suffix; try the base
-  // name first, then any matching suffix.
-  const candidates = ['Claude Code-credentials'];
+  const candidates = claudeKeychainServiceNames(process.env.CLAUDE_CONFIG_DIR);
   try {
     const list = execFileSync('security', ['dump-keychain'], { stdio: ['ignore', 'pipe', 'ignore'], encoding: 'utf8' });
-    for (const m of list.matchAll(/"srvname"<blob>="([^"]*Claude Code-credentials[^"]*)"/g)) {
+    for (const m of list.matchAll(/"svce"<blob>="([^"]*Claude Code-credentials[^"]*)"/g)) {
       if (m[1] && !candidates.includes(m[1])) candidates.push(m[1]);
     }
   } catch {
-    // dump-keychain may prompt or fail; base name is the common case.
+    // dump-keychain may fail; deterministic service names are still tried.
   }
+  const accounts = [safeUsername(), undefined];
   for (const name of candidates) {
-    try {
-      const raw = execFileSync('security', ['find-generic-password', '-s', name, '-w'], {
-        stdio: ['ignore', 'pipe', 'ignore'],
-        encoding: 'utf8',
-      }).trim();
-      if (!raw) continue;
-      // The stored value is itself a JSON blob holding the OAuth tokens.
+    for (const account of accounts) {
       try {
-        const parsed = JSON.parse(raw);
-        return parsed?.claudeAiOauth?.accessToken ?? null;
+        const args = ['find-generic-password', '-s', name];
+        if (account) args.push('-a', account);
+        args.push('-w');
+        const raw = execFileSync('/usr/bin/security', args, {
+          stdio: ['ignore', 'pipe', 'ignore'],
+          encoding: 'utf8',
+          timeout: 2_000,
+        }).trim();
+        if (!raw) continue;
+        const token = extractClaudeAccessToken(JSON.parse(raw));
+        if (token) return token;
       } catch {
-        return raw; // already a bare token in some setups
+        continue;
       }
-    } catch {
-      continue;
     }
   }
   return null;
+}
+
+export function claudeKeychainServiceNames(configDir?: string): string[] {
+  if (!configDir) return ['Claude Code-credentials'];
+  const hash = createHash('sha256').update(configDir).digest('hex').slice(0, 8);
+  return [`Claude Code-credentials-${hash}`, 'Claude Code-credentials'];
+}
+
+export function extractClaudeAccessToken(value: unknown): string | null {
+  if (!value || typeof value !== 'object') return null;
+  const root = value as Record<string, unknown>;
+  const nested = root.claudeAiOauth;
+  const credentials = nested && typeof nested === 'object'
+    ? nested as Record<string, unknown>
+    : root;
+  return typeof credentials.accessToken === 'string' && credentials.accessToken
+    ? credentials.accessToken
+    : null;
+}
+
+function safeUsername(): string | undefined {
+  try {
+    return userInfo().username?.trim() || undefined;
+  } catch {
+    return undefined;
+  }
 }

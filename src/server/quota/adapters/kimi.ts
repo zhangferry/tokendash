@@ -6,6 +6,7 @@ import type { QuotaSnapshot } from '../types.js';
 import type { QuotaAdapter } from '../adapter.js';
 import { QuotaError, baseSnapshot } from '../adapter.js';
 import { fetchJsonWithTimeout, HttpError, classifyHttpError, windowFromCounts } from '../helpers.js';
+import type { QuotaCredentialInput } from '../types.js';
 
 /**
  * Kimi Code adapter.
@@ -60,9 +61,11 @@ export const kimiAdapter: QuotaAdapter = {
     return !!cred && !!cred.access_token;
   },
 
-  async fetch(): Promise<QuotaSnapshot> {
+  async fetch(options?: { credential?: QuotaCredentialInput }): Promise<QuotaSnapshot> {
     const credPath = credentialsPath();
-    let cred = readCredentials();
+    let cred = options?.credential?.apiKey
+      ? { access_token: options.credential.apiKey, token_type: 'Bearer' }
+      : readCredentials();
     if (!cred || !cred.access_token) {
       throw new QuotaError({ state: 'not_configured', message: 'run `kimi` to log in first' });
     }

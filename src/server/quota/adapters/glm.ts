@@ -6,6 +6,7 @@ import type { QuotaAdapter } from '../adapter.js';
 import { QuotaError, baseSnapshot } from '../adapter.js';
 import { fetchJsonWithTimeout, HttpError, classifyHttpError, windowFromPercent, windowFromCounts, unixToIso } from '../helpers.js';
 import { readStoredCredential } from '../credentialsFile.js';
+import type { QuotaCredentialInput } from '../types.js';
 
 /**
  * GLM (Zhipu) Coding Plan adapter.
@@ -40,8 +41,8 @@ export const glmAdapter: QuotaAdapter = {
     return !!resolveCredential();
   },
 
-  async fetch(): Promise<QuotaSnapshot> {
-    const cred = resolveCredential();
+  async fetch(options?: { credential?: QuotaCredentialInput }): Promise<QuotaSnapshot> {
+    const cred = resolveCredential(options?.credential);
     if (!cred) {
       throw new QuotaError({ state: 'not_configured', message: 'set ZAI_API_KEY or ZHIPU_API_KEY' });
     }
@@ -110,7 +111,14 @@ function classifyFetchError(err: unknown): QuotaError {
   return new QuotaError({ state: 'upstream_unavailable', message: msg.slice(0, 200) });
 }
 
-function resolveCredential(): { key: string; base: string } | null {
+function resolveCredential(proposed?: QuotaCredentialInput): { key: string; base: string } | null {
+  if (proposed?.apiKey) {
+    return {
+      key: proposed.apiKey,
+      base: proposed.baseUrl || 'https://open.bigmodel.cn',
+    };
+  }
+
   // 0. Key entered in-app (via the credential sheet) — highest priority.
   const stored = readStoredCredential('glm');
   if (stored) return { key: stored.apiKey, base: stored.baseUrl || 'https://open.bigmodel.cn' };

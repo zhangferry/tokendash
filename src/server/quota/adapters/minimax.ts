@@ -3,6 +3,7 @@ import type { QuotaAdapter } from '../adapter.js';
 import { QuotaError, baseSnapshot } from '../adapter.js';
 import { fetchJsonWithTimeout, HttpError, classifyHttpError, windowFromCounts, unixToIso } from '../helpers.js';
 import { readStoredCredential } from '../credentialsFile.js';
+import type { QuotaCredentialInput } from '../types.js';
 
 /**
  * MiniMax Coding Plan (Token Plan) adapter.
@@ -40,8 +41,8 @@ export const minimaxAdapter: QuotaAdapter = {
     return !!resolveCredential();
   },
 
-  async fetch(): Promise<QuotaSnapshot> {
-    const cred = resolveCredential();
+  async fetch(options?: { credential?: QuotaCredentialInput }): Promise<QuotaSnapshot> {
+    const cred = resolveCredential(options?.credential);
     if (!cred) {
       throw new QuotaError({ state: 'not_configured', message: 'set MINIMAX_API_KEY (Subscription Key)' });
     }
@@ -107,7 +108,13 @@ function classifyFetchError(err: unknown): QuotaError {
   return new QuotaError({ state: 'upstream_unavailable', message: msg.slice(0, 200) });
 }
 
-function resolveCredential(): { key: string; base: string } | null {
+function resolveCredential(proposed?: QuotaCredentialInput): { key: string; base: string } | null {
+  if (proposed?.apiKey) {
+    const region = (process.env.MINIMAX_REGION || '').toLowerCase();
+    const base = proposed.baseUrl || (region === 'cn' ? 'https://www.minimaxi.com' : 'https://www.minimax.io');
+    return { key: proposed.apiKey, base };
+  }
+
   // 0. Key entered in-app (via the credential sheet) — highest priority.
   const stored = readStoredCredential('minimax');
   if (stored) {

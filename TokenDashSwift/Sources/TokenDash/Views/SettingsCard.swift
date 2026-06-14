@@ -63,3 +63,30 @@ struct SettingsSectionHeader: View {
             .padding(.bottom, 6)
     }
 }
+
+/// Stable product-colored switch that does not inherit macOS accent blue.
+struct ThemeSwitch: View {
+    @Binding var isOn: Bool
+
+    var body: some View {
+        Button {
+            withAnimation(.spring(response: 0.24, dampingFraction: 0.82)) {
+                isOn.toggle()
+            }
+        } label: {
+            ZStack(alignment: isOn ? .trailing : .leading) {
+                Capsule()
+                    .fill(isOn ? Color.accentGreen : Color.primary.opacity(0.16))
+                Circle()
+                    .fill(Color.white)
+                    .padding(2)
+                    .shadow(color: .black.opacity(0.16), radius: 1, y: 0.5)
+            }
+            .frame(width: 32, height: 18)
+            .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityValue(isOn ? "On" : "Off")
+        .accessibilityAddTraits(isOn ? .isSelected : [])
+    }
+}

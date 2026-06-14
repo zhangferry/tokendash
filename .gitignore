@@ -5,6 +5,7 @@ dist
 !.env.example
 .DS_Store
 .omc
+.omx
 .npmrc
 *.tgz
 .claude/

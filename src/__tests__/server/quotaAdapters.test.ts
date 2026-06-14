@@ -7,6 +7,11 @@ import {
   classifyHttpError,
   HttpError,
 } from '../../server/quota/helpers.js';
+import { resolveCodexBinary } from '../../server/quota/adapters/codex.js';
+import {
+  claudeKeychainServiceNames,
+  extractClaudeAccessToken,
+} from '../../server/quota/adapters/claude.js';
 
 describe('quota helpers', () => {
   it('clamps percentages to 0-100', () => {
@@ -107,6 +112,22 @@ describe('GLM adapter normalization', () => {
     const mcp = snap.windows[2];
     expect(mcp.used).toBe(72);
     expect(mcp.limit).toBe(1000);
+  });
+
+  it('uses a proposed credential for validation instead of the configured key', async () => {
+    const calls: RequestInit[] = [];
+    global.fetch = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      calls.push(init ?? {});
+      return new Response(JSON.stringify({ success: true, code: 200, data: { limits: [] } }), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }) as unknown as typeof fetch;
+    const { glmAdapter } = await import('../../server/quota/adapters/glm.js');
+
+    await glmAdapter.fetch({ credential: { apiKey: 'proposed-glm-key' } });
+
+    expect((calls[0].headers as Record<string, string>).Authorization).toBe('proposed-glm-key');
   });
 });
 
@@ -239,5 +260,58 @@ describe('Claude adapter credential detection', () => {
       setEnv({ CLAUDE_CONFIG_DIR: prevConfigDir });
       void os;
     }
+  });
+
+  it('accepts nested and direct official OAuth credential formats only', () => {
+    expect(extractClaudeAccessToken({ claudeAiOauth: { accessToken: 'nested' } })).toBe('nested');
+    expect(extractClaudeAccessToken({ accessToken: 'direct' })).toBe('direct');
+    expect(extractClaudeAccessToken({ mcpOAuth: { accessToken: 'not-claude-login' } })).toBeNull();
+  });
+
+  it('derives the profile-specific Keychain service before the default service', () => {
+    expect(claudeKeychainServiceNames('~/.claude-work')).toEqual([
+      'Claude Code-credentials-250d1b22',
+      'Claude Code-credentials',
+    ]);
+  });
+});
+
+describe('Codex CLI discovery', () => {
+  it('prefers the official Codex app binary when GUI PATH is minimal', () => {
+    const executable = '/Applications/Codex.app/Contents/Resources/codex';
+    const resolved = resolveCodexBinary({
+      home: '/Users/tester',
+      path: '/usr/bin:/bin:/usr/sbin:/sbin',
+      isExecutable: (candidate) => candidate === executable,
+      nvmVersions: [],
+    });
+
+    expect(resolved).toBe(executable);
+  });
+
+  it('finds the newest executable Codex CLI installed by nvm', () => {
+    const resolved = resolveCodexBinary({
+      home: '/Users/tester',
+      path: '/usr/bin:/bin',
+      isExecutable: (candidate) => candidate === '/Users/tester/.nvm/versions/node/v24.13.0/bin/codex',
+      nvmVersions: ['v22.0.0', 'v24.13.0'],
+    });
+
+    expect(resolved).toBe('/Users/tester/.nvm/versions/node/v24.13.0/bin/codex');
+  });
+
+  it('does not reuse a previous failed discovery result', () => {
+    let installed = false;
+    const options = {
+      home: '/Users/tester',
+      path: '/usr/bin:/bin',
+      isExecutable: (candidate: string) =>
+        installed && candidate === '/Applications/Codex.app/Contents/Resources/codex',
+      nvmVersions: [] as string[],
+    };
+
+    expect(resolveCodexBinary(options)).toBeNull();
+    installed = true;
+    expect(resolveCodexBinary(options)).toBe('/Applications/Codex.app/Contents/Resources/codex');
   });
 });

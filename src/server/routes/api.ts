@@ -9,6 +9,7 @@ import { detectAvailableAgents } from '../agentDetection.js';
 import { isOpenClawAccessible } from '../openclawParser.js';
 import { isOpencodeAccessible } from '../opencodeParser.js';
 import { quotaService } from '../quota/index.js';
+import type { QuotaProviderId } from '../quota/index.js';
 
 async function getQuota(_req: Request, res: Response): Promise<void> {
   // Fresh data only — quotaService handles cache, stale retention, and per-provider
@@ -21,6 +22,28 @@ async function getQuota(_req: Request, res: Response): Promise<void> {
     const message = error instanceof Error ? error.message : 'Unknown error';
     res.status(500).json({ error: 'Failed to fetch quota', hint: message });
   }
+}
+
+const editableQuotaProviders = new Set<QuotaProviderId>(['glm', 'kimi', 'minimax']);
+
+async function validateQuotaCredential(req: Request, res: Response): Promise<void> {
+  const provider = req.body?.provider;
+  const apiKey = typeof req.body?.apiKey === 'string' ? req.body.apiKey.trim() : '';
+  const baseUrl = typeof req.body?.baseUrl === 'string' ? req.body.baseUrl.trim() : undefined;
+
+  if (!editableQuotaProviders.has(provider) || !apiKey) {
+    res.status(400).json({
+      error: 'Invalid credential request',
+      hint: 'A supported provider and non-empty token are required.',
+    });
+    return;
+  }
+
+  const result = await quotaService.validateCredential(provider, {
+    apiKey,
+    baseUrl: baseUrl || undefined,
+  });
+  res.status(result.valid ? 200 : 422).json(result);
 }
 
 export interface AppInfo {
@@ -64,4 +87,5 @@ export function registerApiRoutes(router: Router, appInfo: AppInfo): void {
   router.get('/blocks', getBlocks);
   router.get('/analytics', getAnalytics);
   router.get('/quota', getQuota);
+  router.post('/quota/validate', validateQuotaCredential);
 }

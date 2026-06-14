@@ -33,51 +33,62 @@ This:
 as `SUPublicEDKey`, so every packaged build trusts updates signed by your
 private key.
 
-### 3. Host the appcast feed
+### 3. Use GitHub Releases as the appcast feed
 
-The default `SUFeedURL` is `https://zhangferry.github.io/tokendash/appcast.xml`
-(GitHub Pages). Create a `gh-pages` branch (or Pages-enabled repo) and host
-`appcast.xml` there. Override the URL at package time with:
+The default `SUFeedURL` is:
+
+```text
+https://github.com/zhangferry/tokendash/releases/latest/download/appcast.xml
+```
+
+Each GitHub Release must contain both its versioned DMG and `appcast.xml`.
+GitHub's `latest/download` redirect gives installed apps a stable feed URL
+without requiring a separate GitHub Pages site. Override the URL at package
+time with:
 
 ```bash
 SPARKLE_FEED_URL="https://your-host.example/appcast.xml" npm run build:app
 ```
 
-## Per-release steps
+## Per-release workflow
 
-### 1. Bump the version
+Version the release in `package.json`, `package-lock.json`, and `CHANGELOG.md`,
+then commit the complete release candidate to `main`.
 
-Edit `package.json` `version` (e.g. `2.1.0`). `package-app.sh` reads it for
-`CFBundleShortVersionString`. The `CFBundleVersion` (build number) is set to the
-git commit count automatically, so it increments each release — Sparkle
-compares these integers to detect updates.
-
-### 2. Build the package + DMG
+Run the non-publishing verification first:
 
 ```bash
-npm run build:app   # builds server + swift + packages .app
-npm run build:dmg   # produces release/TokenDash-<ver>-arm64.dmg
+npm run deploy:check
 ```
 
-### 3. Generate the appcast
+This runs unit, type, and end-to-end tests; builds the npm package, app, and
+versioned DMG; generates the signed `appcast.xml`; and validates the bundle,
+DMG, enclosure URL, and Sparkle signature.
+
+Once the release commit is pushed and local `main` exactly matches
+`origin/main`, publish everything through the single entry point:
 
 ```bash
-./scripts/sparkle-appcast.sh release/
+npm run deploy
 ```
 
-This signs the DMG with your Keychain private key and writes `release/appcast.xml`
-(+ binary `.delta` files for small updates).
+The deploy command:
 
-### 4. Publish
+1. Repeats all verification and artifact generation.
+2. Creates a draft GitHub Release containing both the DMG and `appcast.xml`.
+3. Publishes the matching npm version.
+4. Pushes the release tag.
+5. Publishes the GitHub Release as the latest release.
 
-Upload to your `SUFeedURL` host:
-- `appcast.xml`
-- the new `.dmg`
-- any `.delta` files
+The command fails before publishing when the npm version, git tag, release, key,
+DMG, appcast, or signature is missing or inconsistent. Do not publish npm or
+create GitHub Releases manually; that bypasses the checks that keep Sparkle
+updates complete.
 
-Installed copies poll `SUFeedURL`, find the new entry, verify the EdDSA
-signature against `SUPublicEDKey`, download, and install + relaunch
-automatically.
+Local releases use the Sparkle private key in the login Keychain. CI can inject
+the same key without importing it by setting `SPARKLE_PRIVATE_KEY_FILE` to a
+file containing the base64-encoded EdDSA seed and `SPARKLE_EDDSA_PUB` to the
+matching public key.
 
 ## Notes
 

@@ -67,11 +67,10 @@ struct SettingsView: View {
             SettingsSectionHeader(title: "General")
             SettingsCard {
                 SettingsRow(icon: "power", title: "Launch at Login", showDivider: true) {
-                    Toggle("", isOn: Binding(
+                    ThemeSwitch(isOn: Binding(
                         get: { state.isLaunchAtLoginEnabled },
                         set: { setLaunchAtLogin($0) }
                     ))
-                    .toggleStyle(.switch).controlSize(.small).labelsHidden()
                 }
                 SettingsRow(icon: "arrow.clockwise", title: "Refresh Usage", showDivider: true) {
                     Picker("", selection: $settings.refreshInterval) {
@@ -121,8 +120,7 @@ struct SettingsView: View {
             SettingsSectionHeader(title: "Notifications")
             SettingsCard {
                 SettingsRow(icon: "bell.badge", title: "Low Quota Alerts", showDivider: true) {
-                    Toggle("", isOn: $settings.lowQuotaNotificationsEnabled)
-                        .toggleStyle(.switch).controlSize(.small).labelsHidden()
+                    ThemeSwitch(isOn: $settings.lowQuotaNotificationsEnabled)
                         .onChange(of: settings.lowQuotaNotificationsEnabled) { _, enabled in
                             if enabled {
                                 NotificationService.shared.requestAuthorization { granted in
@@ -155,8 +153,7 @@ struct SettingsView: View {
                         .disabled(!updater.canCheckForUpdates)
                 }
                 SettingsRow(icon: "checkmark.circle", title: "Automatic Update Checks", showDivider: true) {
-                    Toggle("", isOn: $settings.autoCheckUpdates)
-                        .toggleStyle(.switch).controlSize(.small).labelsHidden()
+                    ThemeSwitch(isOn: $settings.autoCheckUpdates)
                         .onChange(of: settings.autoCheckUpdates) { _, _ in
                             UpdaterController.shared.applyAutoCheck()
                         }

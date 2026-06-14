@@ -175,6 +175,8 @@ export function createApp(_port: number, baseDir?: string): Express {
   const app = express();
   const router = express.Router();
 
+  app.use(express.json({ limit: '16kb' }));
+
   // Register API routes
   registerApiRoutes(router, {
     packageName: PACKAGE_NAME,

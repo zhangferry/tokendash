@@ -77,3 +77,16 @@ export interface QuotaProviderStatus {
 export interface QuotaResponse {
   providers: QuotaSnapshot[];
 }
+
+/** A credential proposed by the settings UI but not persisted yet. */
+export interface QuotaCredentialInput {
+  apiKey: string;
+  baseUrl?: string;
+}
+
+/** Result of checking a proposed credential against its upstream provider. */
+export interface QuotaCredentialValidation {
+  provider: QuotaProviderId;
+  valid: boolean;
+  status: QuotaProviderStatus;
+}

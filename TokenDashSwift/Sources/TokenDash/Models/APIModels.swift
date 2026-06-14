@@ -81,6 +81,12 @@ struct QuotaProviderStatus: Codable {
     let category: String?
 }
 
+struct QuotaCredentialValidationResponse: Codable {
+    let provider: String
+    let valid: Bool
+    let status: QuotaProviderStatus
+}
+
 // MARK: - Model + Trend UI models
 
 /// One model's share of today's usage (aggregated across all agents).

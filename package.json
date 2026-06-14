@@ -1,6 +1,6 @@
 {
   "name": "@zhangferry-dev/tokendash",
-  "version": "1.6.2",
+  "version": "1.7.0",
   "type": "module",
   "description": "Token Usage Analytics Dashboard",
   "publishConfig": {
@@ -30,7 +30,9 @@
     "test:watch": "vitest",
     "test:e2e": "playwright test",
     "prepack": "npm run build",
-    "release": "npm publish --access public --registry https://registry.npmjs.org"
+    "release:npm": "npm publish --access public --registry https://registry.npmjs.org",
+    "deploy:check": "./scripts/deploy.sh --dry-run",
+    "deploy": "./scripts/deploy.sh"
   },
   "dependencies": {
     "express": "^5.1.0",

@@ -28,6 +28,26 @@ actor APIClient {
         try await fetch("/quota")
     }
 
+    func validateCredential(provider: String, apiKey: String) async throws -> QuotaCredentialValidationResponse {
+        guard let url = URL(string: baseURL + "/quota/validate") else {
+            throw APIClientError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(
+            CredentialValidationRequest(provider: provider, apiKey: apiKey)
+        )
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+        guard statusCode == 200 || statusCode == 422 else {
+            throw APIClientError.httpError(statusCode)
+        }
+        return try JSONDecoder().decode(QuotaCredentialValidationResponse.self, from: data)
+    }
+
     /// Health check — returns true if the API is responding.
     func healthCheck() async -> Bool {
         do {
@@ -56,6 +76,11 @@ actor APIClient {
         NSLog("[TokenDash] fetch \(path): network=\(String(format: "%.0f", (t1-t0)*1000))ms decode=\(String(format: "%.0f", (t2-t1)*1000))ms size=\(data.count)B")
         return result
     }
+}
+
+private struct CredentialValidationRequest: Encodable {
+    let provider: String
+    let apiKey: String
 }
 
 enum APIClientError: LocalizedError {

@@ -1,5 +1,13 @@
 # Changelog
 
+### v1.7.0
+- **Clear loading badge** — show the TokenDash menu icon with `0K` immediately at launch instead of an ambiguous bare `0`.
+- **Release hardening** — finalize the unified npm, DMG, Sparkle appcast, tag, and GitHub Release validation workflow.
+- **Responsive native popover** — open the menu bar panel immediately on first launch, with loading placeholders while local usage data initializes.
+- **Refined usage controls** — align the model/type selector with usage values and add a smooth product-green animated selection.
+- **Polished settings** — initialize launch-at-login before rendering, use stable green switches, and validate coding-plan credentials before saving.
+- **Reliable updates and releases** — move the Sparkle feed to GitHub Releases and publish npm, DMG, appcast, tag, and GitHub Release through one deploy command.
+
 ### v1.6.2
 - **Native macOS menu bar app** — replace the Electron shell with a lightweight SwiftUI app, native settings, launch-at-login support, and Sparkle update handling.
 - **Coding plan quota monitoring** — track Claude, Codex, GLM, MiniMax, and Kimi usage windows with reset countdowns and configurable low-quota notifications.

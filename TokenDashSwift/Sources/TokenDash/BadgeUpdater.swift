@@ -111,7 +111,7 @@ import AppKit
 
                 let tokenStr = formatTokens(totalTokens)
                 let tooltip = String(format: "TokenDash - %@ tokens today ($%.2f) | cache: %.1f%%", tokenStr, totalCost, cacheRate)
-                let badgeImage = renderCombinedImage(title: tokenStr)
+                let badgeImage = Self.renderBadgeImage(title: tokenStr)
                 let summary = TodaySummary(
                     tokens: totalTokens, cost: totalCost,
                     inputTokens: totalInput, outputTokens: totalOutput,
@@ -246,7 +246,7 @@ import AppKit
 
     // MARK: - Badge image rendering
 
-    private func renderCombinedImage(title: String) -> NSImage {
+    static func renderBadgeImage(title: String) -> NSImage {
         let iconW: CGFloat = 18, iconH: CGFloat = 18
         let fontSize: CGFloat = 13
         let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .medium)
@@ -273,7 +273,7 @@ import AppKit
         return image
     }
 
-    private func createTemplateIcon(size: NSSize) -> NSImage {
+    private static func createTemplateIcon(size: NSSize) -> NSImage {
         let image = NSImage(size: size)
         image.lockFocus()
 

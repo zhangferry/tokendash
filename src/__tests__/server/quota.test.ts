@@ -136,6 +136,35 @@ describe('QuotaService', () => {
     expect(res.providers).toHaveLength(2);
     expect(res.providers.every((p) => p.status.state !== 'ok')).toBe(true);
   });
+
+  it('validates a proposed credential without requiring it to be stored', async () => {
+    let receivedKey: string | undefined;
+    const adapter = fakeAdapter('glm', 'GLM', { configured: false });
+    adapter.fetch = async (options) => {
+      receivedKey = options?.credential?.apiKey;
+      return makeSnapshot('glm', 'GLM');
+    };
+    const { service } = buildService([adapter]);
+
+    const result = await service.validateCredential('glm', { apiKey: 'proposed-token' });
+
+    expect(receivedKey).toBe('proposed-token');
+    expect(result.valid).toBe(true);
+    expect(result.status.state).toBe('ok');
+  });
+
+  it('returns an actionable status when credential validation fails', async () => {
+    const adapter = fakeAdapter('minimax', 'MiniMax', { configured: false });
+    adapter.fetch = async () => {
+      throw new QuotaError({ state: 'auth_failed', message: 'credential rejected' });
+    };
+    const { service } = buildService([adapter]);
+
+    const result = await service.validateCredential('minimax', { apiKey: 'bad-token' });
+
+    expect(result.valid).toBe(false);
+    expect(result.status).toEqual({ state: 'auth_failed', message: 'credential rejected' });
+  });
 });
 
 describe('QuotaError', () => {

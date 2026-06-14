@@ -9,6 +9,7 @@ struct UsageSection: View {
     let summary: TodaySummary?
     let models: [ModelRow]
     @State private var mode: Mode = .model
+    @Namespace private var selectorAnimation
 
     private enum Mode: String, CaseIterable, Identifiable {
         case model = "By Model"
@@ -24,26 +25,58 @@ struct UsageSection: View {
                     .tracking(0.5)
                     .foregroundStyle(Color.sectionTitleColor)
                 Spacer()
-                Picker("", selection: $mode) {
-                    ForEach(Mode.allCases) { m in Text(m.rawValue).tag(m) }
-                }
-                .pickerStyle(.segmented)
-                .controlSize(.mini)
-                .frame(width: 150)
-                .labelsHidden()
+                modeSelector
             }
             .padding(.bottom, 10)
 
-            switch mode {
-            case .model:
+            ZStack(alignment: .topLeading) {
                 modelRows
-            case .type:
+                    .opacity(mode == .model ? 1 : 0)
+                    .accessibilityHidden(mode != .model)
                 typeRows
+                    .opacity(mode == .type ? 1 : 0)
+                    .accessibilityHidden(mode != .type)
             }
+            .animation(.easeInOut(duration: 0.18), value: mode)
         }
         .padding(.horizontal, 20)
         .padding(.top, 12)
         .padding(.bottom, 6)
+    }
+
+    private var modeSelector: some View {
+        HStack(spacing: 2) {
+            ForEach(Mode.allCases) { option in
+                Button {
+                    withAnimation(.spring(response: 0.28, dampingFraction: 0.82)) {
+                        mode = option
+                    }
+                } label: {
+                    Text(option.rawValue)
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(mode == option ? Color.white : Color.secondaryLabel)
+                        .padding(.horizontal, 11)
+                        .frame(height: 24)
+                        .background {
+                            if mode == option {
+                                RoundedRectangle(cornerRadius: 6)
+                                    .fill(Color.accentGreen)
+                                    .matchedGeometryEffect(
+                                        id: "usage-mode-selection",
+                                        in: selectorAnimation
+                                    )
+                            }
+                        }
+                }
+                .buttonStyle(.plain)
+                .accessibilityAddTraits(mode == option ? .isSelected : [])
+            }
+        }
+        .padding(2)
+        .background(Color.primary.opacity(0.055))
+        .clipShape(RoundedRectangle(cornerRadius: 8))
+        .fixedSize()
+        .animation(.easeInOut(duration: 0.12), value: mode)
     }
 
     // MARK: - By Model

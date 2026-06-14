@@ -1,5 +1,5 @@
-import { existsSync, readFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { existsSync, readdirSync, accessSync, constants } from 'node:fs';
+import { dirname, join } from 'node:path';
 import { homedir } from 'node:os';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import type { QuotaSnapshot } from '../types.js';
@@ -41,11 +41,10 @@ export const codexAdapter: QuotaAdapter = {
   displayName: 'OpenAI Codex',
 
   async isConfigured(): Promise<boolean> {
-    // auth.json present signals the user has logged in (file credential store).
-    // Keyring-stored creds won't show a file, but the app-server itself is the
-    // authority there — so also treat the codex binary being runnable as configured.
-    if (existsSync(join(codexHome(), 'auth.json'))) return true;
-    return await codexBinaryAvailable();
+    // Only surface Codex when the official login file and a runnable official
+    // CLI are both present. Finder-launched apps have a minimal PATH, so binary
+    // discovery must not rely on `which codex`.
+    return existsSync(join(codexHome(), 'auth.json')) && resolveCodexBinary() !== null;
   },
 
   async fetch(): Promise<QuotaSnapshot> {
@@ -98,10 +97,16 @@ function capitalize(s: string): string {
 // --- JSON-RPC over the codex app-server ---
 
 async function queryRateLimits(): Promise<CodexRateLimitsResult> {
-  if (!(await codexBinaryAvailable())) {
-    throw new QuotaError({ state: 'not_configured', message: 'codex CLI not found on PATH' });
+  const codexBinary = resolveCodexBinary();
+  if (!codexBinary) {
+    throw new QuotaError({ state: 'not_configured', message: 'official Codex CLI not found' });
   }
-  const proc = spawn('codex', ['app-server'], { stdio: ['pipe', 'pipe', 'pipe'] });
+  const binaryDir = dirname(codexBinary);
+  const childPath = [binaryDir, process.env.PATH].filter(Boolean).join(':');
+  const proc = spawn(codexBinary, ['app-server'], {
+    stdio: ['pipe', 'pipe', 'pipe'],
+    env: { ...process.env, PATH: childPath },
+  });
   const client = new JsonRpcClient(proc);
   try {
     await client.request('initialize', {
@@ -195,21 +200,63 @@ class JsonRpcClient {
   }
 }
 
-let cachedCodexPath: string | null | undefined;
-
-async function codexBinaryAvailable(): Promise<boolean> {
-  if (cachedCodexPath !== undefined) return cachedCodexPath !== null;
-  return new Promise<boolean>((resolve) => {
-    const proc = spawn('which', ['codex'], { stdio: ['ignore', 'pipe', 'ignore'] });
-    let out = '';
-    proc.stdout.on('data', (c) => { out += c; });
-    proc.on('close', () => {
-      cachedCodexPath = out.trim() || null;
-      resolve(cachedCodexPath !== null);
-    });
-    proc.on('error', () => { cachedCodexPath = null; resolve(false); });
-  });
+interface CodexBinaryResolutionOptions {
+  home?: string;
+  path?: string;
+  explicitBinary?: string;
+  isExecutable?: (candidate: string) => boolean;
+  nvmVersions?: string[];
 }
 
-// Keep readFileSync referenced for potential future auth.json inspection without network.
-void readFileSync;
+/**
+ * Resolve Codex independently of the launch environment. Finder-launched apps
+ * normally receive only /usr/bin:/bin:/usr/sbin:/sbin, while Codex is commonly
+ * installed in Codex.app, Homebrew, Volta, or an NVM version directory.
+ */
+export function resolveCodexBinary(options: CodexBinaryResolutionOptions = {}): string | null {
+  const home = options.home ?? homedir();
+  const path = options.path ?? process.env.PATH ?? '';
+  const explicitBinary = options.explicitBinary ?? process.env.CODEX_BIN;
+  const isExecutable = options.isExecutable ?? defaultIsExecutable;
+  const nvmRoot = join(home, '.nvm', 'versions', 'node');
+  const nvmVersions = options.nvmVersions ?? readDirectoryNames(nvmRoot);
+
+  const candidates = [
+    explicitBinary,
+    '/Applications/Codex.app/Contents/Resources/codex',
+    join(home, 'Applications', 'Codex.app', 'Contents', 'Resources', 'codex'),
+    '/opt/homebrew/bin/codex',
+    '/usr/local/bin/codex',
+    join(home, '.local', 'bin', 'codex'),
+    join(home, '.volta', 'bin', 'codex'),
+    join(home, '.bun', 'bin', 'codex'),
+    ...nvmVersions
+      .sort((a, b) => b.localeCompare(a, undefined, { numeric: true }))
+      .map((version) => join(nvmRoot, version, 'bin', 'codex')),
+    ...path.split(':').filter(Boolean).map((directory) => join(directory, 'codex')),
+  ];
+
+  for (const candidate of candidates) {
+    if (candidate && isExecutable(candidate)) return candidate;
+  }
+  return null;
+}
+
+function defaultIsExecutable(candidate: string): boolean {
+  try {
+    accessSync(candidate, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+function readDirectoryNames(directory: string): string[] {
+  try {
+    return readdirSync(directory, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => entry.name);
+  } catch {
+    return [];
+  }
+}

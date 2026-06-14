@@ -34,21 +34,66 @@ struct PopoverView: View {
                 errorBanner(error)
             }
 
-            HourlyChartView(data: state.hourlyData)
-                .sectionDivider()
+            if state.isLoading {
+                loadingContent
+            } else {
+                HourlyChartView(data: state.hourlyData)
+                    .sectionDivider()
 
-            UsageSection(summary: state.todaySummary, models: state.models)
-                .sectionDivider()
+                UsageSection(summary: state.todaySummary, models: state.models)
+                    .sectionDivider()
 
-            TrendSection(trend: state.trend)
-                .sectionDivider()
+                TrendSection(trend: state.trend)
+                    .sectionDivider()
 
-            CodingPlanSection(quotas: state.quotas)
+                CodingPlanSection(quotas: state.quotas)
+            }
 
             ActionButtons()
                 .frame(height: 32)
                 .topDivider()
         }
+    }
+
+    private var loadingContent: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                ProgressView()
+                    .controlSize(.small)
+                Text("Loading usage data…")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 9)
+
+            loadingSection(title: "HOURLY", rows: 3, rowHeight: 18)
+                .sectionDivider()
+            loadingSection(title: "USAGE", rows: 3, rowHeight: 14)
+                .sectionDivider()
+            loadingSection(title: "7-DAY TREND", rows: 2, rowHeight: 16)
+                .sectionDivider()
+            loadingSection(title: "CODING PLAN", rows: 2, rowHeight: 18)
+        }
+    }
+
+    private func loadingSection(title: String, rows: Int, rowHeight: CGFloat) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title)
+                .font(.system(size: 11, weight: .semibold))
+                .tracking(0.5)
+                .foregroundStyle(Color.sectionTitleColor)
+
+            ForEach(0..<rows, id: \.self) { index in
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(Color.primary.opacity(index == 0 ? 0.09 : 0.055))
+                    .frame(width: index == rows - 1 ? 220 : nil, height: rowHeight)
+                    .frame(maxWidth: index == rows - 1 ? nil : .infinity, alignment: .leading)
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 11)
     }
 
     private func errorBanner(_ message: String) -> some View {

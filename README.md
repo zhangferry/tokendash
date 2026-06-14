@@ -1,6 +1,11 @@
 <div align="center">
-  # TokenDash
-
+  
+<p align="center">
+  <img src="resources/icon.png" width="132" alt="TokenDash app icon">
+</p>
+  
+# TokenDash
+  
   **Your local command center for AI coding usage.**
 
   Track tokens, costs, models, projects, and coding-plan limits from the macOS menu bar, with a detailed local dashboard when you need to dig deeper.
@@ -12,10 +17,6 @@
 
   [Download for macOS](https://github.com/zhangferry/tokendash/releases/latest) · [Run with npx](#run-the-web-dashboard) · [Features](#what-you-get) · [Development](#development)
 </div>
-
-<p align="center">
-  <img src="resources/icon.png" width="132" alt="TokenDash app icon">
-</p>
 
 ![TokenDash menu bar app and web dashboard](resources/readme-hero.png)
 

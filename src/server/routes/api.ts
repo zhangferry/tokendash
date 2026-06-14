@@ -23,6 +23,12 @@ async function getQuota(_req: Request, res: Response): Promise<void> {
   }
 }
 
+export interface AppInfo {
+  packageName: string;
+  version: string;
+  dashboardUrl?: string;
+}
+
 function getAgents(_req: Request, res: Response): void {
   try {
     const agents = detectAvailableAgents();
@@ -38,7 +44,18 @@ function getAgents(_req: Request, res: Response): void {
   }
 }
 
-export function registerApiRoutes(router: Router): void {
+function getAppInfo(info: AppInfo): (_req: Request, res: Response) => void {
+  return (req: Request, res: Response) => {
+    const host = req.get('host');
+    res.json({
+      ...info,
+      dashboardUrl: host ? `${req.protocol}://${host}` : info.dashboardUrl,
+    });
+  };
+}
+
+export function registerApiRoutes(router: Router, appInfo: AppInfo): void {
+  router.get('/app-info', getAppInfo(appInfo));
   router.get('/agents', getAgents);
   router.get('/daily', getDaily);
   router.get('/monthly', getMonthly);

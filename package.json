@@ -1,6 +1,6 @@
 {
   "name": "@zhangferry-dev/tokendash",
-  "version": "1.6.0",
+  "version": "1.6.1",
   "type": "module",
   "description": "Token Usage Analytics Dashboard",
   "publishConfig": {
@@ -14,9 +14,7 @@
   "files": [
     "dist",
     "bin",
-    "electron",
-    "resources",
-    "electron-builder.yml"
+    "resources"
   ],
   "scripts": {
     "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",

@@ -1,5 +1,12 @@
 # Changelog
 
+### v1.7.1
+- **Occupied-port recovery** — bind the native daemon to IPv4 loopback and move to the next available port when another local service already owns `3456`.
+- **Safer daemon reuse** — validate TokenDash identity and version before trusting saved state without terminating unrelated processes referenced by stale PID files.
+- **Correct macOS app icon** — regenerate every ICNS size from the transparent rounded source while preserving the compact menu bar template icon.
+- **Native appearance handling** — use the standard macOS window surface for consistent light, dark, and system-selected themes.
+- **Clear unsigned install guidance** — document the one-time quarantine command required for the current ad-hoc-signed macOS release.
+
 ### v1.7.0
 - **Clear loading badge** — show the TokenDash menu icon with `0K` immediately at launch instead of an ambiguous bare `0`.
 - **Release hardening** — finalize the unified npm, DMG, Sparkle appcast, tag, and GitHub Release validation workflow.

@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 // MARK: - Adaptive Colors (Light / Dark)
 
@@ -23,9 +24,10 @@ extension Color {
     static let barTrackColor: Color = .primary.opacity(0.04)
     static let secondaryLabel: Color = .primary.opacity(0.45)
     static let tertiaryLabel: Color = .primary.opacity(0.3)
-    // Fixed opaque backgrounds — prevents desktop bleed-through in dark mode
+    // Use the system semantic surface so appearance changes are resolved by
+    // SwiftUI/AppKit instead of maintaining a parallel light/dark palette.
     static let popoverBackground = Color(nsColor: .windowBackgroundColor)
-    static let headerBackground = Color(nsColor: .controlBackgroundColor)
+    static let headerBackground = Color(nsColor: .windowBackgroundColor)
 }
 
 // MARK: - Number formatting

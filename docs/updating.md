@@ -97,6 +97,8 @@ matching public key.
   set it manually.
 - If `SUPublicEDKey` is empty (keys not generated), `package-app.sh` warns and
   the build runs but installed copies will **reject** updates until a key is set.
+- The distributed macOS app is ad-hoc signed and is not notarized. First-time
+  installs must remove its quarantine attribute as documented in `README.md`.
 - In development (`swift build` + running the bare binary), Sparkle has no app
   bundle / `SUFeedURL`, so it no-ops and logs. Auto-update only matters for the
   packaged `.app`.

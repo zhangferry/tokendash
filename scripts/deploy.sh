@@ -44,7 +44,6 @@ fi
 if [ -n "${SPARKLE_PRIVATE_KEY_FILE:-}" ] && [ ! -s "$SPARKLE_PRIVATE_KEY_FILE" ]; then
     fail "SPARKLE_PRIVATE_KEY_FILE is not readable: $SPARKLE_PRIVATE_KEY_FILE"
 fi
-
 step "Checking release identity and destination"
 npm whoami --registry "$REGISTRY" >/dev/null
 gh auth status >/dev/null

@@ -7,6 +7,12 @@ struct AgentsResponse: Codable {
     let `default`: String?
 }
 
+struct AppInfoResponse: Codable {
+    let packageName: String
+    let version: String
+    let dashboardUrl: String?
+}
+
 struct DailyEntry: Codable {
     let date: String
     let inputTokens: Int

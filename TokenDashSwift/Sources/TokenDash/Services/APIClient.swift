@@ -2,6 +2,7 @@ import Foundation
 
 /// Lightweight HTTP client for the local TokenDash API.
 actor APIClient {
+    static let expectedPackageName = "@zhangferry-dev/tokendash"
     private let baseURL: String
 
     init(port: Int) {
@@ -10,6 +11,14 @@ actor APIClient {
 
     func getAgents() async throws -> AgentsResponse {
         try await fetch("/agents")
+    }
+
+    func getAppInfo() async throws -> AppInfoResponse {
+        try await fetch("/app-info")
+    }
+
+    func getAppInfo(timeout: TimeInterval) async throws -> AppInfoResponse {
+        try await fetch("/app-info", timeout: timeout)
     }
 
     func getDaily(agent: String) async throws -> DailyResponse {
@@ -60,12 +69,18 @@ actor APIClient {
 
     // MARK: - Private
 
-    private func fetch<T: Decodable>(_ path: String) async throws -> T {
+    private func fetch<T: Decodable>(_ path: String, timeout: TimeInterval? = nil) async throws -> T {
         guard let url = URL(string: baseURL + path) else {
             throw APIClientError.invalidURL
         }
+        let request: URLRequest
+        if let timeout {
+            request = URLRequest(url: url, timeoutInterval: timeout)
+        } else {
+            request = URLRequest(url: url)
+        }
         let t0 = CFAbsoluteTimeGetCurrent()
-        let (data, response) = try await URLSession.shared.data(from: url)
+        let (data, response) = try await URLSession.shared.data(for: request)
         let t1 = CFAbsoluteTimeGetCurrent()
         let http = response as? HTTPURLResponse
         guard http?.statusCode == 200 else {

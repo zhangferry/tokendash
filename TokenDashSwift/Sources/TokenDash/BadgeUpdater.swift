@@ -250,7 +250,10 @@ import AppKit
         let iconW: CGFloat = 18, iconH: CGFloat = 18
         let fontSize: CGFloat = 13
         let font = NSFont.monospacedSystemFont(ofSize: fontSize, weight: .medium)
-        let textAttrs: [NSAttributedString.Key: Any] = [.font: font]
+        let textAttrs: [NSAttributedString.Key: Any] = [
+            .font: font,
+            .foregroundColor: NSColor.black,
+        ]
         let textWidth = (title as NSString).size(withAttributes: textAttrs).width
         let padding: CGFloat = 4
         let totalWidth = iconW + padding + textWidth
@@ -259,7 +262,7 @@ import AppKit
         let image = NSImage(size: NSSize(width: totalWidth, height: totalHeight))
         image.lockFocus()
 
-        // Draw icon
+        // Draw a compact circular token mark for menu bar legibility.
         let icon = createTemplateIcon(size: NSSize(width: iconW, height: iconH))
         let iconY = (totalHeight - iconH) / 2.0
         icon.draw(in: NSRect(x: 0, y: iconY, width: iconW, height: iconH))

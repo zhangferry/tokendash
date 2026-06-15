@@ -9,6 +9,9 @@ APP_BUNDLE="$REPO_ROOT/release/$APP_NAME.app"
 
 echo "==> Packaging $APP_NAME.app..."
 
+# Keep the committed app icon derived from the rounded transparent source.
+"$REPO_ROOT/scripts/generate-icon.sh"
+
 # Verify binaries exist
 if [ ! -f "$BUILD_DIR/TokenDash" ]; then
     echo "Error: Swift binary not found at $BUILD_DIR/TokenDash"
@@ -36,7 +39,6 @@ chmod +x "$APP_MACOS/$APP_NAME"
 
 # Copy the application icon used by Finder and macOS permission prompts.
 cp "$REPO_ROOT/resources/icon.icns" "$APP_RESOURCES/TokenDash.icns"
-
 # Copy Node.js server dist into Resources/server/
 SERVER_DIR="$APP_RESOURCES/server"
 mkdir -p "$SERVER_DIR"
@@ -127,9 +129,27 @@ PLIST
 
 # SwiftPM signs the executable before the app bundle's resources and embedded
 # framework exist. Re-sign the completed bundle so LaunchServices accepts it.
-# Release builds can provide a Developer ID identity; local builds use ad-hoc.
+# Use ad-hoc signing by default so the completed bundle has a consistent code
+# signature. A Developer ID identity can still be supplied explicitly.
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
-codesign --force --deep --sign "$CODESIGN_IDENTITY" "$APP_BUNDLE"
+
+CODESIGN_ARGS=(--force --sign "$CODESIGN_IDENTITY")
+if [ "$CODESIGN_IDENTITY" != "-" ]; then
+    CODESIGN_ARGS+=(--timestamp --options runtime)
+fi
+
+# Sign Sparkle's nested code from the inside out, then seal the main app.
+if [ -d "$APP_FRAMEWORKS/Sparkle.framework" ]; then
+    SPARKLE_VERSION_DIR="$APP_FRAMEWORKS/Sparkle.framework/Versions/B"
+    codesign "${CODESIGN_ARGS[@]}" "$SPARKLE_VERSION_DIR/XPCServices/Installer.xpc"
+    codesign "${CODESIGN_ARGS[@]}" --preserve-metadata=entitlements \
+        "$SPARKLE_VERSION_DIR/XPCServices/Downloader.xpc"
+    codesign "${CODESIGN_ARGS[@]}" "$SPARKLE_VERSION_DIR/Autoupdate"
+    codesign "${CODESIGN_ARGS[@]}" "$SPARKLE_VERSION_DIR/Updater.app"
+    codesign "${CODESIGN_ARGS[@]}" "$APP_FRAMEWORKS/Sparkle.framework"
+fi
+codesign "${CODESIGN_ARGS[@]}" "$APP_MACOS/$APP_NAME"
+codesign "${CODESIGN_ARGS[@]}" "$APP_BUNDLE"
 echo "   Signed app bundle with identity: $CODESIGN_IDENTITY"
 
 echo "✅ $APP_NAME.app created at $APP_BUNDLE"

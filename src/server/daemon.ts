@@ -7,7 +7,7 @@
  * Communication happens via:
  *   - ~/.tokendash/daemon.pid  — PID file (for process management)
  *   - ~/.tokendash/daemon.port — actual listening port (for Swift discovery)
- *   - localhost HTTP API       — all existing /api/* routes
+ *   - 127.0.0.1 HTTP API       — all existing /api/* routes
  */
 
 import { createApp } from './index.js';
@@ -17,6 +17,9 @@ import type { Server } from 'node:http';
 import { existsSync, readFileSync, writeFileSync, mkdirSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { fileURLToPath } from 'node:url';
+
+export const TOKEN_DASH_HOST = '127.0.0.1';
 
 // ---------------------------------------------------------------------------
 // Paths
@@ -64,7 +67,7 @@ function resolvePort(): number {
 
 function listen(app: Express, port: number): Promise<Server> {
   return new Promise((resolve, reject) => {
-    const server = app.listen(port);
+    const server = app.listen(port, TOKEN_DASH_HOST);
     const onListen = () => { cleanup(); resolve(server); };
     const onError = (err: Error) => { cleanup(); reject(err); };
     const cleanup = () => { server.off('listening', onListen); server.off('error', onError); };
@@ -73,7 +76,7 @@ function listen(app: Express, port: number): Promise<Server> {
   });
 }
 
-async function listenWithFallback(app: Express, preferredPort: number): Promise<{ server: Server; port: number }> {
+export async function listenWithFallback(app: Express, preferredPort: number): Promise<{ server: Server; port: number }> {
   let port = preferredPort;
   for (let attempt = 0; attempt < 20; attempt++, port++) {
     try {
@@ -133,7 +136,7 @@ async function main() {
   // Warm up cache: pre-parse JSONL for all agents so first Swift fetch is fast
   try {
     const agentsRes = await new Promise<any>((resolve, reject) => {
-      http.get(`http://127.0.0.1:${port}/api/agents`, (res) => {
+      http.get(`http://${TOKEN_DASH_HOST}:${port}/api/agents`, (res) => {
         let body = '';
         res.on('data', (chunk: string) => { body += chunk; });
         res.on('end', () => { try { resolve(JSON.parse(body)); } catch (e) { reject(e); } });
@@ -141,7 +144,7 @@ async function main() {
     });
     const agents: string[] = agentsRes?.available ?? ['claude'];
     await Promise.all(agents.map((agent: string) => new Promise<void>((resolve) => {
-      http.get(`http://127.0.0.1:${port}/api/daily?agent=${agent}`, (res) => {
+      http.get(`http://${TOKEN_DASH_HOST}:${port}/api/daily?agent=${agent}`, (res) => {
         res.resume(); res.on('end', () => resolve());
       }).on('error', () => resolve());
     })));
@@ -165,8 +168,10 @@ async function main() {
   });
 }
 
-main().catch((err) => {
-  console.error('[tokendash-daemon] fatal:', err);
-  cleanupFiles();
-  process.exit(1);
-});
+if (process.argv[1] === fileURLToPath(import.meta.url)) {
+  main().catch((err) => {
+    console.error('[tokendash-daemon] fatal:', err);
+    cleanupFiles();
+    process.exit(1);
+  });
+}

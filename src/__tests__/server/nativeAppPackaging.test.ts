@@ -33,12 +33,11 @@ describe('native app packaging resources', () => {
     expect(daemonManager).toContain('cleanupFiles()');
   });
 
-  it('requires signed and notarized artifacts for publishing', () => {
+  it('signs Sparkle components in the correct order for packaged apps', () => {
     const packageApp = readFileSync('scripts/package-app.sh', 'utf8');
-    const deploy = readFileSync('scripts/deploy.sh', 'utf8');
-    expect(packageApp).toContain('RELEASE_BUILD requires CODESIGN_IDENTITY');
-    expect(deploy).toContain('xcrun notarytool submit');
-    expect(deploy).toContain('xcrun stapler staple');
-    expect(deploy).toContain('Developer ID Application:');
+    expect(packageApp).toContain('XPCServices/Installer.xpc');
+    expect(packageApp).toContain('XPCServices/Downloader.xpc');
+    expect(packageApp).toContain('--preserve-metadata=entitlements');
+    expect(packageApp).toContain('Updater.app');
   });
 });

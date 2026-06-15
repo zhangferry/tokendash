@@ -38,7 +38,14 @@ The native menu bar app is the recommended way to use TokenDash.
 
 1. Download the latest Apple silicon DMG from [GitHub Releases](https://github.com/zhangferry/tokendash/releases/latest).
 2. Open the DMG and drag **TokenDash** into **Applications**.
-3. Launch TokenDash. It will detect supported AI coding tools and start the local dashboard automatically.
+3. TokenDash is not currently notarized. Open Terminal and remove the macOS
+   quarantine attribute from the installed app:
+
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/TokenDash.app
+   ```
+
+4. Launch TokenDash. It will detect supported AI coding tools and start the local dashboard automatically.
 
 TokenDash requires **macOS 14 or later**. It runs as a menu-bar-only app, so it does not add an icon to the Dock.
 

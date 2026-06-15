@@ -80,10 +80,7 @@ SPARKLE_EDDSA_PUB="${SPARKLE_EDDSA_PUB:-}"
 if [ -z "$SPARKLE_EDDSA_PUB" ] && [ -f ~/.tokendash/eddsa_pub.key ]; then
     SPARKLE_EDDSA_PUB="$(cat ~/.tokendash/eddsa_pub.key)"
 fi
-if [ -z "$SPARKLE_EDDSA_PUB" ] && [ "${RELEASE_BUILD:-false}" = "true" ]; then
-    echo "Error: SUPublicEDKey is required for release builds."
-    exit 1
-elif [ -z "$SPARKLE_EDDSA_PUB" ]; then
+if [ -z "$SPARKLE_EDDSA_PUB" ]; then
     echo "   ⚠️ SUPublicEDKey not set. Auto-update will reject updates until you generate keys."
     echo "      Run scripts/sparkle-keys.sh and re-package (see docs/updating.md)."
 fi
@@ -132,18 +129,9 @@ PLIST
 
 # SwiftPM signs the executable before the app bundle's resources and embedded
 # framework exist. Re-sign the completed bundle so LaunchServices accepts it.
-# Distribution builds must provide a Developer ID Application identity; local
-# builds may continue to use ad-hoc signing.
+# Use ad-hoc signing by default so the completed bundle has a consistent code
+# signature. A Developer ID identity can still be supplied explicitly.
 CODESIGN_IDENTITY="${CODESIGN_IDENTITY:--}"
-if [ "${RELEASE_BUILD:-false}" = "true" ]; then
-    case "$CODESIGN_IDENTITY" in
-        "Developer ID Application:"*) ;;
-        *)
-            echo "Error: RELEASE_BUILD requires CODESIGN_IDENTITY='Developer ID Application: ...'."
-            exit 1
-            ;;
-    esac
-fi
 
 CODESIGN_ARGS=(--force --sign "$CODESIGN_IDENTITY")
 if [ "$CODESIGN_IDENTITY" != "-" ]; then

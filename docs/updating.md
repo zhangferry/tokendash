@@ -75,10 +75,11 @@ npm run deploy
 The deploy command:
 
 1. Repeats all verification and artifact generation.
-2. Creates a draft GitHub Release containing both the DMG and `appcast.xml`.
-3. Publishes the matching npm version.
-4. Pushes the release tag.
-5. Publishes the GitHub Release as the latest release.
+2. Signs the app and DMG with Developer ID, notarizes the DMG, and staples the ticket.
+3. Creates a draft GitHub Release containing both the DMG and `appcast.xml`.
+4. Publishes the matching npm version.
+5. Pushes the release tag.
+6. Publishes the GitHub Release as the latest release.
 
 The command fails before publishing when the npm version, git tag, release, key,
 DMG, appcast, or signature is missing or inconsistent. Do not publish npm or
@@ -89,6 +90,18 @@ Local releases use the Sparkle private key in the login Keychain. CI can inject
 the same key without importing it by setting `SPARKLE_PRIVATE_KEY_FILE` to a
 file containing the base64-encoded EdDSA seed and `SPARKLE_EDDSA_PUB` to the
 matching public key.
+
+Distribution also requires:
+
+```bash
+export CODESIGN_IDENTITY="Developer ID Application: Your Name (TEAMID)"
+export NOTARY_PROFILE="tokendash-notary"
+xcrun notarytool store-credentials "$NOTARY_PROFILE"
+```
+
+`npm run deploy` refuses to publish an ad-hoc-signed or non-notarized build.
+`npm run deploy:check` remains usable for local verification and may produce an
+ad-hoc-signed artifact that is not suitable for distribution.
 
 ## Notes
 

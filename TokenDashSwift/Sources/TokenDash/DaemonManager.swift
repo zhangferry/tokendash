@@ -15,6 +15,12 @@ import Foundation
         Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
     }
 
+    private enum DaemonProbe: Equatable {
+        case compatible
+        case tokenDashVersionMismatch
+        case unavailableOrForeign
+    }
+
     // MARK: - Public
 
     func startDaemon() async throws -> Int {
@@ -22,13 +28,19 @@ import Foundation
         // localhost service can occupy the same port, so verify TokenDash's API
         // identity before trusting a saved port.
         if let existingPort = readPortFile() {
-            if await isCompatibleDaemon(port: existingPort) {
+            switch await probeDaemon(port: existingPort) {
+            case .compatible:
                 isRunning = true
                 self.port = existingPort
                 return existingPort
+            case .tokenDashVersionMismatch:
+                await cleanupIncompatibleDaemon(pid: readPidFile())
+            case .unavailableOrForeign:
+                // A stale PID can already belong to an unrelated process.
+                // Never signal it unless both the API and process command
+                // identify an old TokenDash daemon.
+                cleanupFiles()
             }
-
-            cleanupIncompatibleDaemon(pid: readPidFile())
         }
 
         // Find node binary
@@ -54,7 +66,7 @@ import Foundation
         // Wait for port file to appear (max 10s)
         let deadline = Date().addingTimeInterval(10)
         while Date() < deadline {
-            if let port = readPortFile(), await isCompatibleDaemon(port: port) {
+            if let port = readPortFile(), await probeDaemon(port: port) == .compatible {
                 isRunning = true
                 self.port = port
                 return port
@@ -162,23 +174,57 @@ import Foundation
         return kill(pid, 0) == 0
     }
 
-    private func isCompatibleDaemon(port: Int) async -> Bool {
+    private func probeDaemon(port: Int) async -> DaemonProbe {
         do {
             let info = try await APIClient(port: port).getAppInfo(timeout: 1.0)
-            guard info.packageName == APIClient.expectedPackageName else { return false }
+            guard info.packageName == APIClient.expectedPackageName else {
+                return .unavailableOrForeign
+            }
             let normalizedAppVersion = appVersion.replacingOccurrences(of: "^v", with: "", options: .regularExpression)
-            if normalizedAppVersion == "dev" { return true }
-            return info.version.replacingOccurrences(of: "^v", with: "", options: .regularExpression) == normalizedAppVersion
+            if normalizedAppVersion == "dev" { return .compatible }
+            let daemonVersion = info.version.replacingOccurrences(of: "^v", with: "", options: .regularExpression)
+            return daemonVersion == normalizedAppVersion ? .compatible : .tokenDashVersionMismatch
+        } catch {
+            return .unavailableOrForeign
+        }
+    }
+
+    private func cleanupIncompatibleDaemon(pid: pid_t?) async {
+        if let pid, isProcessAlive(pid: pid), isTokenDashDaemonProcess(pid: pid) {
+            await stopDaemonProcessAsync(pid: pid)
+        }
+        cleanupFiles()
+    }
+
+    private func isTokenDashDaemonProcess(pid: pid_t) -> Bool {
+        let proc = Process()
+        let pipe = Pipe()
+        proc.executableURL = URL(fileURLWithPath: "/bin/ps")
+        proc.arguments = ["-p", String(pid), "-o", "command="]
+        proc.standardOutput = pipe
+        proc.standardError = FileHandle.nullDevice
+        do {
+            try proc.run()
+            proc.waitUntilExit()
+            guard proc.terminationStatus == 0 else { return false }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            let command = String(data: data, encoding: .utf8) ?? ""
+            return command.contains("daemon.cjs") && command.localizedCaseInsensitiveContains("tokendash")
         } catch {
             return false
         }
     }
 
-    private func cleanupIncompatibleDaemon(pid: pid_t?) {
-        if let pid, isProcessAlive(pid: pid) {
-            stopDaemonProcess(pid: pid)
+    private func stopDaemonProcessAsync(pid: pid_t) async {
+        kill(pid, SIGTERM)
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if !isProcessAlive(pid: pid) { return }
+            try? await Task.sleep(nanoseconds: 50_000_000)
         }
-        cleanupFiles()
+        if isProcessAlive(pid: pid) {
+            kill(pid, SIGKILL)
+        }
     }
 
     private func stopDaemonProcess(pid: pid_t) {

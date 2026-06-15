@@ -25,5 +25,10 @@ hdiutil create \
     -format UDZO \
     "$DMG_PATH"
 
+if [ -n "${CODESIGN_IDENTITY:-}" ] && [ "$CODESIGN_IDENTITY" != "-" ]; then
+    codesign --force --timestamp --sign "$CODESIGN_IDENTITY" "$DMG_PATH"
+    echo "   Signed DMG with identity: $CODESIGN_IDENTITY"
+fi
+
 echo "✅ DMG created at $DMG_PATH"
 echo "   Size: $(du -sh "$DMG_PATH" | cut -f1)"

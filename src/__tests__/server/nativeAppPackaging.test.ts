@@ -10,22 +10,35 @@ describe('native app packaging resources', () => {
     expect(badgeUpdater).toContain('image.isTemplate = true');
   });
 
-  it('uses one adaptive background token for the native popover and header', () => {
-    const helpers = readFileSync('TokenDashSwift/Sources/TokenDash/Helpers.swift', 'utf8');
-    expect(helpers).toContain('static let popoverBackground: Color = nativePopoverSurface');
-    expect(helpers).toContain('static let headerBackground: Color = nativePopoverSurface');
-    expect(helpers).toContain('static let nativePopoverSurface');
-    expect(helpers).toContain('case .light:');
-    expect(helpers).toContain('return NSColor.white');
-    expect(helpers).toContain('case .dark:');
-    expect(helpers).toContain('return NSColor.windowBackgroundColor');
-    expect(helpers).not.toContain('.controlBackgroundColor');
+  it('builds the app icon from the rounded transparent source asset', () => {
+    const iconScript = readFileSync('scripts/generate-icon.sh', 'utf8');
+    expect(iconScript).toContain('SOURCE_ICON="$REPO_ROOT/resources/icon.png"');
+    expect(iconScript).toContain('iconutil -c icns');
+    expect(iconScript).toContain('icon_512x512@2x.png');
   });
 
-  it('cleans stale or incompatible daemon state during native app upgrades', () => {
+  it('uses one adaptive background token for the native popover and header', () => {
+    const helpers = readFileSync('TokenDashSwift/Sources/TokenDash/Helpers.swift', 'utf8');
+    expect(helpers).toContain('Color(nsColor: .windowBackgroundColor)');
+    expect(helpers).not.toContain('NSColor(name:');
+    expect(helpers).not.toContain('case .light:');
+    expect(helpers).not.toContain('case .dark:');
+  });
+
+  it('does not signal an unrelated process from stale daemon state', () => {
     const daemonManager = readFileSync('TokenDashSwift/Sources/TokenDash/DaemonManager.swift', 'utf8');
     expect(daemonManager).toContain('cleanupIncompatibleDaemon');
-    expect(daemonManager).toContain('stopDaemonProcess(pid:');
-    expect(daemonManager).toContain('await isCompatibleDaemon(port: existingPort)');
+    expect(daemonManager).toContain('isTokenDashDaemonProcess(pid: pid)');
+    expect(daemonManager).toContain('case .unavailableOrForeign:');
+    expect(daemonManager).toContain('cleanupFiles()');
+  });
+
+  it('requires signed and notarized artifacts for publishing', () => {
+    const packageApp = readFileSync('scripts/package-app.sh', 'utf8');
+    const deploy = readFileSync('scripts/deploy.sh', 'utf8');
+    expect(packageApp).toContain('RELEASE_BUILD requires CODESIGN_IDENTITY');
+    expect(deploy).toContain('xcrun notarytool submit');
+    expect(deploy).toContain('xcrun stapler staple');
+    expect(deploy).toContain('Developer ID Application:');
   });
 });

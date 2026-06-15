@@ -44,6 +44,14 @@ fi
 if [ -n "${SPARKLE_PRIVATE_KEY_FILE:-}" ] && [ ! -s "$SPARKLE_PRIVATE_KEY_FILE" ]; then
     fail "SPARKLE_PRIVATE_KEY_FILE is not readable: $SPARKLE_PRIVATE_KEY_FILE"
 fi
+if ! $DRY_RUN; then
+    case "${CODESIGN_IDENTITY:-}" in
+        "Developer ID Application:"*) ;;
+        *) fail "CODESIGN_IDENTITY must be a Developer ID Application identity" ;;
+    esac
+    [ -n "${NOTARY_PROFILE:-}" ] \
+        || fail "NOTARY_PROFILE must name an xcrun notarytool keychain profile"
+fi
 
 step "Checking release identity and destination"
 npm whoami --registry "$REGISTRY" >/dev/null
@@ -78,8 +86,15 @@ npm run test:e2e
 step "Building npm package, macOS app, and DMG"
 rm -f "$APPCAST"
 npm pack --dry-run >/dev/null
-npm run build:dmg
+RELEASE_BUILD="$([ "$DRY_RUN" = false ] && echo true || echo false)" npm run build:dmg
 [ -s "$DMG" ] || fail "DMG was not created: $DMG"
+
+if ! $DRY_RUN; then
+    step "Notarizing and stapling the distribution DMG"
+    xcrun notarytool submit "$DMG" --keychain-profile "$NOTARY_PROFILE" --wait
+    xcrun stapler staple "$DMG"
+    xcrun stapler validate "$DMG"
+fi
 
 step "Generating signed Sparkle appcast"
 ./scripts/sparkle-appcast.sh release/
@@ -87,6 +102,12 @@ step "Generating signed Sparkle appcast"
 
 step "Validating release artifacts"
 codesign --verify --deep --strict release/TokenDash.app
+if ! $DRY_RUN; then
+    codesign -dvv release/TokenDash.app 2>&1 | grep -q "Authority=Developer ID Application:" \
+        || fail "app bundle is not signed with Developer ID Application"
+    spctl -a -t open --context context:primary-signature -v "$DMG" \
+        || fail "Gatekeeper rejected the notarized DMG"
+fi
 hdiutil verify "$DMG" >/dev/null
 plutil -lint release/TokenDash.app/Contents/Info.plist >/dev/null
 

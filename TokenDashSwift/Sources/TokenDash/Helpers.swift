@@ -1,5 +1,6 @@
 import Foundation
 import SwiftUI
+import AppKit
 
 // MARK: - Adaptive Colors (Light / Dark)
 
@@ -23,9 +24,22 @@ extension Color {
     static let barTrackColor: Color = .primary.opacity(0.04)
     static let secondaryLabel: Color = .primary.opacity(0.45)
     static let tertiaryLabel: Color = .primary.opacity(0.3)
-    // Fixed opaque backgrounds — prevents desktop bleed-through in dark mode
-    static let popoverBackground = Color(nsColor: .windowBackgroundColor)
-    static let headerBackground = Color(nsColor: .controlBackgroundColor)
+    // One adaptive surface token keeps header/body unified without breaking dark mode.
+    static let nativePopoverSurface = Color(nsColor: NSColor(name: NSColor.Name("TokenDashPopoverSurface")) { appearance in
+        let scheme = appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            ? ColorScheme.dark
+            : ColorScheme.light
+        switch scheme {
+        case .light:
+            return NSColor.white
+        case .dark:
+            return NSColor.windowBackgroundColor
+        @unknown default:
+            return NSColor.white
+        }
+    })
+    static let popoverBackground: Color = nativePopoverSurface
+    static let headerBackground: Color = nativePopoverSurface
 }
 
 // MARK: - Number formatting

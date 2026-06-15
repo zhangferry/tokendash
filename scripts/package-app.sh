@@ -36,7 +36,6 @@ chmod +x "$APP_MACOS/$APP_NAME"
 
 # Copy the application icon used by Finder and macOS permission prompts.
 cp "$REPO_ROOT/resources/icon.icns" "$APP_RESOURCES/TokenDash.icns"
-
 # Copy Node.js server dist into Resources/server/
 SERVER_DIR="$APP_RESOURCES/server"
 mkdir -p "$SERVER_DIR"

@@ -11,15 +11,24 @@ import Foundation
     private var dataDir: String { NSHomeDirectory() + "/.tokendash" }
     private var pidPath: String { dataDir + "/daemon.pid" }
     private var portPath: String { dataDir + "/daemon.port" }
+    private var appVersion: String {
+        Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
+    }
 
     // MARK: - Public
 
     func startDaemon() async throws -> Int {
-        // Check if already running
-        if let existingPort = readPortFile(), isProcessAlive(pid: readPidFile()) {
-            isRunning = true
-            self.port = existingPort
-            return existingPort
+        // Check if already running. The pid/port files are not enough: another
+        // localhost service can occupy the same port, so verify TokenDash's API
+        // identity before trusting a saved port.
+        if let existingPort = readPortFile() {
+            if await isCompatibleDaemon(port: existingPort) {
+                isRunning = true
+                self.port = existingPort
+                return existingPort
+            }
+
+            cleanupIncompatibleDaemon(pid: readPidFile())
         }
 
         // Find node binary
@@ -45,7 +54,7 @@ import Foundation
         // Wait for port file to appear (max 10s)
         let deadline = Date().addingTimeInterval(10)
         while Date() < deadline {
-            if let port = readPortFile() {
+            if let port = readPortFile(), await isCompatibleDaemon(port: port) {
                 isRunning = true
                 self.port = port
                 return port
@@ -58,7 +67,7 @@ import Foundation
 
     func stopDaemon() {
         if let pid = readPidFile() {
-            kill(pid, SIGTERM)
+            stopDaemonProcess(pid: pid)
         }
         process?.terminate()
         process = nil
@@ -151,6 +160,37 @@ import Foundation
     private func isProcessAlive(pid: pid_t?) -> Bool {
         guard let pid = pid, pid > 0 else { return false }
         return kill(pid, 0) == 0
+    }
+
+    private func isCompatibleDaemon(port: Int) async -> Bool {
+        do {
+            let info = try await APIClient(port: port).getAppInfo(timeout: 1.0)
+            guard info.packageName == APIClient.expectedPackageName else { return false }
+            let normalizedAppVersion = appVersion.replacingOccurrences(of: "^v", with: "", options: .regularExpression)
+            if normalizedAppVersion == "dev" { return true }
+            return info.version.replacingOccurrences(of: "^v", with: "", options: .regularExpression) == normalizedAppVersion
+        } catch {
+            return false
+        }
+    }
+
+    private func cleanupIncompatibleDaemon(pid: pid_t?) {
+        if let pid, isProcessAlive(pid: pid) {
+            stopDaemonProcess(pid: pid)
+        }
+        cleanupFiles()
+    }
+
+    private func stopDaemonProcess(pid: pid_t) {
+        kill(pid, SIGTERM)
+        let deadline = Date().addingTimeInterval(2)
+        while Date() < deadline {
+            if !isProcessAlive(pid: pid) { return }
+            Thread.sleep(forTimeInterval: 0.05)
+        }
+        if isProcessAlive(pid: pid) {
+            kill(pid, SIGKILL)
+        }
     }
 
     private func cleanupFiles() {

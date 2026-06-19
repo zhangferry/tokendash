@@ -1,5 +1,8 @@
 # Changelog
 
+### v1.7.3
+- **Dashboard over IPv4** — open the web dashboard at `127.0.0.1` instead of `localhost` so it always reaches the daemon's IPv4 listener. macOS resolves `localhost` to IPv6 first, so when another local service (e.g. a dev server) owns the same port on IPv6 it would answer `localhost` with "Cannot GET /" and bypass TokenDash entirely.
+
 ### v1.7.2
 - **Self-healing daemon** — restart the local daemon automatically when it crashes or is reclaimed (up to three startup retries plus a 30s health monitor), so the popover never gets stuck on "Unable to fetch data" until the app is restarted by hand.
 - **Hot port switching** — recover the menu bar popover onto the daemon's new port without restarting the app.

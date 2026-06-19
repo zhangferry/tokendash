@@ -17,10 +17,30 @@ import AppKit
     }
 
     func start(port: Int) {
+        applyPort(port)
+        ensureTimer()
+        update()
+    }
+
+    /// Hot-switch to a new daemon port after the daemon has been restarted,
+    /// without tearing down the polling timer. Clears any stale error so the
+    /// popover recovers immediately once the daemon is back.
+    func updatePort(_ port: Int) {
+        applyPort(port)
+        ensureTimer()
+        NSLog("[TokenDash] BadgeUpdater switched to port \(port)")
+        update()
+    }
+
+    private func applyPort(_ port: Int) {
         self.apiClient = APIClient(port: port)
         self.state.daemonPort = port
         self.state.isDaemonReady = true
-        update()
+        self.state.errorMessage = nil
+    }
+
+    private func ensureTimer() {
+        guard timer == nil else { return }
         timer = Timer.scheduledTimer(withTimeInterval: tickInterval, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.tick() }
         }

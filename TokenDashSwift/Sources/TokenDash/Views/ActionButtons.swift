@@ -8,9 +8,8 @@ struct ActionButtons: View {
     var body: some View {
         HStack(spacing: 0) {
             Button {
-                if let url = URL(string: "http://localhost:\(state.daemonPort)") {
-                    NSWorkspace.shared.open(url)
-                }
+                guard state.isDaemonReady, let url = URL(string: "http://localhost:\(state.daemonPort)") else { return }
+                NSWorkspace.shared.open(url)
             } label: {
                 Label("Dashboard", systemImage: "chart.bar")
                     .font(.system(size: 11, weight: .medium))
@@ -20,6 +19,8 @@ struct ActionButtons: View {
                     .background(isDashboardHovered ? Color.primary.opacity(0.04) : Color.clear)
             }
             .buttonStyle(.plain)
+            .disabled(!state.isDaemonReady)
+            .help(state.isDaemonReady ? "Open web dashboard" : "Starting service…")
             .onHover { hovering in isDashboardHovered = hovering }
 
             Rectangle()

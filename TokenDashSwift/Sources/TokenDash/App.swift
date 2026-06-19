@@ -29,6 +29,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     var daemonManager: DaemonManager?
     var badgeUpdater: BadgeUpdater?
     private var badgePollTimer: Timer?
+    private var daemonHealthTimer: Timer?
     private var outsideClickMonitor: Any?
     private var mainContentHeight: CGFloat = 620
 
@@ -83,6 +84,13 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             }
         }
 
+        // Health monitor: if the daemon dies (crash, OOM kill, macOS sleep
+        // reclaim), restart it automatically so the popover never gets stuck
+        // on "Unable to fetch data". Cheap liveness check — no spawn if alive.
+        daemonHealthTimer = Timer.scheduledTimer(withTimeInterval: 30.0, repeats: true) { [weak self] _ in
+            self?.checkDaemonHealth()
+        }
+
         // Let AppKit finish installing the status item and panel before any
         // startup service work begins, so the very first click is responsive.
         DispatchQueue.main.async {
@@ -92,16 +100,51 @@ class AppDelegate: NSObject, NSApplicationDelegate {
             UpdaterController.shared.start()
 
             Task { @MainActor in
-                do {
-                    NSLog("[TokenDash] Starting daemon...")
-                    let port = try await manager.startDaemon()
-                    NSLog("[TokenDash] Daemon ready on port \(port)")
-                    updater.start(port: port)
-                    NSLog("[TokenDash] BadgeUpdater started")
-                } catch {
-                    NSLog("[TokenDash] Failed to start daemon: \(error.localizedDescription)")
-                    self.state.errorMessage = error.localizedDescription
+                await self.startDaemonWithRetry()
+            }
+        }
+    }
+
+    /// Spawn (or reattach to) the daemon with a few retries. If every attempt
+    /// fails, the 30s health monitor keeps trying in the background.
+    @MainActor private func startDaemonWithRetry(maxAttempts: Int = 3) async {
+        guard let manager = daemonManager else { return }
+        for attempt in 1...maxAttempts {
+            do {
+                NSLog("[TokenDash] Starting daemon (attempt \(attempt)/\(maxAttempts))...")
+                let port = try await manager.startDaemon()
+                NSLog("[TokenDash] Daemon ready on port \(port)")
+                badgeUpdater?.start(port: port)
+                NSLog("[TokenDash] BadgeUpdater started")
+                return
+            } catch {
+                NSLog("[TokenDash] Daemon start attempt \(attempt) failed: \(error.localizedDescription)")
+                state.isDaemonReady = false
+                if attempt < maxAttempts {
+                    try? await Task.sleep(nanoseconds: 2_000_000_000)
+                } else {
+                    state.errorMessage = error.localizedDescription
                 }
+            }
+        }
+    }
+
+    /// Periodic liveness check. Restarts the daemon if it has died and
+    /// hot-switches the BadgeUpdater to the new port so the popover recovers
+    /// without an app restart.
+    func checkDaemonHealth() {
+        guard let manager = daemonManager else { return }
+        if manager.isAlive() { return }
+        NSLog("[TokenDash] Health check: daemon not alive — restarting")
+        state.isDaemonReady = false
+        Task { @MainActor in
+            do {
+                let port = try await manager.startDaemon()
+                badgeUpdater?.updatePort(port)
+                NSLog("[TokenDash] Daemon restarted on port \(port)")
+            } catch {
+                NSLog("[TokenDash] Daemon restart failed: \(error.localizedDescription)")
+                state.errorMessage = error.localizedDescription
             }
         }
     }
@@ -109,6 +152,7 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationWillTerminate(_ notification: Notification) {
         stopOutsideClickMonitor()
         badgePollTimer?.invalidate()
+        daemonHealthTimer?.invalidate()
         badgeUpdater?.stop()
         daemonManager?.stopDaemon()
     }

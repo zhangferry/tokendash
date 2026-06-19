@@ -77,6 +77,15 @@ import Foundation
         throw DaemonError.timeout
     }
 
+    /// Quick liveness probe — true if the daemon we spawned is still running
+    /// or a PID file points at a live process. Used by AppDelegate's health
+    /// monitor to decide whether a restart is needed. Cheap (no network call).
+    func isAlive() -> Bool {
+        if let proc = process, proc.isRunning { return true }
+        if let pid = readPidFile(), isProcessAlive(pid: pid) { return true }
+        return false
+    }
+
     func stopDaemon() {
         if let pid = readPidFile() {
             stopDaemonProcess(pid: pid)

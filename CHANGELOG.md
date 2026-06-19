@@ -1,5 +1,10 @@
 # Changelog
 
+### v1.7.2
+- **Self-healing daemon** — restart the local daemon automatically when it crashes or is reclaimed (up to three startup retries plus a 30s health monitor), so the popover never gets stuck on "Unable to fetch data" until the app is restarted by hand.
+- **Hot port switching** — recover the menu bar popover onto the daemon's new port without restarting the app.
+- **Dashboard ready gating** — disable the Dashboard button until the daemon is ready so it never opens a dead URL.
+
 ### v1.7.1
 - **Occupied-port recovery** — bind the native daemon to IPv4 loopback and move to the next available port when another local service already owns `3456`.
 - **Safer daemon reuse** — validate TokenDash identity and version before trusting saved state without terminating unrelated processes referenced by stale PID files.

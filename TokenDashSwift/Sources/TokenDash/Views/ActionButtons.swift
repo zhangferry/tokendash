@@ -8,7 +8,7 @@ struct ActionButtons: View {
     var body: some View {
         HStack(spacing: 0) {
             Button {
-                guard state.isDaemonReady, let url = URL(string: "http://localhost:\(state.daemonPort)") else { return }
+                guard state.isDaemonReady, let url = URL(string: "http://127.0.0.1:\(state.daemonPort)") else { return }
                 NSWorkspace.shared.open(url)
             } label: {
                 Label("Dashboard", systemImage: "chart.bar")

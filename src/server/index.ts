@@ -181,7 +181,7 @@ export function createApp(_port: number, baseDir?: string): Express {
   registerApiRoutes(router, {
     packageName: PACKAGE_NAME,
     version: getPackageVersion(),
-    dashboardUrl: `http://localhost:${resolvePort(_port)}`,
+    dashboardUrl: `http://127.0.0.1:${resolvePort(_port)}`,
   });
   app.use('/api', router);
 
@@ -273,11 +273,11 @@ async function main() {
   const { server, port, usedFallback } = await listenWithPortFallback(app, preferredPort);
 
   if (usedFallback) {
-    console.warn(`tokendash detected that port ${preferredPort} is already in use, switched to http://localhost:${port}`);
+    console.warn(`tokendash detected that port ${preferredPort} is already in use, switched to http://127.0.0.1:${port}`);
   }
 
-  console.log(`tokendash running on http://localhost:${port}`);
-  console.log(`API available at http://localhost:${port}/api`);
+  console.log(`tokendash running on http://127.0.0.1:${port}`);
+  console.log(`API available at http://127.0.0.1:${port}/api`);
   const isProduction = import.meta.url.includes('dist/');
   if (isProduction) {
     console.log('Serving production build');
@@ -292,7 +292,7 @@ async function main() {
       console.log('Opening dashboard in your browser...');
       try {
         const { default: open } = await import('open');
-        await open(`http://localhost:${port}`);
+        await open(`http://127.0.0.1:${port}`);
       } catch (err: any) {
         console.warn('Could not open browser:', err.message);
       }

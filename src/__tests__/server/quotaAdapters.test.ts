@@ -91,14 +91,14 @@ describe('GLM adapter normalization', () => {
   });
   afterEach(() => setEnv({ ZAI_API_KEY: ENV_BACKUP.ZAI_API_KEY }));
 
-  it('orders two TOKENS_LIMIT entries by reset time (5h first, weekly second) and reads MCP TIME_LIMIT', async () => {
+  it('labels GLM token windows from unit/number instead of reset time and reads MCP TIME_LIMIT', async () => {
     global.fetch = mockFetchJson({
       success: true, code: 200,
       data: {
         level: 'pro',
         limits: [
-          { type: 'TOKENS_LIMIT', percentage: 44, nextResetTime: 1731292800 }, // weekly (later reset)
-          { type: 'TOKENS_LIMIT', percentage: 7, nextResetTime: 1730947200 },  // 5h (earlier reset)
+          { type: 'TOKENS_LIMIT', unit: 3, number: 5, percentage: 7, nextResetTime: 1731292800000 },
+          { type: 'TOKENS_LIMIT', unit: 6, number: 1, percentage: 44, nextResetTime: 1730947200000 },
           { type: 'TIME_LIMIT', percentage: 10, usage: 1000, currentValue: 72, remaining: 928 },
         ],
       },
@@ -112,6 +112,26 @@ describe('GLM adapter normalization', () => {
     const mcp = snap.windows[2];
     expect(mcp.used).toBe(72);
     expect(mcp.limit).toBe(1000);
+  });
+
+  it('preserves observed GLM token-window order when unit/number are missing', async () => {
+    global.fetch = mockFetchJson({
+      success: true, code: 200,
+      data: {
+        limits: [
+          { type: 'TOKENS_LIMIT', percentage: 12, nextResetTime: 1782024559558 },
+          { type: 'TOKENS_LIMIT', percentage: 76, nextResetTime: 1782015024997 },
+        ],
+      },
+    });
+
+    const { glmAdapter } = await import('../../server/quota/adapters/glm.js');
+    const snap = await glmAdapter.fetch();
+
+    expect(snap.windows.map((w) => [w.id, w.usedPercent])).toEqual([
+      ['glm_5h', 12],
+      ['glm_weekly', 76],
+    ]);
   });
 
   it('uses a proposed credential for validation instead of the configured key', async () => {

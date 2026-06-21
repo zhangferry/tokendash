@@ -1,5 +1,8 @@
 # Changelog
 
+### v1.7.4
+- **Correct GLM quota windows** — label GLM Coding Plan 5-hour and weekly usage from the provider's explicit window metadata instead of reset-time ordering, so the menu bar app no longer swaps the short-window and weekly percentages.
+
 ### v1.7.3
 - **Dashboard over IPv4** — open the web dashboard at `127.0.0.1` instead of `localhost` so it always reaches the daemon's IPv4 listener. macOS resolves `localhost` to IPv6 first, so when another local service (e.g. a dev server) owns the same port on IPv6 it would answer `localhost` with "Cannot GET /" and bypass TokenDash entirely.
 

@@ -19,6 +19,8 @@ import type { QuotaCredentialInput } from '../types.js';
 
 interface GlmLimit {
   type?: string; // "TOKENS_LIMIT" | "TIME_LIMIT"
+  unit?: number;        // 3 = hour, 5 = month, 6 = week (observed from GLM monitor API)
+  number?: number;      // window size in the given unit
   percentage?: number;
   usage?: number;        // total (for TIME_LIMIT / MCP)
   currentValue?: number; // used (for TIME_LIMIT / MCP)
@@ -68,18 +70,18 @@ export const glmAdapter: QuotaAdapter = {
     const limits = data.data?.limits ?? [];
     const windows = [];
 
-    // TOKENS_LIMIT: two entries (5h + weekly). Sort by reset time so the
-    // shorter window is labeled first.
+    // TOKENS_LIMIT: two entries (5h + weekly). GLM reports explicit
+    // unit/number fields; reset times can overlap in surprising ways, so they
+    // are not a safe discriminator for the window kind.
     const tokenLimits = limits
-      .filter((l) => l.type === 'TOKENS_LIMIT' && typeof l.percentage === 'number')
-      .sort((a, b) => (a.nextResetTime ?? 0) - (b.nextResetTime ?? 0));
+      .filter((l) => l.type === 'TOKENS_LIMIT' && typeof l.percentage === 'number');
     tokenLimits.forEach((l, i) => {
-      const isShort = i === 0; // first after sort = nearer reset = 5h
+      const kind = tokenWindowKind(l, i);
       windows.push(windowFromPercent(
-        isShort ? 'glm_5h' : 'glm_weekly',
-        isShort ? '5-Hour Window' : 'Weekly',
+        kind.id,
+        kind.label,
         l.percentage ?? 0,
-        { durationMins: isShort ? 300 : 10080, resetsAt: unixToIso(l.nextResetTime) },
+        { durationMins: kind.durationMins, resetsAt: unixToIso(l.nextResetTime) },
       ));
     });
 
@@ -109,6 +111,22 @@ function classifyFetchError(err: unknown): QuotaError {
   }
   const msg = err instanceof Error ? err.message : String(err);
   return new QuotaError({ state: 'upstream_unavailable', message: msg.slice(0, 200) });
+}
+
+function tokenWindowKind(limit: GlmLimit, index: number): { id: string; label: string; durationMins?: number } {
+  if (limit.unit === 3 && limit.number === 5) {
+    return { id: 'glm_5h', label: '5-Hour Window', durationMins: 300 };
+  }
+  if (limit.unit === 6 && limit.number === 1) {
+    return { id: 'glm_weekly', label: 'Weekly', durationMins: 10080 };
+  }
+
+  // Older fixtures, proxies, or API variants may omit unit/number. The monitor
+  // API's observed order is 5h first, weekly second, so preserve that contract
+  // as the least-surprising fallback.
+  if (index === 0) return { id: 'glm_5h', label: '5-Hour Window', durationMins: 300 };
+  if (index === 1) return { id: 'glm_weekly', label: 'Weekly', durationMins: 10080 };
+  return { id: `glm_tokens_${index}`, label: `Token Window ${index + 1}` };
 }
 
 function resolveCredential(proposed?: QuotaCredentialInput): { key: string; base: string } | null {

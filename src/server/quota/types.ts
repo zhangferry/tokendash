@@ -20,7 +20,7 @@ export interface QuotaSnapshot {
   planName?: string;
   /** ISO 8601 timestamp of the most recent successful fetch. */
   fetchedAt: string;
-  /** "live" = fresh this cycle, "cached" = within ttl, "stale" = last good after a failure. */
+  /** "live" = fresh this cycle, "cached" = retained good data, "stale" = no usable live value. */
   freshness: 'live' | 'cached' | 'stale';
   /** Independent quota windows. Never merged into one synthetic number. */
   windows: QuotaWindow[];

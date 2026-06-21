@@ -9,21 +9,24 @@ import { getBlocksResponse as getClaudeBlocksResponse } from '../claudeJsonlPars
 export async function getBlocks(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
   const project = req.query.project as string || undefined;
+  const force = req.query.refresh === '1' || req.query.refresh === 'true';
 
   try {
     const cacheKey = `blocks:${agent}:${project || 'all'}`;
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      res.json(cached);
-      return;
-    }
+    if (!force) {
+      const cached = cache.get(cacheKey);
+      if (cached) {
+        res.json(cached);
+        return;
+      }
 
-    // Stale-while-revalidate
-    const stale = cache.getStale(cacheKey);
-    if (stale) {
-      refreshBlocksCache(agent, project, cacheKey);
-      res.json(stale);
-      return;
+      // Stale-while-revalidate
+      const stale = cache.getStale(cacheKey);
+      if (stale) {
+        refreshBlocksCache(agent, project, cacheKey);
+        res.json(stale);
+        return;
+      }
     }
 
     const data = fetchBlocksData(agent, project);

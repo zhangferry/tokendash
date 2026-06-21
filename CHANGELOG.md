@@ -1,5 +1,9 @@
 # Changelog
 
+### v1.7.5
+- **Reliable menu bar refreshes** — make the native app's refresh interval bypass server-side usage and Coding Plan caches so new data appears on the schedule selected in Settings.
+- **Smoother Coding Plan fallback** — keep showing the last successful quota snapshot when an upstream provider returns a transient error or empty response, avoiding stale/error flashes after data has already loaded.
+
 ### v1.7.4
 - **Correct GLM quota windows** — label GLM Coding Plan 5-hour and weekly usage from the provider's explicit window metadata instead of reset-time ordering, so the menu bar app no longer swaps the short-window and weekly percentages.
 

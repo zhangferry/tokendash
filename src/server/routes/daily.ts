@@ -8,20 +8,23 @@ import { getDailyResponse as getClaudeDailyResponse } from '../claudeJsonlParser
 
 export async function getDaily(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
+  const force = req.query.refresh === '1' || req.query.refresh === 'true';
   const cacheKey = `daily:${agent}`;
   try {
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      res.json(cached);
-      return;
-    }
+    if (!force) {
+      const cached = cache.get(cacheKey);
+      if (cached) {
+        res.json(cached);
+        return;
+      }
 
-    // Stale-while-revalidate: return stale data, refresh in background
-    const stale = cache.getStale(cacheKey);
-    if (stale) {
-      refreshDailyCache(agent, cacheKey);
-      res.json(stale);
-      return;
+      // Stale-while-revalidate: return stale data, refresh in background
+      const stale = cache.getStale(cacheKey);
+      if (stale) {
+        refreshDailyCache(agent, cacheKey);
+        res.json(stale);
+        return;
+      }
     }
 
     const data = await fetchDailyData(agent);

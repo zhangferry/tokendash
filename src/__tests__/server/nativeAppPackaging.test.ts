@@ -40,4 +40,17 @@ describe('native app packaging resources', () => {
     expect(packageApp).toContain('--preserve-metadata=entitlements');
     expect(packageApp).toContain('Updater.app');
   });
+
+  it('forces native menu bar refreshes past server-side caches', () => {
+    const apiClient = readFileSync('TokenDashSwift/Sources/TokenDash/Services/APIClient.swift', 'utf8');
+    const badgeUpdater = readFileSync('TokenDashSwift/Sources/TokenDash/BadgeUpdater.swift', 'utf8');
+    expect(apiClient).toContain('"&refresh=1"');
+    expect(apiClient).toContain('"/quota\\(refresh ? "?refresh=1" : "")"');
+    expect(badgeUpdater).toContain('api.getDaily(agent: agent, refresh: true)');
+    expect(badgeUpdater).toContain('api.getBlocks(agent: agent, refresh: true)');
+    expect(badgeUpdater).toContain('api.getProjects(agent: agent, refresh: true)');
+    expect(badgeUpdater).toContain('api.getQuota(refresh: true)');
+    expect(badgeUpdater).toContain('retainUsableQuotas');
+    expect(badgeUpdater).toContain('snapshot.freshness != "stale"');
+  });
 });

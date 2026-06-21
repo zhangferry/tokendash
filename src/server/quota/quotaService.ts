@@ -13,7 +13,7 @@ import { validateQuotaSnapshot } from './schemas.js';
 
 /**
  * Deep quota service. Owns discovery, concurrency, deduplication, caching,
- * stale-while-revalidate, timeouts, and error classification. Adapters only
+ * last-good fallback, timeouts, and error classification. Adapters only
  * detect + fetch + normalize; everything cross-cutting lives here.
  */
 export class QuotaService {
@@ -44,7 +44,7 @@ export class QuotaService {
   }
 
   /**
-   * Fetch one provider's snapshot. Fresh if available; stale-but-retained
+   * Fetch one provider's snapshot. Fresh if available; last-good retained
    * on failure; never throws (errors become structured statuses).
    */
   async fetchOne(provider: QuotaProviderId): Promise<QuotaSnapshot | null> {
@@ -135,10 +135,12 @@ export class QuotaService {
   private handleFailure(adapter: QuotaAdapter, err: unknown): QuotaSnapshot {
     const status = statusForError(err, this.fetchTimeoutMs);
 
-    // Retain last good snapshot as stale.
+    // Retain the last good snapshot as a normal cached result. Coding-plan
+    // cards should degrade like a dashboard, not flash "stale" or an error
+    // whenever one upstream request misses.
     const stale = this.cache.getStale(adapter.provider);
     if (stale) {
-      return { ...stale, freshness: 'stale', status };
+      return { ...stale, freshness: 'cached', status: { state: 'ok' } };
     }
     // No prior data — surface the structured error so the user can act on it.
     return {

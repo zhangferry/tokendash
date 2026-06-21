@@ -91,20 +91,20 @@ import AppKit
                 for agent in agents {
                     NSLog("[TokenDash] Fetching daily for \(agent)...")
                     do {
-                        let d = try await api.getDaily(agent: agent)
+                        let d = try await api.getDaily(agent: agent, refresh: true)
                         dailyResults.append(d)
                         NSLog("[TokenDash] Got daily for \(agent): \(d.daily.count) days")
                     } catch {
                         NSLog("[TokenDash] FAILED daily for \(agent): \(error)")
                     }
                     do {
-                        let b = try await api.getBlocks(agent: agent)
+                        let b = try await api.getBlocks(agent: agent, refresh: true)
                         blockResults.append(b)
                     } catch {
                         NSLog("[TokenDash] FAILED blocks for \(agent): \(error)")
                     }
                     do {
-                        let p = try await api.getProjects(agent: agent)
+                        let p = try await api.getProjects(agent: agent, refresh: true)
                         projectResults.append(p)
                     } catch {
                         NSLog("[TokenDash] FAILED projects for \(agent): \(error)")
@@ -147,10 +147,10 @@ import AppKit
                 // Coding Plan quotas — independent of the daily usage fetch above.
                 // Failures are isolated per-provider by the server, so a missing
                 // credential never breaks the rest of the popover.
-                var quotaSnapshots: [QuotaSnapshot] = []
+                var quotaSnapshots = self.state.quotas
                 do {
-                    let quotaResp = try await api.getQuota()
-                    quotaSnapshots = quotaResp.providers
+                    let quotaResp = try await api.getQuota(refresh: true)
+                    quotaSnapshots = self.retainUsableQuotas(quotaResp.providers, previous: self.state.quotas)
                     NSLog("[TokenDash] Quota: \(quotaSnapshots.count) providers")
                 } catch {
                     NSLog("[TokenDash] Quota fetch failed (non-fatal): \(error)")
@@ -177,6 +177,25 @@ import AppKit
                 self.state.errorMessage = error.localizedDescription
             }
         }
+    }
+
+    private func retainUsableQuotas(_ incoming: [QuotaSnapshot], previous: [QuotaSnapshot]) -> [QuotaSnapshot] {
+        guard !incoming.isEmpty else { return previous }
+        let previousByProvider = Dictionary(uniqueKeysWithValues: previous.map { ($0.provider, $0) })
+        var retainedProviders = Set<String>()
+
+        var merged = incoming.compactMap { snapshot -> QuotaSnapshot? in
+            retainedProviders.insert(snapshot.provider)
+            if snapshot.status.state == "ok", snapshot.freshness != "stale", !snapshot.windows.isEmpty {
+                return snapshot
+            }
+            return previousByProvider[snapshot.provider]
+        }
+
+        for snapshot in previous where !retainedProviders.contains(snapshot.provider) {
+            merged.append(snapshot)
+        }
+        return merged
     }
 
     // MARK: - Data computation

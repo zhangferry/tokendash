@@ -21,20 +21,20 @@ actor APIClient {
         try await fetch("/app-info", timeout: timeout)
     }
 
-    func getDaily(agent: String) async throws -> DailyResponse {
-        try await fetch("/daily?agent=\(agent)")
+    func getDaily(agent: String, refresh: Bool = false) async throws -> DailyResponse {
+        try await fetch("/daily?agent=\(agent)\(refreshQuery(refresh))")
     }
 
-    func getBlocks(agent: String) async throws -> BlocksResponse {
-        try await fetch("/blocks?agent=\(agent)")
+    func getBlocks(agent: String, refresh: Bool = false) async throws -> BlocksResponse {
+        try await fetch("/blocks?agent=\(agent)\(refreshQuery(refresh))")
     }
 
-    func getProjects(agent: String) async throws -> ProjectsResponse {
-        try await fetch("/projects?agent=\(agent)")
+    func getProjects(agent: String, refresh: Bool = false) async throws -> ProjectsResponse {
+        try await fetch("/projects?agent=\(agent)\(refreshQuery(refresh))")
     }
 
-    func getQuota() async throws -> QuotaResponse {
-        try await fetch("/quota")
+    func getQuota(refresh: Bool = false) async throws -> QuotaResponse {
+        try await fetch("/quota\(refresh ? "?refresh=1" : "")")
     }
 
     func validateCredential(provider: String, apiKey: String) async throws -> QuotaCredentialValidationResponse {
@@ -90,6 +90,10 @@ actor APIClient {
         let t2 = CFAbsoluteTimeGetCurrent()
         NSLog("[TokenDash] fetch \(path): network=\(String(format: "%.0f", (t1-t0)*1000))ms decode=\(String(format: "%.0f", (t2-t1)*1000))ms size=\(data.count)B")
         return result
+    }
+
+    private func refreshQuery(_ refresh: Bool) -> String {
+        refresh ? "&refresh=1" : ""
     }
 }
 

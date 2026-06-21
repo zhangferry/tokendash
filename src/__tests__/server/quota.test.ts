@@ -101,7 +101,7 @@ describe('QuotaService', () => {
     expect(res.providers.find((p) => p.provider === 'claude')?.status.state).toBe('ok');
   });
 
-  it('retains last good snapshot as stale when a refresh fails', async () => {
+  it('retains last good snapshot as cached ok data when a refresh fails', async () => {
     // Short TTL so the seeded success snapshot is expired (not fresh) when
     // fetchOne runs — only then does a failed refresh fall through to stale.
     const cache = new QuotaCache(1);
@@ -113,8 +113,8 @@ describe('QuotaService', () => {
     }));
     const service = new QuotaService(registry, cache);
     const snap = await service.fetchOne('codex');
-    expect(snap?.freshness).toBe('stale');
-    expect(snap?.status.state).toBe('upstream_unavailable');
+    expect(snap?.freshness).toBe('cached');
+    expect(snap?.status.state).toBe('ok');
     expect(snap?.windows.length).toBeGreaterThan(0); // retained from prior success
   });
 

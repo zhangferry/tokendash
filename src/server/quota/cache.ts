@@ -3,8 +3,8 @@ import type { QuotaSnapshot } from './types.js';
 /**
  * Per-provider quota cache.
  *
- * Keeps the last successful snapshot so a transient refresh failure returns
- * stale-but-useful data (marked freshness "stale") instead of erasing it.
+ * Keeps the last successful snapshot so a transient refresh failure can retain
+ * useful data instead of erasing the card.
  * The cache is in-memory only — quota snapshots are live and short-lived,
  * so disk persistence (unlike the usage cache) adds no value.
  */

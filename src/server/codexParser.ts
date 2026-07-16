@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { homedir } from 'node:os';
 import { z } from 'zod';
 import type { DailyEntry, DailyResponse, ProjectsResponse, BlockEntry, BlocksResponse, ModelBreakdown } from '../shared/types.js';
-import { calculateCost } from './codexPricing.js';
+import { calculateCost, isLongContextCodexRequest } from './codexPricing.js';
 import { buildUsageFileIndex } from './usageFileIndex.js';
 
 // ---------------------------------------------------------------------------
@@ -40,6 +40,9 @@ export interface ParsedTokenEvent {
   outputTokens: number;
   reasoningOutputTokens: number;
   totalTokens: number;
+  longContextInputTokens: number;
+  longContextCachedInputTokens: number;
+  longContextOutputTokens: number;
 }
 
 export interface ParsedSession {
@@ -64,6 +67,9 @@ interface TokenAccumulator {
   outputTokens: number;
   reasoningOutputTokens: number;
   totalTokens: number;
+  longContextInputTokens: number;
+  longContextCachedInputTokens: number;
+  longContextOutputTokens: number;
 }
 
 interface AggregateBucket {
@@ -71,8 +77,8 @@ interface AggregateBucket {
   models: Map<string, TokenAccumulator>;
 }
 
-const CODEX_INDEX_VERSION = 'codex-session-v1';
-const CODEX_AGGREGATE_INDEX_VERSION = 'codex-aggregate-v1';
+const CODEX_INDEX_VERSION = 'codex-session-v2';
+const CODEX_AGGREGATE_INDEX_VERSION = 'codex-aggregate-v2';
 const DEFAULT_TZ = 'Asia/Shanghai';
 
 interface SerializedAggregateBucket {
@@ -103,11 +109,61 @@ function subtractTokenUsage(
     outputTokens: Math.max(0, current.output_tokens - (previous?.output_tokens ?? 0)),
     reasoningOutputTokens: Math.max(0, current.reasoning_output_tokens - (previous?.reasoning_output_tokens ?? 0)),
     totalTokens: Math.max(0, current.total_tokens - (previous?.total_tokens ?? 0)),
+    longContextInputTokens: 0,
+    longContextCachedInputTokens: 0,
+    longContextOutputTokens: 0,
   };
 }
 
 function displayInputTokens(inputTokens: number, cachedInputTokens: number): number {
   return Math.max(0, inputTokens - cachedInputTokens);
+}
+
+function usageMagnitude(ev: ParsedTokenEvent): number {
+  return ev.inputTokens + ev.cachedInputTokens + ev.outputTokens + ev.reasoningOutputTokens + ev.totalTokens;
+}
+
+function sameUsage(a: ParsedTokenEvent, b: ParsedTokenEvent): boolean {
+  return a.inputTokens === b.inputTokens
+    && a.cachedInputTokens === b.cachedInputTokens
+    && a.outputTokens === b.outputTokens
+    && a.reasoningOutputTokens === b.reasoningOutputTokens
+    && a.totalTokens === b.totalTokens;
+}
+
+function chooseCodexUsageEvent(
+  lastUsage: z.infer<typeof TokenUsageSchema> | undefined,
+  totalUsage: z.infer<typeof TokenUsageSchema>,
+  previousTotalUsage: z.infer<typeof TokenUsageSchema> | null,
+): ParsedTokenEvent {
+  const deltaFromTotal = subtractTokenUsage(totalUsage, previousTotalUsage);
+  if (!lastUsage) return deltaFromTotal;
+
+  const lastEvent = subtractTokenUsage(lastUsage, null);
+  if (!previousTotalUsage || totalUsage.total_tokens <= previousTotalUsage.total_tokens || sameUsage(lastEvent, deltaFromTotal)) {
+    return lastEvent;
+  }
+
+  // Codex's stable format reports last_token_usage as a per-request delta. If a
+  // future format starts mirroring cumulative total_token_usage here, trusting it
+  // would add cumulative snapshots repeatedly and inflate totals by multiples.
+  // Only override last_token_usage when it exactly mirrors the cumulative total;
+  // otherwise keep the stable Codex delta semantics.
+  if (sameUsage(lastEvent, subtractTokenUsage(totalUsage, null)) && usageMagnitude(deltaFromTotal) > 0) {
+    return deltaFromTotal;
+  }
+
+  return lastEvent;
+}
+
+function withLongContextUsage(ev: ParsedTokenEvent): ParsedTokenEvent {
+  if (!isLongContextCodexRequest(ev.inputTokens)) return ev;
+  return {
+    ...ev,
+    longContextInputTokens: ev.inputTokens,
+    longContextCachedInputTokens: ev.cachedInputTokens,
+    longContextOutputTokens: ev.outputTokens,
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -238,22 +294,19 @@ export function parseCodexSession(filepath: string): ParsedSession | null {
         if (seenTotalUsageSnapshots.has(totalUsageKey)) continue;
         seenTotalUsageSnapshots.add(totalUsageKey);
 
-        const last = info.last_token_usage ?? info.total_token_usage;
-        const rawEvent = info.last_token_usage
-          ? subtractTokenUsage(last, null)
-          : subtractTokenUsage(last, previousTotalUsage);
+        const rawEvent = chooseCodexUsageEvent(info.last_token_usage, info.total_token_usage, previousTotalUsage);
         previousTotalUsage = info.total_token_usage;
 
         if (rawEvent.inputTokens === 0 && rawEvent.cachedInputTokens === 0 && rawEvent.outputTokens === 0 && rawEvent.reasoningOutputTokens === 0) {
           continue;
         }
 
-        const event = {
+        const event = withLongContextUsage({
           ...rawEvent,
           timestamp,
           model: currentModel || model || undefined,
           cachedInputTokens: Math.min(rawEvent.cachedInputTokens, rawEvent.inputTokens),
-        };
+        });
         const eventKey = [
           timestamp,
           model,
@@ -377,7 +430,7 @@ function extractProjectName(cwd: string): string {
 // ---------------------------------------------------------------------------
 
 function emptyAcc(): TokenAccumulator {
-  return { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0, totalTokens: 0 };
+  return { inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0, totalTokens: 0, longContextInputTokens: 0, longContextCachedInputTokens: 0, longContextOutputTokens: 0 };
 }
 
 function addAcc(a: TokenAccumulator, ev: ParsedTokenEvent): void {
@@ -386,6 +439,9 @@ function addAcc(a: TokenAccumulator, ev: ParsedTokenEvent): void {
   a.outputTokens += ev.outputTokens;
   a.reasoningOutputTokens += ev.reasoningOutputTokens;
   a.totalTokens += ev.totalTokens;
+  a.longContextInputTokens += ev.longContextInputTokens;
+  a.longContextCachedInputTokens += ev.longContextCachedInputTokens;
+  a.longContextOutputTokens += ev.longContextOutputTokens;
 }
 
 function displayAcc(acc: TokenAccumulator): TokenAccumulator {
@@ -401,6 +457,9 @@ function mergeAcc(a: TokenAccumulator, b: TokenAccumulator): void {
   a.outputTokens += b.outputTokens;
   a.reasoningOutputTokens += b.reasoningOutputTokens;
   a.totalTokens += b.totalTokens;
+  a.longContextInputTokens += b.longContextInputTokens ?? 0;
+  a.longContextCachedInputTokens += b.longContextCachedInputTokens ?? 0;
+  a.longContextOutputTokens += b.longContextOutputTokens ?? 0;
 }
 
 function addAccToBucket(bucket: AggregateBucket, ev: ParsedTokenEvent, model: string): void {

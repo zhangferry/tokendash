@@ -1,11 +1,13 @@
 /**
- * Validation script: compare custom JSONL parser output against @ccusage/codex.
+ * Validation script: compare custom JSONL parser output against ccusage.
  * Run with: npx tsx scripts/validate-codex-parser.ts
  *
  * Re-run this script whenever Codex is updated to catch format drift.
  */
 
 import { execFile } from 'node:child_process';
+import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { promisify } from 'node:util';
 import { getDailyResponse } from '../src/server/codexParser.js';
 
@@ -13,7 +15,8 @@ const execFileAsync = promisify(execFile);
 
 interface CcusageModelEntry {
   inputTokens: number;
-  cachedInputTokens: number;
+  cachedInputTokens?: number;
+  cacheReadTokens?: number;
   outputTokens: number;
   reasoningOutputTokens: number;
   totalTokens: number;
@@ -23,7 +26,8 @@ interface CcusageModelEntry {
 interface CcusageDailyEntry {
   date: string;
   inputTokens: number;
-  cachedInputTokens: number;
+  cachedInputTokens?: number;
+  cacheReadTokens?: number;
   outputTokens: number;
   reasoningOutputTokens: number;
   totalTokens: number;
@@ -35,7 +39,8 @@ interface CcusageResponse {
   daily: CcusageDailyEntry[];
   totals: {
     inputTokens: number;
-    cachedInputTokens: number;
+    cachedInputTokens?: number;
+    cacheReadTokens?: number;
     outputTokens: number;
     reasoningOutputTokens: number;
     totalTokens: number;
@@ -60,9 +65,16 @@ function parseCodexDate(dateStr: string): string {
 }
 
 async function getCcusageData(): Promise<CcusageResponse> {
-  const { stdout } = await execFileAsync('npx', ['--yes', '@ccusage/codex@latest', 'daily', '--json'], {
+  const { stdout } = await execFileAsync('npx', ['--yes', 'ccusage@latest', 'codex', 'daily', '--json'], {
     timeout: 60_000,
     maxBuffer: 10 * 1024 * 1024,
+    env: {
+      ...process.env,
+      // TokenDash currently reads ~/.codex/sessions only. Point ccusage at the
+      // same directory so this script catches parser drift instead of comparing
+      // against ccusage's broader sessions + archived_sessions source set.
+      CODEX_HOME: join(homedir(), '.codex', 'sessions'),
+    },
   });
   return JSON.parse(stdout) as CcusageResponse;
 }
@@ -95,7 +107,7 @@ async function main(): Promise<void> {
   console.log('\n--- Totals Comparison ---');
   allPass = compare('Total tokens', ours.totals.totalTokens, ccusage.totals.totalTokens) && allPass;
   allPass = compare('Input tokens', ours.totals.inputTokens, ccusage.totals.inputTokens) && allPass;
-  allPass = compare('Cached input tokens', ours.totals.cacheReadTokens, ccusage.totals.cachedInputTokens) && allPass;
+  allPass = compare('Cached input tokens', ours.totals.cacheReadTokens, ccusage.totals.cachedInputTokens ?? ccusage.totals.cacheReadTokens ?? 0) && allPass;
   allPass = compare('Output tokens', ours.totals.outputTokens, ccusage.totals.outputTokens) && allPass;
   allPass = compare('Cost (USD)', ours.totals.totalCost, ccusage.totals.costUSD, 0.01) && allPass;
 
@@ -118,6 +130,7 @@ async function main(): Promise<void> {
     allPass = compare('    Total tokens', ourEntry.totalTokens, theirs.totalTokens) && allPass;
     allPass = compare('    Input tokens', ourEntry.inputTokens, theirs.inputTokens) && allPass;
     allPass = compare('    Output tokens', ourEntry.outputTokens, theirs.outputTokens) && allPass;
+    allPass = compare('    Cached input tokens', ourEntry.cacheReadTokens, theirs.cachedInputTokens ?? theirs.cacheReadTokens ?? 0) && allPass;
     allPass = compare('    Cost (USD)', ourEntry.totalCost, theirs.costUSD, 0.01) && allPass;
   }
 

@@ -83,6 +83,9 @@ function event(
     outputTokens,
     reasoningOutputTokens: 0,
     totalTokens: inputTokens + outputTokens,
+    longContextInputTokens: 0,
+    longContextCachedInputTokens: 0,
+    longContextOutputTokens: 0,
   };
 }
 
@@ -116,7 +119,7 @@ describe('parseCodexSession', () => {
     const session = parseCodexSession(filepath);
 
     expect(session?.tokenEvents).toHaveLength(2);
-    expect(session?.tokenEvents.map(ev => ev.totalTokens)).toEqual([1500, 2100]);
+    expect(session?.tokenEvents.map(ev => ev.totalTokens)).toEqual([1500, 600]);
   });
 
   it('derives per-turn usage from cumulative total_token_usage when last_token_usage is missing', () => {
@@ -138,6 +141,61 @@ describe('parseCodexSession', () => {
     expect(session?.tokenEvents).toHaveLength(2);
     expect(session?.tokenEvents[0]).toMatchObject({ inputTokens: 100, outputTokens: 50, totalTokens: 150 });
     expect(session?.tokenEvents[1]).toMatchObject({ inputTokens: 100, outputTokens: 25, totalTokens: 125 });
+  });
+
+  it('prefers cumulative total deltas when last_token_usage looks cumulative', () => {
+    const filepath = writeSession([
+      {
+        type: 'session_meta',
+        payload: {
+          id: 'session-1',
+          cwd: '/tmp/project',
+          timestamp: '2026-05-18T00:00:00.000Z',
+        },
+      },
+      turnContext('gpt-5.6'),
+      tokenCount('2026-05-18T00:00:01.000Z', 150, 50),
+      tokenCount('2026-05-18T00:00:02.000Z', 275, 75),
+      tokenCount('2026-05-18T00:00:03.000Z', 550, 150),
+    ]);
+
+    const session = parseCodexSession(filepath);
+
+    expect(session?.tokenEvents).toHaveLength(3);
+    expect(session?.tokenEvents.map(ev => ev.totalTokens)).toEqual([150, 125, 275]);
+    expect(session?.tokenEvents.reduce((sum, ev) => sum + ev.totalTokens, 0)).toBe(550);
+  });
+
+  it('marks individual large Codex requests for long-context pricing', () => {
+    const filepath = writeSession([
+      {
+        type: 'session_meta',
+        payload: {
+          id: 'session-1',
+          cwd: '/tmp/project',
+          timestamp: '2026-05-18T00:00:00.000Z',
+        },
+      },
+      turnContext('gpt-5.6-sol'),
+      tokenCount('2026-05-18T00:00:01.000Z', 280_500, 500),
+      tokenCount('2026-05-18T00:00:02.000Z', 380_800, 800),
+    ]);
+
+    const session = parseCodexSession(filepath);
+
+    expect(session?.tokenEvents).toHaveLength(2);
+    expect(session?.tokenEvents[0]).toMatchObject({
+      inputTokens: 280_000,
+      outputTokens: 500,
+      longContextInputTokens: 280_000,
+      longContextOutputTokens: 500,
+    });
+    expect(session?.tokenEvents[1]).toMatchObject({
+      inputTokens: 100_000,
+      outputTokens: 300,
+      longContextInputTokens: 0,
+      longContextOutputTokens: 0,
+    });
   });
 
   it('attributes token events to the active model when a session switches models', () => {
@@ -285,5 +343,38 @@ describe('Codex pricing', () => {
     expect(gpt54).toBeCloseTo(16.375, 6);
     expect(gpt55).toBeCloseTo(32.75, 6);
     expect(gpt55).toBeCloseTo(gpt54 * 2, 6);
+  });
+
+  it('normalizes gpt-5.6 alias and date suffixes to gpt-5.6-sol pricing', () => {
+    const tokens = {
+      inputTokens: 1_000_000,
+      cachedInputTokens: 500_000,
+      outputTokens: 1_000_000,
+      reasoningOutputTokens: 0,
+      totalTokens: 2_000_000,
+      longContextInputTokens: 0,
+      longContextCachedInputTokens: 0,
+      longContextOutputTokens: 0,
+    };
+
+    expect(calculateCost(tokens, new Set(['gpt-5.6']))).toBeCloseTo(32.75, 6);
+    expect(calculateCost(tokens, new Set(['gpt-5.6-sol-2026-07-15']))).toBeCloseTo(32.75, 6);
+  });
+
+  it('applies GPT-5.6 long-context rates only to requests above the threshold', () => {
+    const tokens = {
+      inputTokens: 380_000,
+      cachedInputTokens: 70_000,
+      outputTokens: 800,
+      reasoningOutputTokens: 0,
+      totalTokens: 380_800,
+      longContextInputTokens: 280_000,
+      longContextCachedInputTokens: 20_000,
+      longContextOutputTokens: 500,
+    };
+
+    // short: 50K non-cached * $5 + 50K cached * $0.5 + 300 out * $30
+    // long: 260K non-cached * $10 + 20K cached * $1 + 500 out * $45
+    expect(calculateCost(tokens, new Set(['gpt-5.6-sol']))).toBeCloseTo(2.9265, 6);
   });
 });

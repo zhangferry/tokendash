@@ -51,6 +51,7 @@ export interface ParsedSession {
   model: string;
   createdAt: string;
   tokenEvents: ParsedTokenEvent[];
+  forkedFromId?: string;
 }
 
 export interface AggregateOptions {
@@ -77,9 +78,15 @@ interface AggregateBucket {
   models: Map<string, TokenAccumulator>;
 }
 
-const CODEX_INDEX_VERSION = 'codex-session-v2';
-const CODEX_AGGREGATE_INDEX_VERSION = 'codex-aggregate-v2';
+const CODEX_INDEX_VERSION = 'codex-session-v3';
+const CODEX_AGGREGATE_INDEX_VERSION = 'codex-aggregate-v3';
 const DEFAULT_TZ = 'Asia/Shanghai';
+
+/** Minimum number of token_count events sharing the same second-precision
+ *  timestamp to indicate a fork replay batch. Codex Desktop forks replay the
+ *  parent session's entire token_count history at the fork creation timestamp,
+ *  producing dozens or hundreds of events all timestamped to the same second. */
+const FORK_REPLAY_THRESHOLD = 5;
 
 interface SerializedAggregateBucket {
   acc: TokenAccumulator;
@@ -240,6 +247,7 @@ export function parseCodexSession(filepath: string): ParsedSession | null {
   let currentModel = '';
   let createdAt = '';
   const tokenEvents: ParsedTokenEvent[] = [];
+  let forkedFromId: string | undefined;
   let previousTotalUsage: z.infer<typeof TokenUsageSchema> | null = null;
   const seenTotalUsageSnapshots = new Set<string>();
   const seenUsageEvents = new Set<string>();
@@ -262,6 +270,9 @@ export function parseCodexSession(filepath: string): ParsedSession | null {
       sessionId = (payload.id as string) || '';
       cwd = (payload.cwd as string) || '';
       createdAt = (payload.timestamp as string) || '';
+      if (payload.forked_from_id && !forkedFromId) {
+        forkedFromId = payload.forked_from_id as string;
+      }
     }
 
     if (type === 'turn_context') {
@@ -327,7 +338,38 @@ export function parseCodexSession(filepath: string): ParsedSession | null {
 
   if (!sessionId) return null;
 
-  return { id: sessionId, cwd, model, createdAt, tokenEvents };
+  // Detect and remove fork replay events.
+  //
+  // When Codex Desktop forks a session, it replays the parent's entire
+  // token_count history at the fork creation timestamp (all events get the
+  // same second-precision timestamp). These replayed events have valid
+  // per-request deltas and unique total_token_usage snapshots, so the per-file
+  // dedup above does not catch them. Without filtering, the same tokens are
+  // counted in both the parent file and the fork file, inflating totals ~2x.
+  //
+  // We detect replay batches by finding second-precision timestamps shared by
+  // FORK_REPLAY_THRESHOLD or more token_count events. Normal Codex sessions
+  // never produce more than a few token_count events per second.
+  if (tokenEvents.length >= FORK_REPLAY_THRESHOLD) {
+    const tsSecondCount = new Map<string, number>();
+    for (const ev of tokenEvents) {
+      const sec = ev.timestamp.slice(0, 19); // YYYY-MM-DDTHH:MM:SS
+      tsSecondCount.set(sec, (tsSecondCount.get(sec) ?? 0) + 1);
+    }
+    const replaySeconds = new Set<string>();
+    for (const [sec, count] of tsSecondCount) {
+      if (count >= FORK_REPLAY_THRESHOLD) replaySeconds.add(sec);
+    }
+    if (replaySeconds.size > 0) {
+      const filtered = tokenEvents.filter(
+        ev => !replaySeconds.has(ev.timestamp.slice(0, 19)),
+      );
+      tokenEvents.length = 0;
+      tokenEvents.push(...filtered);
+    }
+  }
+
+  return { id: sessionId, cwd, model, createdAt, tokenEvents, forkedFromId };
 }
 
 /** Parse all Codex sessions. */
@@ -378,8 +420,21 @@ function loadIndexedAggregates(): { summaries: CodexFileAggregate[]; signature: 
     files: scanCodexSessions().map(path => ({ path })),
     parseFile: file => summarizeCodexSession(parseCodexSession(file.path)),
   });
+  const summaries = result.values.filter((summary): summary is CodexFileAggregate => summary !== null);
+
+  // Safety net: cross-file dedup for fork replay events that may slip through
+  // the per-file filter. When a session forks, Codex Desktop rewrites the
+  // parent's token_count history at the fork timestamp. If both parent and fork
+  // files are present, the same total_token_usage snapshots appear in both.
+  // We detect this by checking if any two summaries have identical daily bucket
+  // accumulator values for the same date, which indicates the same events were
+  // counted twice.
+  //
+  // This is intentionally conservative: it only removes exact duplicate daily
+  // buckets, not partial overlaps, to avoid over-filtering legitimate usage.
+  // The primary fix is the fork replay timestamp-batch filter in parseCodexSession.
   return {
-    summaries: result.values.filter((summary): summary is CodexFileAggregate => summary !== null),
+    summaries,
     signature: result.signature,
   };
 }

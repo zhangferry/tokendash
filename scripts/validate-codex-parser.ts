@@ -70,9 +70,8 @@ async function getCcusageData(): Promise<CcusageResponse> {
     maxBuffer: 10 * 1024 * 1024,
     env: {
       ...process.env,
-      // TokenDash currently reads ~/.codex/sessions only. Point ccusage at the
-      // same directory so this script catches parser drift instead of comparing
-      // against ccusage's broader sessions + archived_sessions source set.
+      // Compare the same active sessions directory as TokenDash. ccusage also
+      // supports archived_sessions, which is intentionally outside this check.
       CODEX_HOME: join(homedir(), '.codex', 'sessions'),
     },
   });

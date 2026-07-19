@@ -1,17 +1,14 @@
 /**
  * Codex token pricing configuration.
  *
- * Pricing formula:
- *   cost = short_non_cached_input * input_rate
- *        + short_cached_input * cached_rate
- *        + short_output * output_rate
- *        + long_non_cached_input * long_input_rate
- *        + long_cached_input * long_cached_rate
- *        + long_output * long_output_rate
+ * Pricing formula (aligned with OpenAI's GPT-5.6 pricing tiers and ccusage):
+ *   cost = (inputTokens - cachedInputTokens) * input_rate
+ *        + cachedInputTokens * cached_rate
+ *        + outputTokens * output_rate
  *
  * Reasoning tokens are NOT billed separately (included in outputTokens).
  *
- * Update rates from https://openai.com/api/pricing/ when models change.
+ * Update rates from https://developers.openai.com/api/docs/models/ when models change.
  * All prices are USD per 1M tokens.
  */
 
@@ -27,8 +24,6 @@ interface ModelPricing {
 export const CODEX_LONG_CONTEXT_THRESHOLD = 272_000;
 
 const MODEL_PRICING: Record<string, ModelPricing> = {
-  // GPT-5.6 short-context standard-tier rates. The bare gpt-5.6 alias resolves
-  // to gpt-5.6-sol in normalizeCodexModelName().
   'gpt-5.6-sol': {
     inputPer1M: 5.00,
     cachedInputPer1M: 0.50,
@@ -96,17 +91,15 @@ function stripDateSuffix(model: string): string {
 /** Normalize Codex log model labels to pricing keys. */
 export function normalizeCodexModelName(model: string): string {
   const stripped = stripDateSuffix(model.trim());
-  if (stripped === 'gpt-5.6') return 'gpt-5.6-sol';
-  return stripped;
+  return stripped === 'gpt-5.6' ? 'gpt-5.6-sol' : stripped;
 }
 
-/** Return whether one raw Codex request should use long-context pricing. */
 export function isLongContextCodexRequest(inputTokens: number): boolean {
   return inputTokens > CODEX_LONG_CONTEXT_THRESHOLD;
 }
 
 /**
- * Calculate cost in USD from Codex token counts and model pricing.
+ * Calculate cost in USD from token counts and model pricing.
  * Long-context fields must be populated while aggregating individual requests;
  * they cannot be recovered from a summed input token total afterwards.
  */

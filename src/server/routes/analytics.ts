@@ -13,26 +13,31 @@ const EMPTY_ANALYTICS = {
 export async function getAnalytics(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
   const project = req.query.project as string || undefined;
+  const force = req.query.refresh === '1' || req.query.refresh === 'true';
 
-  if (agent === 'codex' || agent === 'opencode') {
+  if (agent === 'codex' || agent === 'opencode' || agent === 'pi') {
     res.json(EMPTY_ANALYTICS);
     return;
   }
 
   try {
     const cacheKey = `analytics:${agent}:${project || 'all'}`;
-    const cached = cache.get(cacheKey);
-    if (cached) {
-      res.json(cached);
-      return;
+    if (!force) {
+      const cached = cache.get(cacheKey);
+      if (cached) {
+        res.json(cached);
+        return;
+      }
+
+      const stale = cache.getStale(cacheKey);
+      if (stale) {
+        refreshAnalyticsCache(agent, project, cacheKey);
+        res.json(stale);
+        return;
+      }
     }
 
-    const toolCalls = agent === 'openclaw'
-      ? extractOpenClawToolCalls(project || null)
-      : extractClaudeToolCalls(project || null);
-
-    const data = computeAnalytics(toolCalls);
-    const validated = validateAnalytics(data);
+    const validated = fetchAnalyticsData(agent, project);
     cache.set(cacheKey, validated);
     res.json(validated);
   } catch (error) {
@@ -43,4 +48,17 @@ export async function getAnalytics(req: Request, res: Response): Promise<void> {
       hint: message,
     });
   }
+}
+
+function fetchAnalyticsData(agent: string, project?: string) {
+  const toolCalls = agent === 'openclaw'
+    ? extractOpenClawToolCalls(project || null)
+    : extractClaudeToolCalls(project || null);
+  return validateAnalytics(computeAnalytics(toolCalls));
+}
+
+function refreshAnalyticsCache(agent: string, project: string | undefined, cacheKey: string): void {
+  Promise.resolve()
+    .then(() => cache.set(cacheKey, fetchAnalyticsData(agent, project)))
+    .catch(err => console.error('Background refresh failed (analytics):', err));
 }

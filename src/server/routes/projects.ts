@@ -5,6 +5,7 @@ import { getProjectsResponse as getCodexProjectsResponse } from '../codexParser.
 import { getProjectsResponse as getOpenClawProjectsResponse } from '../openclawParser.js';
 import { getProjectsResponse as getOpencodeProjectsResponse } from '../opencodeParser.js';
 import { getProjectsResponse as getClaudeProjectsResponse } from '../claudeJsonlParser.js';
+import { getProjectsResponse as getPiProjectsResponse } from '../piParser.js';
 
 export async function getProjects(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
@@ -47,6 +48,8 @@ function fetchProjectsData(agent: string) {
     return validateProjects(getOpenClawProjectsResponse());
   } else if (agent === 'opencode') {
     return validateProjects(getOpencodeProjectsResponse());
+  } else if (agent === 'pi') {
+    return validateProjects(getPiProjectsResponse());
   } else {
     // Claude Code: parse JSONL directly (fast, no CLI)
     return validateProjects(getClaudeProjectsResponse());

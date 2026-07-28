@@ -5,6 +5,7 @@ import { getDailyResponse as getCodexDailyResponse } from '../codexParser.js';
 import { getDailyResponse as getOpenClawDailyResponse } from '../openclawParser.js';
 import { getDailyResponse as getOpencodeDailyResponse } from '../opencodeParser.js';
 import { getDailyResponse as getClaudeDailyResponse } from '../claudeJsonlParser.js';
+import { getDailyResponse as getPiDailyResponse } from '../piParser.js';
 
 export async function getDaily(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
@@ -47,6 +48,8 @@ function fetchDailyData(agent: string) {
     return Promise.resolve(validateDaily(getOpenClawDailyResponse()));
   } else if (agent === 'opencode') {
     return Promise.resolve(validateDaily(getOpencodeDailyResponse()));
+  } else if (agent === 'pi') {
+    return Promise.resolve(validateDaily(getPiDailyResponse()));
   } else {
     // Claude Code: parse JSONL directly (fast, no CLI)
     return Promise.resolve(validateDaily(getClaudeDailyResponse()));

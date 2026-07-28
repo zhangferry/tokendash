@@ -64,4 +64,10 @@ describe('formatProjectName', () => {
     const all = ['dir1/dashboard', 'dir2/other'];
     expect(formatProjectName('dir1/dashboard', all)).toBe('dashboard');
   });
+
+  it('uses parent prefixes for Windows paths with duplicate directory names', () => {
+    const all = ['D:\\work\\api', 'D:\\archive\\api'];
+    expect(formatProjectName('D:\\work\\api', all)).toBe('work/api');
+    expect(formatProjectName('D:\\archive\\api', all)).toBe('archive/api');
+  });
 });

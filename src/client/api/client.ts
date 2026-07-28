@@ -28,8 +28,8 @@ function qs(agent: string, extra?: Record<string, string>): string {
   return parts.length > 0 ? '?' + parts.join('&') : '';
 }
 
-export async function fetchDaily(agent = 'claude'): Promise<DailyResponse> {
-  const res = await fetch(`${BASE}/daily${qs(agent)}`);
+export async function fetchDaily(agent = 'claude', refresh = false): Promise<DailyResponse> {
+  const res = await fetch(`${BASE}/daily${qs(agent, refresh ? { refresh: '1' } : undefined)}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch daily data: ${res.status} ${res.statusText}`);
   }
@@ -52,24 +52,24 @@ export async function fetchSession(agent = 'claude'): Promise<SessionResponse> {
   return res.json();
 }
 
-export async function fetchProjects(agent = 'claude'): Promise<ProjectsResponse> {
-  const res = await fetch(`${BASE}/projects${qs(agent)}`);
+export async function fetchProjects(agent = 'claude', refresh = false): Promise<ProjectsResponse> {
+  const res = await fetch(`${BASE}/projects${qs(agent, refresh ? { refresh: '1' } : undefined)}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch projects data: ${res.status} ${res.statusText}`);
   }
   return res.json();
 }
 
-export async function fetchBlocks(agent = 'claude', project = ''): Promise<BlocksResponse> {
-  const res = await fetch(`${BASE}/blocks${qs(agent, project ? { project } : undefined)}`);
+export async function fetchBlocks(agent = 'claude', project = '', refresh = false): Promise<BlocksResponse> {
+  const res = await fetch(`${BASE}/blocks${qs(agent, { ...(project ? { project } : {}), ...(refresh ? { refresh: '1' } : {}) })}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch blocks data: ${res.status} ${res.statusText}`);
   }
   return res.json();
 }
 
-export async function fetchAnalytics(agent = 'claude', project = ''): Promise<AnalyticsResponse> {
-  const res = await fetch(`${BASE}/analytics${qs(agent, project ? { project } : undefined)}`);
+export async function fetchAnalytics(agent = 'claude', project = '', refresh = false): Promise<AnalyticsResponse> {
+  const res = await fetch(`${BASE}/analytics${qs(agent, { ...(project ? { project } : {}), ...(refresh ? { refresh: '1' } : {}) })}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch analytics: ${res.status} ${res.statusText}`);
   }

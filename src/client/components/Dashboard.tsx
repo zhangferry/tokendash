@@ -190,8 +190,8 @@ export function Dashboard() {
   const [agentsInfo, setAgentsInfo] = useState<AgentsResponse | null>(null);
   const [agentsLoading, setAgentsLoading] = useState(true);
 
-  const [agent, setAgent] = useLocalStorageState<'claude' | 'codex' | 'openclaw' | 'opencode'>('dashboard_agent', 'claude');
-  const isCodex = agent === 'codex' || agent === 'opencode';
+  const [agent, setAgent] = useLocalStorageState<'claude' | 'codex' | 'openclaw' | 'opencode' | 'pi'>('dashboard_agent', 'claude');
+  const hasNoAnalytics = agent === 'codex' || agent === 'opencode' || agent === 'pi';
 
   const [timeRange, setTimeRange] = useLocalStorageState<TimeRangeKey>('dashboard_timeRange', '30d');
   const [project, setProject] = useLocalStorageState('dashboard_project', '');
@@ -212,7 +212,7 @@ export function Dashboard() {
         setAgentsInfo(info);
         // Fallback stored agent if unavailable
         if (info.available.length > 0 && !info.available.includes(agent)) {
-          setAgent(info.default as 'claude' | 'codex' | 'openclaw' | 'opencode');
+          setAgent(info.default as 'claude' | 'codex' | 'openclaw' | 'opencode' | 'pi');
         }
       })
       .catch(() => {})
@@ -221,13 +221,26 @@ export function Dashboard() {
 
   const showAgentSwitcher = (agentsInfo?.available.length ?? 0) > 1;
 
-  const dailyData = useCcusageData(useCallback(() => fetchDaily(agent), [agent]));
-  const projectsData = useCcusageData(useCallback(() => fetchProjects(agent), [agent]));
-  const blocksData = useCcusageData(useCallback(() => fetchBlocks(agent, project), [agent, project]));
-  const analyticsData = useCcusageData(useCallback(() => fetchAnalytics(agent, project), [agent, project]));
+  const dailyData = useCcusageData(useCallback((refresh = false) => fetchDaily(agent, refresh), [agent]));
+  const projectsData = useCcusageData(useCallback((refresh = false) => fetchProjects(agent, refresh), [agent]));
+  const blocksData = useCcusageData(useCallback((refresh = false) => fetchBlocks(agent, project, refresh), [agent, project]));
+  const analyticsData = useCcusageData(useCallback((refresh = false) => fetchAnalytics(agent, project, refresh), [agent, project]));
+
+  // 手动刷新所有数据源
+  const handleRefreshAll = useCallback(() => {
+    dailyData.refetch();
+    projectsData.refetch();
+    blocksData.refetch();
+    analyticsData.refetch();
+  }, [dailyData.refetch, projectsData.refetch, blocksData.refetch, analyticsData.refetch]);
+
+  // 格式化上次更新时间（HH:mm:ss）
+  const lastUpdatedStr = dailyData.lastUpdated
+    ? dailyData.lastUpdated.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' })
+    : null;
   const [metric, setMetric] = useLocalStorageState<MetricMode>('dashboard_metric', 'tokens');
 
-  const handleAgentChange = (a: 'claude' | 'codex' | 'openclaw' | 'opencode') => {
+  const handleAgentChange = (a: 'claude' | 'codex' | 'openclaw' | 'opencode' | 'pi') => {
     setAgent(a);
     setProject('');
   };
@@ -489,6 +502,11 @@ export function Dashboard() {
       activeColor: 'text-amber-600',
       icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>,
     },
+    pi: {
+      label: 'Pi',
+      activeColor: 'text-violet-600',
+      icon: <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2.5} d="M9.75 3.104v5.714a2.25 2.25 0 01-.659 1.591L5 14.5M9.75 3.104c-.251.023-.501.05-.75.082m.75-.082a24.301 24.301 0 014.5 0m0 0v5.714c0 .597.237 1.17.659 1.591L19.8 15.3M14.25 3.104c.251.023.501.05.75.082M19.8 15.3l-1.57.393A9.065 9.065 0 0112 15a9.065 9.065 0 00-6.23-.693L5 14.5m14.8.8l1.402 1.402c1.232 1.232.65 3.318-1.067 3.611A48.309 48.309 0 0112 21c-2.773 0-5.491-.235-8.135-.687-1.718-.293-2.3-2.379-1.067-3.61L5 14.5" /></svg>,
+    },
   };
 
   const renderAgentSwitcher = () => {
@@ -501,7 +519,7 @@ export function Dashboard() {
           return (
             <button
               key={a}
-              onClick={() => handleAgentChange(a as 'claude' | 'codex' | 'openclaw' | 'opencode')}
+              onClick={() => handleAgentChange(a as 'claude' | 'codex' | 'openclaw' | 'opencode' | 'pi')}
               className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-bold tracking-wide transition-all duration-200 ${isActive
                 ? `bg-white ${cfg.activeColor} shadow-[0_1px_3px_rgba(0,0,0,0.1)] ring-1 ring-stone-900/5`
                 : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
@@ -523,7 +541,19 @@ export function Dashboard() {
           <div className="flex flex-col gap-1.5">
             <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">TokenDash</h1>
           </div>
-          {showAgentSwitcher && renderAgentSwitcher()}
+          <div className="flex items-center gap-3">
+            <button
+              onClick={handleRefreshAll}
+              disabled={dailyData.loading}
+              title="刷新数据"
+              className="flex items-center justify-center w-8 h-8 rounded-lg text-stone-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-40"
+            >
+              <svg className={`w-4 h-4 ${dailyData.loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+              </svg>
+            </button>
+            {showAgentSwitcher && renderAgentSwitcher()}
+          </div>
         </div>
         <div className="skeleton h-8 w-48 rounded-lg mb-2" />
         <div className="skeleton h-4 w-72 rounded-lg mb-8" />
@@ -539,7 +569,19 @@ export function Dashboard() {
         <div className="flex flex-col gap-1.5">
           <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">TokenDash</h1>
         </div>
-        {showAgentSwitcher && renderAgentSwitcher()}
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleRefreshAll}
+            disabled={dailyData.loading}
+            title="刷新数据"
+            className="flex items-center justify-center w-8 h-8 rounded-lg text-stone-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-40"
+          >
+            <svg className={`w-4 h-4 ${dailyData.loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+            </svg>
+          </button>
+          {showAgentSwitcher && renderAgentSwitcher()}
+        </div>
       </div>
       <div className="rounded-2xl bg-red-50 border border-red-200/60 p-5"><div className="text-red-600 text-sm font-medium">{dailyData.error}</div></div>
     </div>
@@ -558,7 +600,25 @@ export function Dashboard() {
               Monitor token consumption, costs, and cache efficiency for your AI coding assistants.
             </p>
           </div>
-          {showAgentSwitcher && renderAgentSwitcher()}
+          <div className="flex items-center gap-3">
+            {/* 自动刷新状态 + 手动刷新按钮 */}
+            <div className="flex items-center gap-2">
+              {lastUpdatedStr && (
+                <span className="text-[11px] font-medium text-stone-400">更新于 {lastUpdatedStr}</span>
+              )}
+              <button
+                onClick={handleRefreshAll}
+                disabled={dailyData.loading}
+                title="刷新数据（每 60 秒自动刷新）"
+                className="flex items-center justify-center w-8 h-8 rounded-lg text-stone-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              >
+                <svg className={`w-4 h-4 ${dailyData.loading ? 'animate-spin' : ''}`} fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                </svg>
+              </button>
+            </div>
+            {showAgentSwitcher && renderAgentSwitcher()}
+          </div>
         </div>
 
         <div className="flex flex-col gap-4">
@@ -825,7 +885,7 @@ export function Dashboard() {
       </div>
 
       {/* Section: Code Analytics (Claude Code & OpenClaw only) */}
-      {!isCodex && analyticsData.data && (
+      {!hasNoAnalytics && analyticsData.data && (
         <AnalyticsSection analytics={analyticsData.data} timeRange={timeRange} />
       )}
 

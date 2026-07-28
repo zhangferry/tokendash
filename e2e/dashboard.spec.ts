@@ -136,6 +136,48 @@ test.describe('Agent: Codex', () => {
   });
 });
 
+test.describe('Agent: Pi', () => {
+  // 使用两个 agent 使切换器可见（单个 agent 时切换器隐藏，Pi 按钮不渲染）
+  test.beforeEach(async ({ page }) => {
+    await setupPage(page, { agents: ['claude', 'pi'] });
+  });
+
+  test('Pi button renders in agent switcher', async ({ page }) => {
+    await expect(page.locator('button:has-text("Pi")')).toBeVisible();
+  });
+
+  test('hides analytics section for Pi', async ({ page }) => {
+    await page.locator('button:has-text("Pi")').click();
+    await page.waitForTimeout(2000);
+
+    const piBtn = page.locator('button:has-text("Pi")');
+    const classes = await piBtn.getAttribute('class') || '';
+    expect(classes).toContain('bg-white');
+
+    await expect(page.locator('text=Code Change Trend')).not.toBeVisible();
+  });
+
+  test('shows KPI data for Pi', async ({ page }) => {
+    await page.locator('button:has-text("Pi")').click();
+    await page.waitForTimeout(2000);
+    await expect(page.locator('span:text-is("Total tokens")')).toBeVisible();
+  });
+});
+
+test.describe('Dashboard refresh', () => {
+  test('manual refresh bypasses cached dashboard endpoints', async ({ page }) => {
+    await setupPage(page);
+    const paths = ['daily', 'projects', 'blocks', 'analytics'];
+    const refreshRequests = paths.map(path => page.waitForRequest(request => {
+      const url = new URL(request.url());
+      return url.pathname === `/api/${path}` && url.searchParams.get('refresh') === '1';
+    }));
+
+    await page.locator('button[title^="刷新数据"]').click();
+    await Promise.all(refreshRequests);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // Time Range tests
 // ---------------------------------------------------------------------------

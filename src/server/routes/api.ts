@@ -6,8 +6,6 @@ import { getProjects } from './projects.js';
 import { getBlocks } from './blocks.js';
 import { getAnalytics } from './analytics.js';
 import { detectAvailableAgents } from '../agentDetection.js';
-import { isOpenClawAccessible } from '../openclawParser.js';
-import { isOpencodeAccessible } from '../opencodeParser.js';
 import { quotaService } from '../quota/index.js';
 import type { QuotaProviderId } from '../quota/index.js';
 
@@ -58,8 +56,9 @@ function getAgents(_req: Request, res: Response): void {
     const available: string[] = [];
     if (agents.claude) available.push('claude');
     if (agents.codex) available.push('codex');
-    if (isOpenClawAccessible()) available.push('openclaw');
-    if (isOpencodeAccessible()) available.push('opencode');
+    if (agents.openclaw) available.push('openclaw');
+    if (agents.opencode) available.push('opencode');
+    if (agents.pi) available.push('pi');
     res.json({ available, default: available[0] || null });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';

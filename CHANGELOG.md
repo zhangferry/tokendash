@@ -1,5 +1,11 @@
 # Changelog
 
+### v1.8.8
+- **Pi Agent usage support** — add Pi (`~/.pi/agent/sessions/`) as a dashboard data source, with daily, project, hourly, model, and cost views.
+- **Reliable dashboard refresh** — manual and 60-second automatic refreshes now bypass stale data caches across daily, projects, blocks, and analytics.
+- **Safer multi-agent startup** — keep OpenClaw and OpenCode standalone installations supported, and distinguish same-named Pi projects by their complete working directory.
+- **Developer startup fixes** — start the server correctly in dev mode, fail clearly when Vite's API port is occupied, and avoid opening the API endpoint instead of the Vite app.
+
 ### v1.8.7
 - **Keep Codex usage stable after archiving** — include `~/.codex/archived_sessions` alongside live `~/.codex/sessions` when building Codex usage totals, so today/month totals do not drop after Codex moves completed transcripts into the archive.
 - **Show billion-scale token totals cleanly** — render token values at 1,000M and above with a `B` suffix in the dashboard, menu-bar popover, and native status views instead of showing `1000M`.

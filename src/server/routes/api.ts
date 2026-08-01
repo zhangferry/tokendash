@@ -6,10 +6,12 @@ import { getProjects } from './projects.js';
 import { getBlocks } from './blocks.js';
 import { getAnalytics } from './analytics.js';
 import { detectAvailableAgents } from '../agentDetection.js';
-import { isOpenClawAccessible } from '../openclawParser.js';
-import { isOpencodeAccessible } from '../opencodeParser.js';
 import { quotaService } from '../quota/index.js';
 import type { QuotaProviderId } from '../quota/index.js';
+import { cache } from '../cache.js';
+import { getCodexDataPathStatuses, getCustomCodexDataPaths, getEnvironmentCodexDataPaths, getOfficialCodexDataPaths } from '../codexDataSources.js';
+import { updateCodexCustomDataPaths } from '../appSettings.js';
+import { validateAppSettings } from '../../shared/schemas.js';
 
 async function getQuota(_req: Request, res: Response): Promise<void> {
   // Fresh data only — quotaService handles cache, stale retention, and per-provider
@@ -52,14 +54,57 @@ export interface AppInfo {
   dashboardUrl?: string;
 }
 
+function buildSettingsResponse() {
+  return validateAppSettings({
+    codex: {
+      officialDataPaths: getOfficialCodexDataPaths(),
+      environmentDataPaths: getEnvironmentCodexDataPaths(),
+      customDataPaths: getCustomCodexDataPaths(),
+      resolvedDataPaths: getCodexDataPathStatuses(),
+    },
+  });
+}
+
+function getSettings(_req: Request, res: Response): void {
+  try {
+    res.json(buildSettingsResponse());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: 'Failed to read settings', hint: message });
+  }
+}
+
+function updateCodexDataPaths(req: Request, res: Response): void {
+  try {
+    const paths = Array.isArray(req.body?.paths)
+      ? req.body.paths.filter((path: unknown): path is string => typeof path === 'string')
+      : null;
+    if (!paths) {
+      res.status(400).json({
+        error: 'Invalid settings request',
+        hint: 'Expected body: { "paths": ["/path/to/codex-compatible/home"] }',
+      });
+      return;
+    }
+
+    updateCodexCustomDataPaths(paths);
+    cache.clear();
+    res.json(buildSettingsResponse());
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    res.status(500).json({ error: 'Failed to update Codex data paths', hint: message });
+  }
+}
+
 function getAgents(_req: Request, res: Response): void {
   try {
     const agents = detectAvailableAgents();
     const available: string[] = [];
     if (agents.claude) available.push('claude');
     if (agents.codex) available.push('codex');
-    if (isOpenClawAccessible()) available.push('openclaw');
-    if (isOpencodeAccessible()) available.push('opencode');
+    if (agents.openclaw) available.push('openclaw');
+    if (agents.opencode) available.push('opencode');
+    if (agents.pi) available.push('pi');
     res.json({ available, default: available[0] || null });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -80,6 +125,8 @@ function getAppInfo(info: AppInfo): (_req: Request, res: Response) => void {
 export function registerApiRoutes(router: Router, appInfo: AppInfo): void {
   router.get('/app-info', getAppInfo(appInfo));
   router.get('/agents', getAgents);
+  router.get('/settings', getSettings);
+  router.put('/settings/codex-data-paths', updateCodexDataPaths);
   router.get('/daily', getDaily);
   router.get('/monthly', getMonthly);
   router.get('/session', getSession);

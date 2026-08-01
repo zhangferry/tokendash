@@ -130,12 +130,17 @@ awk -v version="$VERSION" '
 [ -s "$NOTES_FILE" ] || fail "CHANGELOG.md has no notes for $TAG"
 
 step "Creating draft GitHub Release with mandatory update artifacts"
-gh release create "$TAG" "$DMG" "$APPCAST" \
+gh release create "$TAG" \
     --repo "$REPO" \
     --target "$(git rev-parse HEAD)" \
     --title "TokenDash $TAG" \
     --notes-file "$NOTES_FILE" \
     --draft
+if ! gh release upload "$TAG" "$DMG" "$APPCAST" --repo "$REPO"; then
+    echo "Release asset upload failed; deleting draft GitHub Release $TAG" >&2
+    gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag >/dev/null 2>&1 || true
+    exit 1
+fi
 
 step "Publishing npm package"
 if ! npm publish --access public --registry "$REGISTRY"; then

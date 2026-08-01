@@ -144,6 +144,14 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     ],
     hasAnalytics: true,
   },
+  pi: {
+    models: ['qwen3.8-max-preview', 'claude-sonnet-4-5'],
+    projects: [
+      { path: 'D:\\file\\tokendash', weight: 3 },
+      { path: 'D:\\file\\Zed', weight: 2 },
+    ],
+    hasAnalytics: false,
+  },
 };
 
 // ---------------------------------------------------------------------------
@@ -307,6 +315,40 @@ export async function mockApiRoutes(
         } else {
           await route.fulfill({ json: getOrGenerate('agents', () => generateAgentsResponse(agentList)) });
         }
+        break;
+
+
+      case 'settings':
+        await route.fulfill({
+          json: {
+            codex: {
+              officialDataPaths: ['/Users/test/.codex'],
+              environmentDataPaths: [],
+              customDataPaths: ['/Users/test/.custom-codex'],
+              resolvedDataPaths: [
+                { path: '/Users/test/.codex', kind: 'official', readable: true, sessionDirs: ['/Users/test/.codex/sessions', '/Users/test/.codex/archived_sessions'] },
+                { path: '/Users/test/.custom-codex', kind: 'custom', readable: true, sessionDirs: ['/Users/test/.custom-codex/sessions', '/Users/test/.custom-codex/archived_sessions'] },
+              ],
+            },
+          },
+        });
+        break;
+
+      case 'settings/codex-data-paths':
+        await route.fulfill({
+          json: {
+            codex: {
+              officialDataPaths: ['/Users/test/.codex'],
+              environmentDataPaths: [],
+              customDataPaths: ['/Users/test/.custom-codex', '/Users/test/.another-codex'],
+              resolvedDataPaths: [
+                { path: '/Users/test/.codex', kind: 'official', readable: true, sessionDirs: ['/Users/test/.codex/sessions', '/Users/test/.codex/archived_sessions'] },
+                { path: '/Users/test/.custom-codex', kind: 'custom', readable: true, sessionDirs: ['/Users/test/.custom-codex/sessions', '/Users/test/.custom-codex/archived_sessions'] },
+                { path: '/Users/test/.another-codex', kind: 'custom', readable: false, sessionDirs: ['/Users/test/.another-codex/sessions', '/Users/test/.another-codex/archived_sessions'] },
+              ],
+            },
+          },
+        });
         break;
 
       case 'daily':

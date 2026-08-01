@@ -2,10 +2,10 @@ import express from 'express';
 import type { Express } from 'express';
 import { existsSync, readFileSync } from 'node:fs';
 import type { Server } from 'node:http';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { basename, dirname, join, resolve } from 'node:path';
 import { registerApiRoutes } from './routes/api.js';
-import { detectAvailableAgents } from './agentDetection.js';
+import { detectAvailableAgents, type AvailableAgents } from './agentDetection.js';
 
 interface CliArgs {
   port?: number;
@@ -87,17 +87,24 @@ function parseCliArgs(): CliArgs {
   return result;
 }
 
+export function hasUsageDataSource(agents: AvailableAgents): boolean {
+  return Object.values(agents).some(Boolean);
+}
+
 async function ensureUsageSupportAvailable(): Promise<boolean> {
   try {
     const agents = detectAvailableAgents();
-    if (!agents.claude && !agents.codex) {
+    if (!hasUsageDataSource(agents)) {
       console.error('Error: No AI coding assistant data found.');
-      console.error('\nDetails: Could not find Claude Code (~/.claude/projects/) or Codex (~/.codex/sessions/) data.');
-      console.error('Please install at least one of: Claude Code or Codex CLI.');
+      console.error('\nDetails: Could not find Claude Code, Codex, OpenClaw, OpenCode, or Pi usage data.');
+      console.error('Please install at least one supported AI coding assistant.');
       return false;
     }
     if (agents.claude) console.log('  ✓ Claude Code detected');
     if (agents.codex) console.log('  ✓ Codex detected');
+    if (agents.openclaw) console.log('  ✓ OpenClaw detected');
+    if (agents.opencode) console.log('  ✓ OpenCode detected');
+    if (agents.pi) console.log('  ✓ Pi detected');
     return true;
   } catch (error) {
     console.error('Error: failed to detect available AI coding assistants');
@@ -134,7 +141,28 @@ function listen(app: Express, port: number): Promise<Server> {
   });
 }
 
-async function listenWithPortFallback(app: Express, preferredPort: number): Promise<{ server: Server; port: number; usedFallback: boolean }> {
+async function listenWithPortFallback(app: Express, preferredPort: number, allowFallback: boolean): Promise<{ server: Server; port: number; usedFallback: boolean }> {
+  // 开发模式下 Vite 代理固定指向首选端口，若静默回退到其他端口，
+  // 前端请求会被代理到错误/残留进程导致页面永久加载；故 dev 下
+  // 端口被占用直接报错，不做回退。生产模式无此约束，保留回退。
+  if (!allowFallback) {
+    try {
+      const server = await listen(app, preferredPort);
+      return { server, port: preferredPort, usedFallback: false };
+    } catch (error) {
+      const err = error as NodeJS.ErrnoException;
+      if (err.code === 'EADDRINUSE') {
+        throw new Error(
+          `Port ${preferredPort} is already in use.\n` +
+          'In development mode tokendash does not fall back to another port, because the Vite\n' +
+          'dev proxy is fixed to this port; falling back would leave the dashboard loading forever.\n' +
+          `Free port ${preferredPort} (kill the process using it) and retry.`,
+        );
+      }
+      throw error;
+    }
+  }
+
   let port = preferredPort;
 
   for (let attempt = 0; attempt < 20; attempt++, port++) {
@@ -269,8 +297,12 @@ async function main() {
     process.exit(1);
   }
 
+  const isProduction = import.meta.url.includes('dist/');
   const app = createApp(preferredPort);
-  const { server, port, usedFallback } = await listenWithPortFallback(app, preferredPort);
+  const { server, port, usedFallback } = await listenWithPortFallback(app, preferredPort, isProduction).catch((error) => {
+    console.error(`Error: ${error instanceof Error ? error.message : String(error)}`);
+    process.exit(1);
+  });
 
   if (usedFallback) {
     console.warn(`tokendash detected that port ${preferredPort} is already in use, switched to http://127.0.0.1:${port}`);
@@ -278,25 +310,32 @@ async function main() {
 
   console.log(`tokendash running on http://127.0.0.1:${port}`);
   console.log(`API available at http://127.0.0.1:${port}/api`);
-  const isProduction = import.meta.url.includes('dist/');
   if (isProduction) {
     console.log('Serving production build');
   } else {
     console.log('Development mode - use "npm run dev" for full dev experience');
   }
 
-  // Open browser if requested
+  // Open browser if requested.
+  // 开发模式下前端由 Vite 在 5173 端口提供，自动打开 API 端口（3456）并无意义；
+  // 且在 concurrently（npm run dev）下 open 派生的子进程会继承被管道化的 stdio，
+  // 造成管道死锁使服务进程挂起、页面一直加载。故仅生产模式自动打开浏览器，
+  // dev 模式改为提示 Vite 开发服务器地址。
   if (shouldOpenBrowser) {
-    // Small delay to ensure server is ready
-    setTimeout(async () => {
-      console.log('Opening dashboard in your browser...');
-      try {
-        const { default: open } = await import('open');
-        await open(`http://127.0.0.1:${port}`);
-      } catch (err: any) {
-        console.warn('Could not open browser:', err.message);
-      }
-    }, 100);
+    if (isProduction) {
+      // Small delay to ensure server is ready
+      setTimeout(async () => {
+        console.log('Opening dashboard in your browser...');
+        try {
+          const { default: open } = await import('open');
+          await open(`http://127.0.0.1:${port}`);
+        } catch (err: any) {
+          console.warn('Could not open browser:', err.message);
+        }
+      }, 100);
+    } else {
+      console.log('Development mode: open http://localhost:5173/ in your browser (Vite dev server).');
+    }
   } else {
     console.log('Browser auto-open disabled (--no-open)');
   }
@@ -311,3 +350,14 @@ async function main() {
 }
 
 export { main };
+
+// 仅当文件被直接执行时调用（tsx watch / node index.js）；
+// bin/tokendash.js 通过 import { main } 自行调用，不触发此处。
+// process.argv[1] 在部分运行时（如 REPL、嵌入式调用）可能为空，先守卫再转换。
+const entrypoint = process.argv[1];
+if (entrypoint && import.meta.url === pathToFileURL(entrypoint).href) {
+  main().catch((error) => {
+    console.error('Fatal error:', error);
+    process.exit(1);
+  });
+}

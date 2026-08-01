@@ -1,15 +1,23 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { describe, it, expect, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { buildCodexResponsesFromSessions, deduplicateParsedSessions, isSessionsDirAccessible, parseCodexSession, scanCodexSessions, type ParsedSession } from '../../server/codexParser.js';
 import { calculateCost } from '../../server/codexPricing.js';
+import { updateCodexCustomDataPaths } from '../../server/appSettings.js';
 import type { DailyEntry, Totals } from '../../shared/types.js';
 
 const tempDirs: string[] = [];
 const originalCodexHome = process.env.CODEX_HOME;
 const originalTokendashCodexHome = process.env.TOKENDASH_CODEX_HOME;
 const originalTokendashCodexHomes = process.env.TOKENDASH_CODEX_HOMES;
+const originalTokendashSettingsFile = process.env.TOKENDASH_SETTINGS_FILE;
+
+beforeEach(() => {
+  const settingsDir = mkdtempSync(join(tmpdir(), 'tokendash-settings-'));
+  tempDirs.push(settingsDir);
+  process.env.TOKENDASH_SETTINGS_FILE = join(settingsDir, 'settings.json');
+});
 
 afterEach(() => {
   if (originalCodexHome === undefined) {
@@ -26,6 +34,11 @@ afterEach(() => {
     delete process.env.TOKENDASH_CODEX_HOMES;
   } else {
     process.env.TOKENDASH_CODEX_HOMES = originalTokendashCodexHomes;
+  }
+  if (originalTokendashSettingsFile === undefined) {
+    delete process.env.TOKENDASH_SETTINGS_FILE;
+  } else {
+    process.env.TOKENDASH_SETTINGS_FILE = originalTokendashSettingsFile;
   }
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
@@ -116,29 +129,44 @@ function sumDaily(entries: DailyEntry[]): Totals {
 }
 
 describe('scanCodexSessions', () => {
-  it('includes extra Codex-compatible homes without scanning unrelated fixtures', () => {
+  it('includes settings-configured Codex-compatible homes without hardcoded non-official defaults', () => {
     const primaryHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-primary-'));
-    const traeHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-trae-'));
-    tempDirs.push(primaryHome, traeHome);
+    const customHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-custom-'));
+    tempDirs.push(primaryHome, customHome);
     process.env.CODEX_HOME = primaryHome;
-    process.env.TOKENDASH_CODEX_HOMES = traeHome;
+    updateCodexCustomDataPaths([customHome]);
 
     const primaryDir = join(primaryHome, 'sessions', '2026', '07', '23');
-    const traeDir = join(traeHome, 'archived_sessions');
-    const fixtureDir = join(traeHome, '.tmp', 'fixtures');
+    const customDir = join(customHome, 'archived_sessions');
+    const fixtureDir = join(customHome, '.tmp', 'fixtures');
     mkdirSync(primaryDir, { recursive: true });
-    mkdirSync(traeDir, { recursive: true });
+    mkdirSync(customDir, { recursive: true });
     mkdirSync(fixtureDir, { recursive: true });
 
     const primarySession = join(primaryDir, 'rollout-primary.jsonl');
-    const traeSession = join(traeDir, 'rollout-trae.jsonl');
+    const customSession = join(customDir, 'rollout-custom.jsonl');
     const ignoredFixture = join(fixtureDir, 'rollout-fixture.jsonl');
     writeFileSync(primarySession, '');
-    writeFileSync(traeSession, '');
+    writeFileSync(customSession, '');
     writeFileSync(ignoredFixture, '');
 
-    expect(scanCodexSessions()).toEqual([primarySession, traeSession].sort());
+    expect(scanCodexSessions()).toEqual([primarySession, customSession].sort());
     expect(isSessionsDirAccessible()).toBe(true);
+  });
+
+  it('accepts a direct custom sessions directory from settings', () => {
+    const primaryHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-primary-'));
+    const directRoot = mkdtempSync(join(tmpdir(), 'tokendash-codex-direct-'));
+    const directSessionsDir = join(directRoot, 'sessions');
+    tempDirs.push(primaryHome, directRoot);
+    mkdirSync(directSessionsDir, { recursive: true });
+    process.env.CODEX_HOME = primaryHome;
+    updateCodexCustomDataPaths([directSessionsDir]);
+
+    const sessionFile = join(directSessionsDir, 'rollout-direct.jsonl');
+    writeFileSync(sessionFile, '');
+
+    expect(scanCodexSessions()).toEqual([sessionFile]);
   });
 
   it('keeps archived Codex sessions in the usage source set', () => {

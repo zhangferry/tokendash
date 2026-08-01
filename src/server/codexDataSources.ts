@@ -1,35 +1,24 @@
 import { accessSync, constants, existsSync, realpathSync } from 'node:fs';
-import { delimiter, join, resolve } from 'node:path';
+import { basename, delimiter, join } from 'node:path';
 import { homedir } from 'node:os';
+import { normalizeLocalDataPath, readAppSettings } from './appSettings.js';
 
-const KNOWN_CODEX_HOME_SUFFIXES = [
-  ['.codex'],
-  ['.trae', 'cli'],
-  ['.codex-traex'],
-  ['.aidencodex'],
-  ['Library', 'Application Support', 'AidenCodex'],
-  ['Library', 'Application Support', 'Traex-Codex'],
-];
+export type CodexDataPathKind = 'official' | 'environment' | 'custom';
 
-/** Expand a user-entered Codex home path into an absolute local filesystem path. */
-function normalizeHomePath(value: string): string | null {
-  const trimmed = value.trim();
-  if (!trimmed) return null;
-  const expanded = trimmed === '~'
-    ? homedir()
-    : trimmed.startsWith('~/')
-      ? join(homedir(), trimmed.slice(2))
-      : trimmed;
-  return resolve(expanded);
+export interface CodexDataPathStatus {
+  path: string;
+  kind: CodexDataPathKind;
+  readable: boolean;
+  sessionDirs: string[];
 }
 
-/** Split a path-list environment value into individual Codex home candidates. */
-function parseHomeList(value: string | undefined): string[] {
+/** Split a path-list environment value into individual local data path candidates. */
+function parsePathList(value: string | undefined): string[] {
   if (!value) return [];
   return value
     .split(delimiter)
     .flatMap(part => part.split(','))
-    .map(part => normalizeHomePath(part))
+    .map(part => normalizeLocalDataPath(part))
     .filter((part): part is string => part !== null);
 }
 
@@ -55,34 +44,37 @@ function uniquePaths(paths: string[]): string[] {
   return result;
 }
 
-/** Built-in Codex-compatible homes that TokenDash can safely scan by default. */
-function defaultCodexHomes(): string[] {
-  return KNOWN_CODEX_HOME_SUFFIXES.map(parts => join(homedir(), ...parts));
+/** Return the official Codex home directories TokenDash scans by default. */
+export function getOfficialCodexDataPaths(): string[] {
+  const codexHome = parsePathList(process.env.CODEX_HOME);
+  return codexHome.length > 0 ? uniquePaths(codexHome) : [join(homedir(), '.codex')];
 }
 
-/** Resolve all Codex-compatible data homes that should contribute to usage. */
-export function getCodexHomes(): string[] {
-  const baseHomes = process.env.CODEX_HOME
-    ? parseHomeList(process.env.CODEX_HOME)
-    : defaultCodexHomes();
-  const extraHomes = [
-    ...parseHomeList(process.env.TOKENDASH_CODEX_HOME),
-    ...parseHomeList(process.env.TOKENDASH_CODEX_HOMES),
-  ];
-  return uniquePaths([...baseHomes, ...extraHomes]);
+/** Return additional Codex-compatible data paths provided through env vars. */
+export function getEnvironmentCodexDataPaths(): string[] {
+  return uniquePaths([
+    ...parsePathList(process.env.TOKENDASH_CODEX_HOME),
+    ...parsePathList(process.env.TOKENDASH_CODEX_HOMES),
+  ]);
 }
 
-/** Return every live/archived transcript directory for all configured homes. */
-export function getCodexSessionDirs(): string[] {
-  return uniquePaths(getCodexHomes().flatMap(home => [
-    join(home, 'sessions'),
-    join(home, 'archived_sessions'),
-  ]));
+/** Return custom Codex-compatible data paths persisted from the settings UI. */
+export function getCustomCodexDataPaths(): string[] {
+  return readAppSettings().codex.customDataPaths;
 }
 
-/** Check whether at least one configured Codex transcript directory is readable. */
-export function isCodexSessionDirAccessible(): boolean {
-  return getCodexSessionDirs().some(dir => {
+/** Expand a configured home or transcript folder into concrete JSONL roots. */
+export function codexSessionDirsForDataPath(path: string): string[] {
+  const leaf = basename(path);
+  if (leaf === 'sessions' || leaf === 'archived_sessions') {
+    return [path];
+  }
+  return [join(path, 'sessions'), join(path, 'archived_sessions')];
+}
+
+/** Check whether at least one transcript folder for a configured path is readable. */
+function isDataPathReadable(path: string): boolean {
+  return codexSessionDirsForDataPath(path).some(dir => {
     try {
       accessSync(dir, constants.R_OK);
       return true;
@@ -90,4 +82,42 @@ export function isCodexSessionDirAccessible(): boolean {
       return false;
     }
   });
+}
+
+/** Return every configured Codex-compatible data path with readability status. */
+export function getCodexDataPathStatuses(): CodexDataPathStatus[] {
+  const entries: Array<{ path: string; kind: CodexDataPathKind }> = [
+    ...getOfficialCodexDataPaths().map(path => ({ path, kind: 'official' as const })),
+    ...getEnvironmentCodexDataPaths().map(path => ({ path, kind: 'environment' as const })),
+    ...getCustomCodexDataPaths().map(path => ({ path, kind: 'custom' as const })),
+  ];
+
+  const seen = new Set<string>();
+  const statuses: CodexDataPathStatus[] = [];
+  for (const entry of entries) {
+    const key = canonicalPathKey(entry.path);
+    if (seen.has(key)) continue;
+    seen.add(key);
+    statuses.push({
+      ...entry,
+      readable: isDataPathReadable(entry.path),
+      sessionDirs: codexSessionDirsForDataPath(entry.path),
+    });
+  }
+  return statuses;
+}
+
+/** Resolve every Codex-compatible data path that should contribute to usage. */
+export function getCodexHomes(): string[] {
+  return getCodexDataPathStatuses().map(status => status.path);
+}
+
+/** Return every live/archived transcript directory for all configured paths. */
+export function getCodexSessionDirs(): string[] {
+  return uniquePaths(getCodexDataPathStatuses().flatMap(status => status.sessionDirs));
+}
+
+/** Check whether at least one configured Codex transcript directory is readable. */
+export function isCodexSessionDirAccessible(): boolean {
+  return getCodexDataPathStatuses().some(status => status.readable);
 }

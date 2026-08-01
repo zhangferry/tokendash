@@ -108,3 +108,26 @@ export interface AnalyticsResponse {
   productivityKPIs: ProductivityKPIs;
   toolCallTrend: DailyToolCall[];
 }
+
+
+// --- App settings ---
+
+export type CodexDataPathKind = 'official' | 'environment' | 'custom';
+
+export interface CodexDataPathStatus {
+  path: string;
+  kind: CodexDataPathKind;
+  readable: boolean;
+  sessionDirs: string[];
+}
+
+export interface CodexSettingsResponse {
+  officialDataPaths: string[];
+  environmentDataPaths: string[];
+  customDataPaths: string[];
+  resolvedDataPaths: CodexDataPathStatus[];
+}
+
+export interface AppSettingsResponse {
+  codex: CodexSettingsResponse;
+}

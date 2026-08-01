@@ -6,6 +6,7 @@ import type { QuotaSnapshot, QuotaWindow } from '../types.js';
 import type { QuotaAdapter } from '../adapter.js';
 import { QuotaError, baseSnapshot } from '../adapter.js';
 import { unixToIso, windowFromPercent } from '../helpers.js';
+import { getCodexHomes } from '../../codexDataSources.js';
 
 /**
  * OpenAI Codex adapter.
@@ -35,7 +36,9 @@ export interface CodexRateLimitsResult {
 type CodexRateLimitTier = NonNullable<CodexRateLimit['primary']>;
 
 function codexHome(): string {
-  return process.env.CODEX_HOME || join(homedir(), '.codex');
+  return getCodexHomes().find(home => existsSync(join(home, 'auth.json')))
+    || process.env.CODEX_HOME
+    || join(homedir(), '.codex');
 }
 
 export const codexAdapter: QuotaAdapter = {
@@ -143,7 +146,7 @@ async function queryRateLimits(): Promise<CodexRateLimitsResult> {
   const childPath = [binaryDir, process.env.PATH].filter(Boolean).join(':');
   const proc = spawn(codexBinary, codexAppServerArgs(), {
     stdio: ['pipe', 'pipe', 'pipe'],
-    env: { ...process.env, PATH: childPath },
+    env: { ...process.env, CODEX_HOME: codexHome(), PATH: childPath },
   });
   const client = new JsonRpcClient(proc);
   try {

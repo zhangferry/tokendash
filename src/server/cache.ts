@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync, existsSync, mkdirSync } from 'node:fs';
+import { readFileSync, writeFileSync, existsSync, mkdirSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
@@ -51,6 +51,11 @@ class Cache {
 
   clear(): void {
     this.store.clear();
+    try {
+      rmSync(CACHE_DIR, { recursive: true, force: true });
+    } catch {
+      // Disk cache is best-effort
+    }
   }
 
   delete(key: string): boolean {

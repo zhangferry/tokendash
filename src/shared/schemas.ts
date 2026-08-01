@@ -113,3 +113,28 @@ const AnalyticsResponseSchema = z.object({
 export function validateAnalytics(data: unknown) {
   return AnalyticsResponseSchema.parse(data);
 }
+
+
+// --- App settings schemas ---
+
+const CodexDataPathStatusSchema = z.object({
+  path: z.string(),
+  kind: z.enum(['official', 'environment', 'custom']),
+  readable: z.boolean().default(false),
+  sessionDirs: z.array(z.string()).default([]),
+});
+
+const CodexSettingsResponseSchema = z.object({
+  officialDataPaths: z.array(z.string()).default([]),
+  environmentDataPaths: z.array(z.string()).default([]),
+  customDataPaths: z.array(z.string()).default([]),
+  resolvedDataPaths: z.array(CodexDataPathStatusSchema).default([]),
+});
+
+export const AppSettingsResponseSchema = z.object({
+  codex: CodexSettingsResponseSchema,
+});
+
+export function validateAppSettings(data: unknown) {
+  return AppSettingsResponseSchema.parse(data);
+}

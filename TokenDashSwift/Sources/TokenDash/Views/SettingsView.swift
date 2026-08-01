@@ -6,6 +6,7 @@ struct SettingsView: View {
     @Bindable var settings = SettingsStore.shared
     @Bindable var updater = UpdaterController.shared
     @State private var showCredentialSheet = false
+    @State private var showCodexDataSourcesSheet = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -15,6 +16,7 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 0) {
                     generalCard
+                    dataSourcesCard
                     codingPlansCard
                     notificationsCard
                     aboutCard
@@ -27,6 +29,9 @@ struct SettingsView: View {
         .background(Color.popoverBackground)
         .sheet(isPresented: $showCredentialSheet) {
             CredentialSheet()
+        }
+        .sheet(isPresented: $showCodexDataSourcesSheet) {
+            CodexDataSourcesSheet()
         }
         .task {
             syncLaunchAtLoginStatus()
@@ -90,6 +95,21 @@ struct SettingsView: View {
                         }
                     }
                     .pickerStyle(.menu).controlSize(.small).frame(width: 120).labelsHidden()
+                }
+            }
+        }
+    }
+
+    // MARK: - Data Sources
+
+    private var dataSourcesCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SettingsSectionHeader(title: "Data Sources")
+            SettingsCard {
+                SettingsRow(icon: "folder.badge.gearshape", title: "Codex Data Paths", showDivider: false) {
+                    Button("Configure") { showCodexDataSourcesSheet = true }
+                        .font(.system(size: 11, weight: .medium))
+                        .controlSize(.small)
                 }
             }
         }

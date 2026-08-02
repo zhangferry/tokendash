@@ -25,7 +25,7 @@ struct CodexDataSourcesSheet: View {
             .padding(.top, 18)
             .padding(.bottom, 4)
 
-            Text("Official Codex data is scanned by default. Add custom Codex-compatible homes or transcript folders for non-official clients.")
+            Text("Official Codex data is scanned by default. Add one or more custom Codex-compatible homes for non-official clients.")
                 .font(.system(size: 10))
                 .foregroundStyle(Color.secondaryLabel)
                 .fixedSize(horizontal: false, vertical: true)
@@ -49,7 +49,7 @@ struct CodexDataSourcesSheet: View {
                         .clipShape(RoundedRectangle(cornerRadius: 8))
                         .overlay(RoundedRectangle(cornerRadius: 8).stroke(Color.dividerColor, lineWidth: 0.5))
                         .disabled(isSaving)
-                    Text("One path per line. A home should contain sessions/ or archived_sessions/; direct transcript folders also work.")
+                    Text("Multiple paths are supported: put one path per line. Each home should contain sessions/ or archived_sessions/; direct transcript folders also work.")
                         .font(.system(size: 10))
                         .foregroundStyle(Color.secondaryLabel)
                         .fixedSize(horizontal: false, vertical: true)

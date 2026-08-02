@@ -73,7 +73,7 @@ export function CodexDataSourcesSettings({ open, onClose, onSaved }: CodexDataSo
           <div>
             <h2 className="text-lg font-extrabold tracking-tight text-stone-900">Codex data sources</h2>
             <p className="mt-1 text-[13px] font-medium leading-relaxed text-stone-500">
-              TokenDash scans official Codex data by default. Add compatible custom homes or transcript folders for non-official clients.
+              TokenDash scans official Codex data by default. Add one or more compatible custom homes for non-official clients.
             </p>
           </div>
           <button
@@ -96,12 +96,12 @@ export function CodexDataSourcesSettings({ open, onClose, onSaved }: CodexDataSo
                 <textarea
                   value={draft}
                   onChange={e => { setDraft(e.target.value); setSaved(false); }}
-                  placeholder={'/Users/me/.some-codex-home\n/Users/me/.some-codex-home/sessions'}
+                  placeholder={'/Users/me/.trae/cli\n/Users/me/.custom-codex-home'}
                   spellCheck={false}
                   className="mt-2 h-32 w-full resize-none rounded-xl border border-stone-200 bg-stone-50/60 px-3 py-2.5 font-mono text-[12px] text-stone-800 outline-none transition focus:border-indigo-400 focus:bg-white focus:ring-4 focus:ring-indigo-500/10"
                 />
                 <p className="mt-2 text-[12px] leading-relaxed text-stone-500">
-                  One path per line. A home directory should contain <span className="font-mono">sessions/</span> or <span className="font-mono">archived_sessions/</span>; direct transcript folders are also accepted.
+                  Multiple paths are supported: put one path per line. Each home should contain <span className="font-mono">sessions/</span> or <span className="font-mono">archived_sessions/</span>; direct transcript folders are also accepted.
                 </p>
               </div>
 

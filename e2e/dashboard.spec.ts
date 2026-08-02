@@ -188,6 +188,7 @@ test.describe('Codex data-source settings', () => {
     await settingsRequest;
 
     await expect(page.locator('text=Codex data sources')).toBeVisible();
+    await expect(page.locator('text=Multiple paths are supported')).toBeVisible();
     await expect(page.locator('textarea')).toHaveValue('/Users/test/.custom-codex');
 
     const putRequest = page.waitForRequest(request => request.url().includes('/api/settings/codex-data-paths') && request.method() === 'PUT');

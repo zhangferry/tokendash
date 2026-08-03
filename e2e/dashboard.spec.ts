@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { mockApiRoutes } from './fixtures.js';
+import { generateDailyResponse, mockApiRoutes } from './fixtures.js';
+import { formatTokens } from '../src/client/utils/formatters.js';
 
 // ---------------------------------------------------------------------------
 // Helper: set up mocked page and wait for initial load
@@ -176,9 +177,18 @@ test.describe('Dashboard refresh', () => {
     await page.locator('button[title^="刷新数据"]').click();
     await Promise.all(refreshRequests);
   });
+
+  test('all-project totals prefer fresh daily data when project cache is stale', async ({ page }) => {
+    await mockApiRoutes(page, { agents: ['codex'], staleProjectsForAgent: 'codex' });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('text=Total tokens', { timeout: 15000 });
+    await page.locator('button:has-text("Today")').click();
+
+    const expectedTodayTotal = generateDailyResponse('codex').daily.at(-1)!.totalTokens;
+    const totalCard = page.locator('div:has(> span:text-is("Total tokens"))').first();
+    await expect(totalCard.locator('span').nth(1)).toHaveText(formatTokens(expectedTodayTotal));
+  });
 });
-
-
 
 test.describe('Codex data-source settings', () => {
   test('opens custom path settings and saves configured sources', async ({ page }) => {

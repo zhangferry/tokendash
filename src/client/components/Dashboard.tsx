@@ -264,14 +264,19 @@ export function Dashboard() {
 
   const projectList = useMemo(() => Object.keys(projectsData.data?.projects || {}).sort(), [projectsData.data]);
 
-  // Filtered daily data: use projectsData for per-project filtering, fallback to dailyData
+  // Filtered daily data: dailyData is canonical for all-project totals.
+  // projectsData can be stale independently because the daemon caches each route
+  // separately; only use it when the user explicitly selects a project.
   const filteredDaily = useMemo(() => {
-    if (projectsData.data) {
+    if (project && projectsData.data) {
       return filterProjectDaily(projectsData.data.projects, project, timeRange);
     }
-    // Fallback while projectsData is loading: use dailyData flat entries
     if (dailyData.data) {
       return filterByTime(dailyData.data.daily, timeRange);
+    }
+    // Fallback while dailyData is loading: use projectsData if available.
+    if (projectsData.data) {
+      return filterProjectDaily(projectsData.data.projects, project, timeRange);
     }
     return [];
   }, [projectsData.data, dailyData.data, project, timeRange]);

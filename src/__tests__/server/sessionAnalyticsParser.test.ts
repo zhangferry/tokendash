@@ -105,4 +105,25 @@ describe('buildSessionAnalyticsResponse', () => {
     const expanded = buildSessionDetail(indexed, capabilities, '2026-07-28T10:30:00.000Z', true);
     expect(expanded.events[0]?.content).toBe('Build a readable session detail with on-demand source text.');
   });
+
+  it('keeps model reasoning and the model response as independently readable events', () => {
+    const indexed: SessionAnalyticsIndexedSession = {
+      summary: sessions[0].summary,
+      events: [
+        { id: 'reasoning-1', timestamp: '2026-07-28T10:01:00.000Z', type: 'llm_call', model: 'claude-sonnet', summary: 'Model reasoning', contentPreview: 'I should inspect the event sequence before choosing a response.', content: 'I should inspect the event sequence before choosing a response. The reasoning must remain visible in the detail view.', contentAvailable: true },
+        { id: 'response-1', timestamp: '2026-07-28T10:01:01.000Z', type: 'assistant_message', model: 'claude-sonnet', summary: 'Assistant reply', contentPreview: 'The event sequence should show requests, reasoning, actions, and responses.', content: 'The event sequence should show requests, reasoning, actions, and responses without collapsing the model response.', contentAvailable: true },
+      ],
+    };
+
+    const metadata = buildSessionDetail(indexed, capabilities, '2026-07-28T10:30:00.000Z');
+    expect(metadata.events).toMatchObject([
+      { type: 'llm_call', summary: 'Model reasoning', contentPreview: 'I should inspect the event sequence before choosing a response.', contentAvailable: true },
+      { type: 'assistant_message', summary: 'Assistant reply', contentPreview: 'The event sequence should show requests, reasoning, actions, and responses.', contentAvailable: true },
+    ]);
+    expect(metadata.events.every(event => event.content === undefined)).toBe(true);
+
+    const expanded = buildSessionDetail(indexed, capabilities, '2026-07-28T10:30:00.000Z', true);
+    expect(expanded.events[0]?.content).toContain('reasoning must remain visible');
+    expect(expanded.events[1]?.content).toContain('without collapsing the model response');
+  });
 });

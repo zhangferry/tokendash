@@ -120,6 +120,18 @@ function textContent(content: unknown): string | undefined {
   return safe ? truncate(safe, CONTENT_LIMIT) : undefined;
 }
 
+/** Claude records private model reasoning in a `thinking` block, separate from text replies. */
+function thinkingContent(content: unknown): string | undefined {
+  if (!Array.isArray(content)) return undefined;
+  const text = content
+    .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object' && item.type === 'thinking')
+    .map(item => typeof item.thinking === 'string' ? item.thinking : typeof item.text === 'string' ? item.text : '')
+    .filter(Boolean)
+    .join(' ');
+  const safe = redactText(text);
+  return safe ? truncate(safe, CONTENT_LIMIT) : undefined;
+}
+
 function contentFields(content: string | undefined): Pick<SessionEvent, 'contentPreview' | 'contentAvailable' | 'content'> {
   if (!content) return { contentAvailable: false };
   return {
@@ -504,6 +516,7 @@ function claudeSessionsFromFile(filepath: string): MutableClaudeSession[] {
     const cacheReadTokens = typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0;
     const totalTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
     const content = message.content;
+    const reasoning = thinkingContent(content);
     const assistantText = textContent(content);
     const contentTypes = Array.isArray(content)
       ? new Set(content.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object').map(item => item.type))
@@ -519,7 +532,7 @@ function claudeSessionsFromFile(filepath: string): MutableClaudeSession[] {
         type: 'llm_call',
         model,
         summary: contentTypes.has('thinking') ? 'Model reasoning' : contentTypes.has('tool_use') ? 'Tool decision' : assistantText ? 'Model response generated' : 'Model inference',
-        contentAvailable: false,
+        ...contentFields(reasoning),
         usage: { inputTokens, outputTokens, cacheReadTokens, totalTokens, cost },
       });
     }
@@ -874,13 +887,27 @@ function hydrateClaudeEventContent(indexed: SessionAnalyticsIndexedSession): Ses
     const message = entry.message as Record<string, unknown> | undefined;
     const content = message?.content;
     if (entry.type === 'user' && entry.isMeta === true) continue;
-    const type = entry.type === 'user' ? 'user_message' : entry.type === 'assistant' ? 'assistant_message' : undefined;
-    if (!type) continue;
-    const body = type === 'user_message' ? safeContent(content) : textContent(content);
-    if (!body) continue;
-    const matches = available.get(`${type}:${entry.timestamp}`);
-    const event = matches?.shift();
-    if (event) hydrated.set(event.id, body);
+    if (entry.type === 'user') {
+      const body = safeContent(content);
+      if (!body) continue;
+      const event = available.get(`user_message:${entry.timestamp}`)?.shift();
+      if (event) hydrated.set(event.id, body);
+      continue;
+    }
+    if (entry.type !== 'assistant') continue;
+
+    // A single Claude assistant record can carry both a private thinking block
+    // and its visible text reply. Hydrate each independently by its event type.
+    const reasoning = thinkingContent(content);
+    if (reasoning) {
+      const event = available.get(`llm_call:${entry.timestamp}`)?.shift();
+      if (event) hydrated.set(event.id, reasoning);
+    }
+    const reply = textContent(content);
+    if (reply) {
+      const event = available.get(`assistant_message:${entry.timestamp}`)?.shift();
+      if (event) hydrated.set(event.id, reply);
+    }
   }
   return indexed.events.map(event => hydrated.has(event.id) ? { ...event, content: hydrated.get(event.id) } : event);
 }

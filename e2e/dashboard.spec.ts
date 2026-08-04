@@ -414,7 +414,12 @@ test.describe('Metric switching', () => {
     await expect(page.getByText('Task overview', { exact: true })).toBeVisible();
     await expect(page.getByText('Run log', { exact: true })).toBeVisible();
     await expect(page.getByText('Review the dashboard’s session analytics detail and make the run history easier to inspect.', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Read full input' }).click();
+    await expect(page.getByText('I need to inspect the event model before deciding how the detail view should group requests, responses, and tool invocations.', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Read full reasoning' }).click();
+    await expect(page.getByText('The reasoning must remain visible alongside the final model response.', { exact: false })).toBeVisible();
+    await expect(detailDialog.getByText(/^Model response · claude-/)).toBeVisible();
+    await expect(detailDialog.getByText('I traced the session detail flow and identified where the event metadata loses the meaningful request and response content.', { exact: true })).toBeVisible();
+    await detailDialog.locator('article').filter({ hasText: 'User request' }).getByRole('button', { name: 'Show details' }).click();
     await expect(page.getByText('Include the user input, tool arguments, tool results, and the final assistant response.', { exact: false })).toBeVisible();
     await detailDialog.locator('article').filter({ hasText: 'Tool · Read' }).getByRole('button', { name: 'Show details' }).click();
     await expect(page.getByText('Parameters', { exact: true })).toBeVisible();

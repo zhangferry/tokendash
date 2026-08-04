@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildSessionAnalyticsResponse, buildSessionDetail, type SessionAnalyticsIndexedSession } from '../../server/sessionAnalyticsParser.js';
+import { buildSessionAnalyticsResponse, buildSessionDetail, parseCodexTranscriptMetadata, type SessionAnalyticsIndexedSession } from '../../server/sessionAnalyticsParser.js';
 
 const capabilities = {
   userTurns: true,
@@ -125,5 +125,23 @@ describe('buildSessionAnalyticsResponse', () => {
     const expanded = buildSessionDetail(indexed, capabilities, '2026-07-28T10:30:00.000Z', true);
     expect(expanded.events[0]?.content).toContain('reasoning must remain visible');
     expect(expanded.events[1]?.content).toContain('without collapsing the model response');
+  });
+
+  it('uses canonical Codex task and agent messages instead of injected role=user context', () => {
+    const parsed = parseCodexTranscriptMetadata([
+      JSON.stringify({ timestamp: '2026-08-03T01:00:00.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>injected runtime context</environment_context>' }] } }),
+      JSON.stringify({ timestamp: '2026-08-03T01:00:00.010Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Investigate the Hermes integration.' }] } }),
+      JSON.stringify({ timestamp: '2026-08-03T01:00:00.010Z', type: 'event_msg', payload: { type: 'user_message', message: 'Investigate the Hermes integration.' } }),
+      JSON.stringify({ timestamp: '2026-08-03T01:00:04.000Z', type: 'event_msg', payload: { type: 'agent_message', phase: 'commentary', message: 'I will inspect the current configuration first.' } }),
+      JSON.stringify({ timestamp: '2026-08-03T01:00:08.000Z', type: 'event_msg', payload: { type: 'agent_message', phase: 'final_answer', message: 'The Hermes integration is ready.' } }),
+    ].join('\n'));
+
+    expect(parsed.userTurns).toBe(1);
+    expect(parsed.title).toBe('Investigate the Hermes integration.');
+    expect(parsed.events).toMatchObject([
+      { type: 'user_message', summary: 'User request', contentPreview: 'Investigate the Hermes integration.', contentAvailable: true },
+      { type: 'assistant_message', phase: 'commentary', summary: 'Agent update', contentPreview: 'I will inspect the current configuration first.' },
+      { type: 'assistant_message', phase: 'final_answer', summary: 'Final response', contentPreview: 'The Hermes integration is ready.' },
+    ]);
   });
 });

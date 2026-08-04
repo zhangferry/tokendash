@@ -188,6 +188,8 @@ export interface SessionEvent {
   usage?: SessionUsage;
   /** Safe, short event label for clients that do not need to reconstruct it. */
   summary?: string;
+  /** Delivery phase for a visible agent message when the local transcript provides it. */
+  phase?: 'commentary' | 'final_answer';
   /** Redacted and truncated tool/Skill arguments. Full arguments are never exposed. */
   parameterSummary?: string;
   /** Structural tool-result metadata; raw output bodies are never exposed. */

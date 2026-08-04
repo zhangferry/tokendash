@@ -140,6 +140,12 @@ function contentFields(content: string | undefined): Pick<SessionEvent, 'content
   };
 }
 
+/** Codex event messages already contain locally-readable user/agent text. */
+function retainedContentFields(content: string | undefined): Pick<SessionEvent, 'contentPreview' | 'contentAvailable' | 'content'> {
+  if (!content) return { contentAvailable: false };
+  return { ...contentFields(content), content };
+}
+
 function valueSummary(value: unknown, depth = 0): string {
   if (value === null) return 'null';
   if (value === undefined) return 'undefined';
@@ -262,21 +268,69 @@ function outputSuccess(output: unknown): boolean | undefined {
 }
 
 function codexTranscriptMetadata(sessionId: string): CodexTranscriptMetadata {
-  const initial: CodexTranscriptMetadata = { userTurns: 0, toolCalls: 0, skillCalls: 0, events: [] };
   const filepath = scanCodexSessions().find(path => basename(path).includes(sessionId));
-  if (!filepath) return initial;
+  if (!filepath) return { userTurns: 0, toolCalls: 0, skillCalls: 0, events: [] };
   let raw = '';
-  try { raw = readFileSync(filepath, 'utf8'); } catch { return initial; }
-  const calls = new Map<string, { name: string; isSkill: boolean }>();
+  try { raw = readFileSync(filepath, 'utf8'); } catch { return { userTurns: 0, toolCalls: 0, skillCalls: 0, events: [] }; }
+  return parseCodexTranscriptMetadata(raw);
+}
+
+/** Exported for parser fixtures: canonical event_msg records beat synthetic role=user envelopes. */
+export function parseCodexTranscriptMetadata(raw: string): CodexTranscriptMetadata {
+  const initial: CodexTranscriptMetadata = { userTurns: 0, toolCalls: 0, skillCalls: 0, events: [] };
+  const records: Record<string, unknown>[] = [];
   for (const line of raw.split('\n')) {
     if (!line.trim()) continue;
-    let record: Record<string, unknown>;
-    try { record = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
-    if (record.type !== 'response_item' || !validTimestamp(record.timestamp)) continue;
+    try { records.push(JSON.parse(line) as Record<string, unknown>); } catch { /* ignore malformed transcript rows */ }
+  }
+  // Desktop Codex writes a canonical event_msg for an actual human turn. It
+  // intentionally excludes the role=user envelope containing AGENTS.md and
+  // other runtime context, which must never become a user request in the UI.
+  const hasCanonicalUserMessages = records.some(record => {
+    const payload = record.payload as Record<string, unknown> | undefined;
+    return record.type === 'event_msg' && payload?.type === 'user_message' && typeof payload.message === 'string';
+  });
+  const calls = new Map<string, { name: string; isSkill: boolean }>();
+  for (const record of records) {
+    if (!validTimestamp(record.timestamp)) continue;
     const payload = record.payload;
     if (!payload || typeof payload !== 'object') continue;
     const item = payload as Record<string, unknown>;
+    if (record.type === 'event_msg') {
+      if (item.type === 'user_message' && typeof item.message === 'string') {
+        const input = safeContent(item.message);
+        if (!input) continue;
+        initial.userTurns++;
+        const prompt = promptSummary(item.message);
+        if (prompt && !initial.title) Object.assign(initial, prompt);
+        initial.events.push({
+          id: `user-${initial.events.length + 1}`,
+          timestamp: record.timestamp,
+          type: 'user_message',
+          summary: 'User request',
+          ...retainedContentFields(input),
+        });
+      }
+      if (item.type === 'agent_message' && typeof item.message === 'string') {
+        const response = safeContent(item.message);
+        if (!response) continue;
+        const phase = item.phase === 'final_answer' ? 'final_answer' : item.phase === 'commentary' ? 'commentary' : undefined;
+        initial.events.push({
+          id: `assistant-${initial.events.length + 1}`,
+          timestamp: record.timestamp,
+          type: 'assistant_message',
+          summary: phase === 'final_answer' ? 'Final response' : 'Agent update',
+          ...(phase ? { phase } : {}),
+          ...retainedContentFields(response),
+        });
+      }
+      continue;
+    }
+    if (record.type !== 'response_item') continue;
     if (item.type === 'message' && item.role === 'user') {
+      if (hasCanonicalUserMessages) continue;
+      const input = safeContent(item.content);
+      if (!input) continue;
       initial.userTurns++;
       const prompt = promptSummary(item.content);
       if (prompt && !initial.title) Object.assign(initial, prompt);
@@ -284,8 +338,8 @@ function codexTranscriptMetadata(sessionId: string): CodexTranscriptMetadata {
         id: `user-${initial.events.length + 1}`,
         timestamp: record.timestamp,
         type: 'user_message',
-        ...(prompt?.title ? { summary: 'User prompt received' } : {}),
-        contentAvailable: false,
+        summary: 'User request',
+        ...retainedContentFields(input),
       });
       continue;
     }
@@ -299,6 +353,7 @@ function codexTranscriptMetadata(sessionId: string): CodexTranscriptMetadata {
       if (typeof item.call_id === 'string') calls.set(item.call_id, invocation);
       initial.events.push({
         id: `${invocation.isSkill ? 'skill' : 'tool'}-${initial.events.length + 1}`,
+        ...(typeof item.call_id === 'string' ? { callId: item.call_id } : {}),
         timestamp: record.timestamp,
         type: invocation.isSkill ? 'skill_call' : 'tool_call',
         ...(invocation.isSkill ? { skillName: invocation.name } : { toolName: invocation.name }),
@@ -313,6 +368,7 @@ function codexTranscriptMetadata(sessionId: string): CodexTranscriptMetadata {
       const success = outputSuccess(item.output);
       initial.events.push({
         id: `tool-result-${initial.events.length + 1}`,
+        ...(typeof item.call_id === 'string' ? { callId: item.call_id } : {}),
         timestamp: record.timestamp,
         type: 'tool_result',
         ...(invocation?.isSkill ? { skillName: invocation.name } : invocation ? { toolName: invocation.name } : {}),

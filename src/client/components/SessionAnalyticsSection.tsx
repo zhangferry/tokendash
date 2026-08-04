@@ -65,6 +65,13 @@ type RunStep = {
   related?: SessionEvent;
 };
 
+type TaskGroup = {
+  id: string;
+  index: number;
+  request?: SessionEvent;
+  events: SessionEvent[];
+};
+
 function payloadValue(value?: string) {
   if (!value) return undefined;
   return value.replace(/^(Parameters|Result)\s*/i, '').trim();
@@ -75,6 +82,52 @@ function formatUsage(usage?: SessionEvent['usage']) {
   return `${formatTokens(usage.inputTokens)} in · ${formatTokens(usage.outputTokens)} out · ${formatTokens(usage.cacheReadTokens)} cached`;
 }
 
+const LOW_SIGNAL_TOOLS = new Set([
+  'wait', 'wait_agent', 'list_agents', 'get_goal', 'write_stdin',
+  'send_message', 'interrupt_agent', 'followup_task',
+]);
+
+function isLowSignalTool(event: SessionEvent) {
+  const name = (event.toolName || event.skillName || '').toLowerCase();
+  return LOW_SIGNAL_TOOLS.has(name);
+}
+
+function isInspectableResult(event?: SessionEvent) {
+  if (!event) return false;
+  return Boolean(event.contentPreview || event.content || (event.resultSummary && !/body withheld|text result \(0 chars/i.test(event.resultSummary)));
+}
+
+function actionSummary(event: SessionEvent, related?: SessionEvent) {
+  if (isInspectableResult(related)) return related?.resultSummary || event.summary || 'Invocation recorded';
+  if (related?.success === false) return 'Completed with an error';
+  if ((event.toolName || event.skillName) === 'spawn_agent') return 'Subtask started';
+  return related ? 'Completed' : event.summary || 'Invocation recorded';
+}
+
+function taskGroups(events: SessionEvent[]): TaskGroup[] {
+  const requests = events.filter(event => event.type === 'user_message' && Boolean(event.contentPreview || event.content));
+  if (!requests.length) return [{ id: 'session-activity', index: 0, events }];
+  return requests.map((request, index) => {
+    const start = events.indexOf(request);
+    const next = index < requests.length - 1 ? events.indexOf(requests[index + 1]!) : events.length;
+    return { id: request.id, index, request, events: events.slice(start, next) };
+  });
+}
+
+function taskTitle(group: TaskGroup) {
+  return group.request?.contentPreview || group.request?.content || 'Session activity without a user request';
+}
+
+function taskModelWork(events: SessionEvent[]) {
+  const calls = events.filter(event => event.type === 'llm_call');
+  const usage = calls.reduce((total, event) => ({
+    inputTokens: total.inputTokens + (event.usage?.inputTokens || 0),
+    outputTokens: total.outputTokens + (event.usage?.outputTokens || 0),
+    cacheReadTokens: total.cacheReadTokens + (event.usage?.cacheReadTokens || 0),
+  }), { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 });
+  return { calls: calls.length, ...usage };
+}
+
 function toRunSteps(events: SessionEvent[]): RunStep[] {
   const steps: RunStep[] = [];
   const resultByCallId = new Map(events.filter(event => event.type === 'tool_result' && event.callId).map(event => [event.callId!, event]));
@@ -83,6 +136,9 @@ function toRunSteps(events: SessionEvent[]): RunStep[] {
     const event = events[index]!;
     const next = events[index + 1];
     if (event.type === 'llm_call') {
+      // Token accounting is retained in the task summary. A model card is only
+      // useful when the source provides actual, readable reasoning content.
+      if (!event.contentPreview && !event.content) continue;
       const hasTextResponse = event.summary === 'Model response generated' && next?.type === 'assistant_message';
       if (hasTextResponse) {
         steps.push({ id: event.id, timestamp: event.timestamp, type: 'output', title: `Model response · ${event.model || 'Unknown model'}`, summary: formatUsage(event.usage) || 'Model response recorded', primary: event, related: next });
@@ -96,22 +152,28 @@ function toRunSteps(events: SessionEvent[]): RunStep[] {
       const correlatedResult = event.callId ? resultByCallId.get(event.callId) : undefined;
       const hasResult = Boolean(correlatedResult || next?.type === 'tool_result');
       const related = correlatedResult || (next?.type === 'tool_result' ? next : undefined);
+      if (isLowSignalTool(event) && related?.success !== false) {
+        if (related) pairedResults.add(related.id);
+        continue;
+      }
+      if (!event.parameterSummary && !isInspectableResult(related) && related?.success !== false) continue;
       if (related) pairedResults.add(related.id);
       const name = event.skillName || event.toolName || 'Unknown invocation';
-      steps.push({ id: event.id, timestamp: event.timestamp, type: 'action', title: `${event.type === 'skill_call' ? 'Skill' : 'Tool'} · ${name}`, summary: related?.resultSummary || event.summary || (hasResult ? (related?.success === false ? 'Completed with an error' : 'Completed') : 'Invocation recorded'), primary: event, related });
+      steps.push({ id: event.id, timestamp: event.timestamp, type: 'action', title: `${event.type === 'skill_call' ? 'Skill' : 'Tool'} · ${name}`, summary: actionSummary(event, related) || (hasResult ? 'Completed' : 'Invocation recorded'), primary: event, related });
       if (!correlatedResult && hasResult) index += 1;
       continue;
     }
     if (event.type === 'user_message') {
-      steps.push({ id: event.id, timestamp: event.timestamp, type: 'request', title: 'User request', summary: event.summary || 'User-authored request added to this session', primary: event });
+      continue;
       continue;
     }
     if (event.type === 'tool_result') {
       if (pairedResults.has(event.id)) continue;
+      if (!isInspectableResult(event) && event.success !== false) continue;
       steps.push({ id: event.id, timestamp: event.timestamp, type: 'action', title: event.success === false ? 'Tool result · failed' : 'Tool result · complete', summary: event.resultSummary || (event.success === false ? 'The tool reported an error' : 'Tool result recorded'), primary: event });
       continue;
     }
-    steps.push({ id: event.id, timestamp: event.timestamp, type: 'output', title: `Model response${event.model ? ` · ${event.model}` : ''}`, summary: event.summary || 'Assistant response recorded', primary: event });
+    steps.push({ id: event.id, timestamp: event.timestamp, type: 'output', title: event.phase === 'final_answer' ? 'Final response' : 'Agent update', summary: event.summary || (event.phase === 'final_answer' ? 'Final answer delivered' : 'Progress update'), primary: event });
   }
   return steps;
 }
@@ -122,6 +184,7 @@ function DetailDialog({ agent, session, onClose, restoreFocus }: { agent: string
   const [error, setError] = useState<string | null>(null);
   const [withContent, setWithContent] = useState(false);
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
+  const [selectedTask, setSelectedTask] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const load = async (content: boolean) => {
@@ -139,7 +202,10 @@ function DetailDialog({ agent, session, onClose, restoreFocus }: { agent: string
   }, [onClose, restoreFocus]);
   const events = detail?.events || [];
   const meta = detail?.session || session;
-  const steps = useMemo(() => toRunSteps(events), [events]);
+  const groups = useMemo(() => taskGroups(events), [events]);
+  const activeGroup = groups.find(group => group.id === selectedTask) || groups[0];
+  const steps = useMemo(() => activeGroup ? toRunSteps(activeGroup.events) : [], [activeGroup]);
+  const modelWork = useMemo(() => activeGroup ? taskModelWork(activeGroup.events) : { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, [activeGroup]);
   const revealContent = () => { setWithContent(true); void load(true); };
   return <div className="fixed inset-0 z-50 flex items-center justify-center bg-stone-900/35 p-4 backdrop-blur-[2px]" role="presentation" onMouseDown={event => { if (event.target === event.currentTarget) { onClose(); restoreFocus(); } }}>
     <section ref={dialogRef} tabIndex={-1} role="dialog" aria-modal="true" aria-labelledby="session-title" className="flex max-h-[min(780px,calc(100vh-32px))] w-[min(920px,calc(100vw-32px))] flex-col overflow-hidden rounded-2xl bg-white shadow-2xl outline-none" data-od-id="session-detail-dialog">
@@ -154,8 +220,12 @@ function DetailDialog({ agent, session, onClose, restoreFocus }: { agent: string
             {[["LLM calls", meta.llmCallCount], [meta.skillCallCount !== undefined ? "Skill calls" : "Tool calls", meta.skillCallCount ?? meta.toolCallCount ?? '—'], ["Total tokens", formatTokens(meta.totalTokens)], ["Duration", formatDuration(meta.durationMs)]].map(([label, value]) => <div key={String(label)} className="px-3 first:pl-0"><p className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">{label}</p><p className="mt-1 font-mono text-sm font-bold text-stone-800">{value}</p></div>)}
           </div>
         </section>
-        <div className="mt-6"><h3 className="text-[13px] font-semibold text-stone-900">Run log</h3><p className="mt-0.5 text-[11px] text-stone-400">A chronological view of requests, model work, and local invocations</p></div>
-        {loading ? <div className="mt-4 space-y-3">{[1, 2, 3].map(i => <div key={i} className="skeleton h-16 rounded-xl" />)}</div> : error ? <div className="mt-4 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error} <button onClick={() => void load(withContent)} className="ml-2 font-semibold underline">Retry</button></div> : steps.length === 0 ? <div className="mt-4 rounded-xl bg-stone-50 p-4 text-sm text-stone-500">No event metadata is available for this session.</div> : <ol className="mt-4 space-y-2.5">{steps.map((step, index) => {
+        <div className="mt-6"><h3 className="text-[13px] font-semibold text-stone-900">Tasks in this session</h3><p className="mt-0.5 text-[11px] text-stone-400">Requests, meaningful work, and delivered answers. Routine runtime noise is omitted.</p></div>
+        {loading ? <div className="mt-4 space-y-3">{[1, 2, 3].map(i => <div key={i} className="skeleton h-16 rounded-xl" />)}</div> : error ? <div className="mt-4 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error} <button onClick={() => void load(withContent)} className="ml-2 font-semibold underline">Retry</button></div> : !activeGroup ? <div className="mt-4 rounded-xl bg-stone-50 p-4 text-sm text-stone-500">No readable task activity is available for this session.</div> : <><nav aria-label="Tasks in this session" className="mt-4 grid gap-2 sm:grid-cols-2">{groups.map(group => <button key={group.id} onClick={() => { setSelectedTask(group.id); setExpandedStep(null); }} className={`min-w-0 rounded-xl border px-3 py-2.5 text-left transition-colors ${activeGroup.id === group.id ? 'border-indigo-200 bg-indigo-50/70' : 'border-stone-100 bg-white hover:border-stone-200'}`}><span className="block text-[10px] font-bold uppercase tracking-wide text-stone-400">Task {group.index + 1}</span><span className="mt-0.5 block truncate text-[11px] font-semibold text-stone-700">{taskTitle(group)}</span></button>)}</nav>
+        <section className="mt-4 rounded-xl border border-violet-100 bg-violet-50/40 p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-500">User request · Task {activeGroup.index + 1}</p><p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-stone-700">{activeGroup.request?.contentPreview || taskTitle(activeGroup)}</p></div><time className="shrink-0 font-mono text-[10px] text-stone-400">{activeGroup.request ? new Date(activeGroup.request.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</time></div>{activeGroup.request?.contentAvailable && <><button onClick={() => { const opening = expandedStep !== `request-${activeGroup.id}`; setExpandedStep(opening ? `request-${activeGroup.id}` : null); if (opening && !withContent) revealContent(); }} className="mt-2 text-[10px] font-semibold text-indigo-600 hover:text-indigo-700">{expandedStep === `request-${activeGroup.id}` ? 'Hide full request' : withContent ? 'Show full request' : 'Read full request'}</button>{expandedStep === `request-${activeGroup.id}` && withContent && activeGroup.request.content && <p className="mt-2 whitespace-pre-wrap rounded-lg bg-white/80 p-3 text-[11px] leading-relaxed text-stone-600">{activeGroup.request.content}</p>}</>}</section>
+        <div className="mt-3 grid grid-cols-2 divide-x divide-stone-200 rounded-xl border border-stone-100 bg-stone-50/60 px-3 py-2.5 sm:grid-cols-4"><div className="px-2 first:pl-0"><p className="text-[9px] font-semibold uppercase tracking-wide text-stone-400">Model work</p><p className="mt-1 font-mono text-[11px] font-bold text-stone-700">{modelWork.calls} calls</p></div><div className="px-2"><p className="text-[9px] font-semibold uppercase tracking-wide text-stone-400">Input</p><p className="mt-1 font-mono text-[11px] font-bold text-stone-700">{formatTokens(modelWork.inputTokens)}</p></div><div className="px-2"><p className="text-[9px] font-semibold uppercase tracking-wide text-stone-400">Output</p><p className="mt-1 font-mono text-[11px] font-bold text-stone-700">{formatTokens(modelWork.outputTokens)}</p></div><div className="px-2"><p className="text-[9px] font-semibold uppercase tracking-wide text-stone-400">Cached</p><p className="mt-1 font-mono text-[11px] font-bold text-stone-700">{formatTokens(modelWork.cacheReadTokens)}</p></div></div>
+        <div className="mt-5"><h3 className="text-[13px] font-semibold text-stone-900">Task activity</h3><p className="mt-0.5 text-[11px] text-stone-400">Agent updates, inspectable actions, and the delivered response</p></div>
+        {steps.length === 0 ? <div className="mt-4 rounded-xl bg-stone-50 p-4 text-sm text-stone-500">This task has token accounting but no readable progress, action, or response content.</div> : <ol className="mt-4 space-y-2.5">{steps.map((step, index) => {
           const detailEvents = [step.primary, step.related].filter((value): value is SessionEvent => Boolean(value));
           const contentEvent = detailEvents.find(item => item.contentPreview || item.contentAvailable);
           const hasPayload = detailEvents.some(item => item.parameterSummary || item.resultSummary || item.contentAvailable || (withContent && item.content));
@@ -167,7 +237,7 @@ function DetailDialog({ agent, session, onClose, restoreFocus }: { agent: string
             if (opening && contentEvent?.contentAvailable && !withContent) revealContent();
           };
           return <li key={step.id} className="relative grid grid-cols-[62px_18px_minmax(0,1fr)] gap-3"><time className="pt-3 font-mono text-[10px] text-stone-400">{new Date(step.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time><div className="relative flex justify-center"><i className={`z-10 mt-3 h-2.5 w-2.5 rounded-full ring-4 ring-white ${color}`} />{index < steps.length - 1 && <span className="absolute top-6 bottom-[-12px] w-px bg-stone-200" />}</div><article className="min-w-0 rounded-xl border border-stone-100 bg-white px-3.5 py-3 shadow-[0_1px_2px_rgba(120,113,108,0.04)]"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[12px] font-semibold text-stone-700">{step.title}</p><p className="mt-0.5 text-[11px] leading-relaxed text-stone-400">{step.summary}</p>{contentEvent?.contentPreview && <p className="mt-2 whitespace-pre-wrap border-l-2 border-stone-200 pl-2.5 text-[11px] leading-relaxed text-stone-600">{contentEvent.contentPreview}</p>}</div>{step.type === 'action' && <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${detailEvents.some(item => item.success === false) ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-700'}`}>{detailEvents.some(item => item.success === false) ? 'failed' : 'done'}</span>}</div>{hasPayload && <><button onClick={toggleDetails} aria-expanded={expandedStep === step.id} className="mt-2 text-[10px] font-semibold text-indigo-600 hover:text-indigo-700">{expandedStep === step.id ? 'Hide details' : contentEvent?.contentAvailable && !withContent ? `Read full ${contentLabel}` : 'Show details'}</button>{expandedStep === step.id && <dl className="mt-2 grid gap-2 rounded-lg bg-stone-50 px-3 py-2.5 text-[10px] leading-relaxed">{detailEvents.flatMap(item => [{ label: 'Parameters', value: payloadValue(item.parameterSummary) }, { label: 'Result', value: payloadValue(item.resultSummary) }, ...(withContent && item.content ? [{ label: item.type === 'user_message' ? 'Full input' : item.type === 'llm_call' ? 'Full reasoning' : 'Full response', value: item.content }] : [])]).filter(item => item.value).map((item, payloadIndex) => <div key={`${item.label}-${payloadIndex}`} className="grid grid-cols-[72px_minmax(0,1fr)] gap-2"><dt className="font-semibold uppercase tracking-wide text-stone-400">{item.label}</dt><dd className="break-words whitespace-pre-wrap font-mono text-stone-600">{item.value}</dd></div>)}</dl>}</>}</article></li>;
-        })}</ol>}
+        })}</ol>}</>}
       </div>
       <footer className="flex items-center justify-between border-t border-stone-100 px-6 py-3 text-[10px] text-stone-400"><span>Local index · {detail?.indexedAt ? new Date(detail.indexedAt).toLocaleString() : 'metadata only'}</span><button onClick={() => void navigator.clipboard?.writeText(session.id)} className="rounded-lg border border-stone-200 px-2.5 py-1 font-semibold text-stone-600 hover:bg-stone-50">Copy session ID</button></footer>
     </section>

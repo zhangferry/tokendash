@@ -188,6 +188,7 @@ export const SessionEventSchema = z.object({
   success: z.boolean().optional(),
   usage: SessionUsageSchema.optional(),
   summary: z.string().optional(),
+  phase: z.enum(['commentary', 'final_answer']).optional(),
   parameterSummary: z.string().optional(),
   resultSummary: z.string().optional(),
   contentPreview: z.string().optional(),

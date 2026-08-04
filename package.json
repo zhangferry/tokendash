@@ -17,7 +17,7 @@
     "resources"
   ],
   "scripts": {
-    "dev": "concurrently \"npm run dev:server\" \"npm run dev:client\"",
+    "dev": "concurrently \"npm run dev:server -- --port 3457 --no-open\" \"npm run dev:client\"",
     "dev:server": "tsx watch src/server/index.ts",
     "dev:client": "vite",
     "build": "vite build && tsc -p tsconfig.json && node esbuild.config.mjs",

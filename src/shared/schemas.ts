@@ -114,7 +114,6 @@ export function validateAnalytics(data: unknown) {
   return AnalyticsResponseSchema.parse(data);
 }
 
-
 // --- App settings schemas ---
 
 const CodexDataPathStatusSchema = z.object({
@@ -137,4 +136,126 @@ export const AppSettingsResponseSchema = z.object({
 
 export function validateAppSettings(data: unknown) {
   return AppSettingsResponseSchema.parse(data);
+}
+
+// --- Session analytics schemas ---
+
+const SessionStatusSchema = z.enum(['active', 'complete', 'interrupted', 'unknown']);
+const SessionEventTypeSchema = z.enum([
+  'user_message',
+  'llm_call',
+  'skill_call',
+  'tool_call',
+  'tool_result',
+  'assistant_message',
+]);
+
+const SessionUsageSchema = z.object({
+  inputTokens: z.number().default(0),
+  outputTokens: z.number().default(0),
+  cacheReadTokens: z.number().default(0),
+  totalTokens: z.number().default(0),
+  cost: z.number().optional(),
+});
+
+export const SessionSummarySchema = z.object({
+  id: z.string(),
+  agent: z.string(),
+  project: z.string().optional(),
+  title: z.string().optional(),
+  description: z.string().optional(),
+  startedAt: z.string(),
+  endedAt: z.string().optional(),
+  status: SessionStatusSchema,
+  models: z.array(z.string()).default([]),
+  llmCallCount: z.number().default(0),
+  skillCallCount: z.number().optional(),
+  toolCallCount: z.number().optional(),
+  userTurnCount: z.number().optional(),
+  durationMs: z.number().optional(),
+  totalTokens: z.number().default(0),
+  totalCost: z.number().default(0),
+});
+
+export const SessionEventSchema = z.object({
+  id: z.string(),
+  callId: z.string().optional(),
+  timestamp: z.string(),
+  type: SessionEventTypeSchema,
+  model: z.string().optional(),
+  skillName: z.string().optional(),
+  toolName: z.string().optional(),
+  success: z.boolean().optional(),
+  usage: SessionUsageSchema.optional(),
+  summary: z.string().optional(),
+  parameterSummary: z.string().optional(),
+  resultSummary: z.string().optional(),
+  contentPreview: z.string().optional(),
+  contentAvailable: z.boolean().default(false),
+  content: z.string().optional(),
+});
+
+export const SessionDetailSchema = z.object({
+  session: SessionSummarySchema,
+  events: z.array(SessionEventSchema).default([]),
+  indexedAt: z.string(),
+  capabilities: z.object({
+    userTurns: z.boolean(),
+    skills: z.boolean(),
+    tools: z.boolean(),
+    toolResults: z.boolean(),
+    contentPreview: z.boolean(),
+  }),
+});
+
+const SessionAnalyticsResponseSchema = z.object({
+  summary: z.object({
+    sessionCount: z.number().default(0),
+    llmCallCount: z.number().default(0),
+    skillCallCount: z.number().optional(),
+    toolCallCount: z.number().optional(),
+    avgDurationMs: z.number().optional(),
+    medianDurationMs: z.number().optional(),
+    avgUserTurnCount: z.number().optional(),
+    longSessionRate: z.number().optional(),
+    toolSuccessRate: z.number().optional(),
+  }),
+  llmCallTrend: z.array(z.object({
+    date: z.string(),
+    models: z.record(z.number()).default({}),
+    total: z.number().optional(),
+  })).default([]),
+  skillDistribution: z.array(z.object({ name: z.string(), count: z.number().default(0) })).optional(),
+  toolDistribution: z.array(z.object({ name: z.string(), count: z.number().default(0) })).optional(),
+  durationTurnTrend: z.array(z.object({
+    date: z.string(),
+    avgDurationMs: z.number().optional(),
+    medianDurationMs: z.number().optional(),
+    avgUserTurnCount: z.number().optional(),
+    avgDurationMinutes: z.number().optional(),
+    avgUserTurns: z.number().optional(),
+  })).default([]),
+  userTurnDistribution: z.array(z.object({
+    bucket: z.string(),
+    sessionCount: z.number().default(0),
+    percentage: z.number().default(0),
+  })).default([]),
+  longSessionThreshold: z.number().optional(),
+  sessions: z.array(SessionSummarySchema).default([]),
+  pagination: z.object({ nextCursor: z.string().optional(), totalCount: z.number().optional() }).default({}),
+  capabilities: z.object({
+    userTurns: z.boolean(),
+    skills: z.boolean(),
+    tools: z.boolean(),
+    toolResults: z.boolean(),
+    contentPreview: z.boolean(),
+  }),
+});
+
+export function validateSessionAnalytics(data: unknown) {
+  return SessionAnalyticsResponseSchema.parse(data);
+}
+
+export function validateSessionDetail(data: unknown) {
+  return SessionDetailSchema.parse(data);
 }

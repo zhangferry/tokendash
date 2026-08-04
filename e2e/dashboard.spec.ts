@@ -12,6 +12,11 @@ async function setupPage(page: import('@playwright/test').Page, options?: { agen
   await page.waitForSelector('text=Total tokens', { timeout: 15000 });
 }
 
+async function selectAgent(page: import('@playwright/test').Page, label: string) {
+  await page.locator('button[aria-haspopup="menu"]').click();
+  await page.getByRole('menuitemradio', { name: label }).click();
+}
+
 // ---------------------------------------------------------------------------
 // KPI Cards — all agents
 // ---------------------------------------------------------------------------
@@ -76,14 +81,12 @@ test.describe('Agent: Claude Code', () => {
 test.describe('Agent: OpenCode', () => {
   test.beforeEach(async ({ page }) => {
     await setupPage(page, { agents: ['claude', 'opencode'] });
-    await page.locator('button:has-text("OpenCode")').click();
+    await selectAgent(page, 'OpenCode');
     await page.waitForTimeout(2000);
   });
 
   test('shows OpenCode as active agent', async ({ page }) => {
-    const opencodeBtn = page.locator('button:has-text("OpenCode")');
-    const classes = await opencodeBtn.getAttribute('class') || '';
-    expect(classes).toContain('bg-white');
+    await expect(page.locator('button[aria-haspopup="menu"]')).toContainText('OpenCode');
   });
 
   test('hides analytics section', async ({ page }) => {
@@ -124,7 +127,7 @@ test.describe('Agent: OpenCode', () => {
 test.describe('Agent: Codex', () => {
   test.beforeEach(async ({ page }) => {
     await setupPage(page, { agents: ['claude', 'codex'] });
-    await page.locator('button:has-text("Codex")').click();
+    await selectAgent(page, 'Codex');
     await page.waitForTimeout(2000);
   });
 
@@ -143,23 +146,22 @@ test.describe('Agent: Pi', () => {
     await setupPage(page, { agents: ['claude', 'pi'] });
   });
 
-  test('Pi button renders in agent switcher', async ({ page }) => {
-    await expect(page.locator('button:has-text("Pi")')).toBeVisible();
+  test('Pi appears in the agent menu', async ({ page }) => {
+    await page.locator('button[aria-haspopup="menu"]').click();
+    await expect(page.getByRole('menuitemradio', { name: 'Pi' })).toBeVisible();
   });
 
   test('hides analytics section for Pi', async ({ page }) => {
-    await page.locator('button:has-text("Pi")').click();
+    await selectAgent(page, 'Pi');
     await page.waitForTimeout(2000);
 
-    const piBtn = page.locator('button:has-text("Pi")');
-    const classes = await piBtn.getAttribute('class') || '';
-    expect(classes).toContain('bg-white');
+    await expect(page.locator('button[aria-haspopup="menu"]')).toContainText('Pi');
 
     await expect(page.locator('text=Code Change Trend')).not.toBeVisible();
   });
 
   test('shows KPI data for Pi', async ({ page }) => {
-    await page.locator('button:has-text("Pi")').click();
+    await selectAgent(page, 'Pi');
     await page.waitForTimeout(2000);
     await expect(page.locator('span:text-is("Total tokens")')).toBeVisible();
   });
@@ -316,16 +318,16 @@ test.describe('Time range: ALL', () => {
 // ---------------------------------------------------------------------------
 
 test.describe('Agent switching', () => {
-  test('only shows tabs for available agents', async ({ page }) => {
+  test('only lists available agents in its menu', async ({ page }) => {
     await setupPage(page, { agents: ['claude', 'opencode'] });
 
-    // Available agents should have visible tabs
-    await expect(page.locator('button:has-text("Claude Code")')).toBeVisible();
-    await expect(page.locator('button:has-text("OpenCode")')).toBeVisible();
+    await page.locator('button[aria-haspopup="menu"]').click();
+    await expect(page.getByRole('menuitemradio', { name: 'Claude Code' })).toBeVisible();
+    await expect(page.getByRole('menuitemradio', { name: 'OpenCode' })).toBeVisible();
 
     // Unavailable agents should NOT have tabs
-    await expect(page.locator('button:has-text("Codex")')).not.toBeVisible();
-    await expect(page.locator('button:has-text("OpenClaw")')).not.toBeVisible();
+    await expect(page.getByRole('menuitemradio', { name: 'Codex' })).not.toBeVisible();
+    await expect(page.getByRole('menuitemradio', { name: 'OpenClaw' })).not.toBeVisible();
   });
 
   test('hides agent switcher when only one agent available', async ({ page }) => {
@@ -345,7 +347,7 @@ test.describe('Agent switching', () => {
     await expect(page.locator('text=Model trend')).toBeVisible();
 
     // Switch to OpenCode
-    await page.locator('button:has-text("OpenCode")').click();
+    await selectAgent(page, 'OpenCode');
     await page.waitForTimeout(3000);
 
     // Should now show OpenCode model names (glm-4.7, mimo-v2.5-pro)
@@ -360,7 +362,7 @@ test.describe('Agent switching', () => {
     const optsBefore = await select.locator('option').count();
 
     // Switch to OpenCode
-    await page.locator('button:has-text("OpenCode")').click();
+    await selectAgent(page, 'OpenCode');
     await page.waitForTimeout(3000);
 
     // Project list should update
@@ -393,6 +395,45 @@ test.describe('Metric switching', () => {
     const cells = page.locator('[class*="rounded-[3px]"]');
     const cellCount = await cells.count();
     expect(cellCount).toBeGreaterThan(0);
+  });
+
+  test('Sessions renders session analytics and opens metadata detail', async ({ page }) => {
+    await page.locator('button:has-text("Sessions")').click();
+    await expect(page.locator('text=Session analytics')).toBeVisible();
+    await expect(page.locator('text=LLM call trend')).toBeVisible();
+    await expect(page.locator('text=frontend-design')).toBeVisible();
+    await expect(page.locator('text=Bash')).not.toBeVisible();
+    await expect(page.locator('text=Avg. user turns per session')).toBeVisible();
+    await expect(page.locator('text=Session detail')).toBeVisible();
+    await expect(page.getByText('Session task 1', { exact: true })).toBeVisible();
+
+    await page.locator('[data-od-id="session-detail-table"] tbody tr').first().click();
+    const detailDialog = page.locator('[data-od-id="session-detail-dialog"]');
+    await expect(detailDialog).toBeVisible();
+    expect(await detailDialog.getByRole('button', { name: 'Retry' }).count()).toBe(0);
+    await expect(page.getByText('Task overview', { exact: true })).toBeVisible();
+    await expect(page.getByText('Run log', { exact: true })).toBeVisible();
+    await expect(page.getByText('Review the dashboard’s session analytics detail and make the run history easier to inspect.', { exact: true })).toBeVisible();
+    await page.getByRole('button', { name: 'Read full input' }).click();
+    await expect(page.getByText('Include the user input, tool arguments, tool results, and the final assistant response.', { exact: false })).toBeVisible();
+    await detailDialog.locator('article').filter({ hasText: 'Tool · Read' }).getByRole('button', { name: 'Show details' }).click();
+    await expect(page.getByText('Parameters', { exact: true })).toBeVisible();
+    await expect(page.locator('text=src/client/Dashboard.tsx')).toBeVisible();
+    await page.keyboard.press('Escape');
+    await expect(page.locator('[data-od-id="session-detail-dialog"]')).not.toBeVisible();
+  });
+
+  test('Sessions performs one stable initial request instead of reloading continuously', async ({ page }) => {
+    let sessionAnalyticsRequests = 0;
+    page.on('request', request => {
+      if (new URL(request.url()).pathname === '/api/session-analytics') sessionAnalyticsRequests++;
+    });
+
+    await page.locator('button:has-text("Sessions")').click();
+    await expect(page.locator('text=Session analytics')).toBeVisible();
+    await page.waitForTimeout(800);
+
+    expect(sessionAnalyticsRequests).toBe(1);
   });
 });
 

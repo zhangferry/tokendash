@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useEffect } from 'react';
+import { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import type { ReactElement } from 'react';
 import {
   BarChart, Bar, Cell, LineChart, Line,
@@ -16,6 +16,7 @@ import { modelTokenMode, modelBreakdownTokens } from '../utils/modelAggregation.
 import { shortModelName } from '../utils/modelNames.js';
 import { AnalyticsSection } from './AnalyticsSection.js';
 import { CodexDataSourcesSettings } from './CodexDataSourcesSettings.js';
+import { SessionAnalyticsSection } from './SessionAnalyticsSection.js';
 import type { DailyEntry, MetricMode } from '../../shared/types.js';
 
 const C = ['#4f46e5', '#10b981', '#f59e0b', '#ec4899', '#0ea5e9', '#8b5cf6', '#ef4444', '#14b8a6'];
@@ -198,6 +199,12 @@ export function Dashboard() {
   const [project, setProject] = useLocalStorageState('dashboard_project', '');
   const [showPricing, setShowPricing] = useState(false);
   const [showDataSourceSettings, setShowDataSourceSettings] = useState(false);
+  const [agentMenuOpen, setAgentMenuOpen] = useState(false);
+  const [agentMenuFocus, setAgentMenuFocus] = useState(0);
+  const [sessionRefreshVersion, setSessionRefreshVersion] = useState(0);
+  const agentMenuRef = useRef<HTMLDivElement>(null);
+  const agentTriggerRef = useRef<HTMLButtonElement>(null);
+  const agentOptionRefs = useRef<Array<HTMLButtonElement | null>>([]);
 
   // Close pricing popup on outside click
   useEffect(() => {
@@ -220,6 +227,15 @@ export function Dashboard() {
       .finally(() => setAgentsLoading(false));
   }, [agent, setAgent]);
 
+  useEffect(() => {
+    if (!agentMenuOpen) return;
+    const closeOnOutside = (event: MouseEvent) => {
+      if (!agentMenuRef.current?.contains(event.target as Node)) setAgentMenuOpen(false);
+    };
+    document.addEventListener('mousedown', closeOnOutside);
+    return () => document.removeEventListener('mousedown', closeOnOutside);
+  }, [agentMenuOpen]);
+
   // Detect available agents on mount and after settings changes.
   useEffect(() => {
     void refreshAgents();
@@ -238,6 +254,7 @@ export function Dashboard() {
     projectsData.refetch();
     blocksData.refetch();
     analyticsData.refetch();
+    setSessionRefreshVersion(version => version + 1);
   }, [dailyData.refetch, projectsData.refetch, blocksData.refetch, analyticsData.refetch]);
 
   const handleSettingsSaved = useCallback(() => {
@@ -254,6 +271,8 @@ export function Dashboard() {
   const handleAgentChange = (a: 'claude' | 'codex' | 'openclaw' | 'opencode' | 'pi') => {
     setAgent(a);
     setProject('');
+    setAgentMenuOpen(false);
+    setSessionRefreshVersion(version => version + 1);
   };
 
   // Progressive loading: only wait for daily data to show the page shell
@@ -527,25 +546,53 @@ export function Dashboard() {
 
   const renderAgentSwitcher = () => {
     const availableAgents = (agentsInfo?.available ?? []).filter(a => a in AGENT_CONFIG);
+    const currentIndex = Math.max(0, availableAgents.indexOf(agent));
+    const current = AGENT_CONFIG[agent] || AGENT_CONFIG.claude;
+    const selectAt = (index: number) => {
+      const next = availableAgents[index];
+      if (next) handleAgentChange(next as 'claude' | 'codex' | 'openclaw' | 'opencode' | 'pi');
+      agentTriggerRef.current?.focus();
+    };
+    const onTriggerKeyDown = (event: React.KeyboardEvent<HTMLButtonElement>) => {
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const index = event.key === 'ArrowDown' ? currentIndex : Math.max(0, currentIndex - 1);
+        setAgentMenuFocus(index); setAgentMenuOpen(true);
+        window.setTimeout(() => agentOptionRefs.current[index]?.focus(), 0);
+      } else if (event.key === 'Escape') setAgentMenuOpen(false);
+    };
     return (
-      <div className="flex items-center gap-1 p-1 bg-stone-200/50 rounded-xl w-fit shadow-inner border border-stone-200/50">
+      <div ref={agentMenuRef} className="relative">
+        <button ref={agentTriggerRef} type="button" aria-haspopup="menu" aria-expanded={agentMenuOpen} onKeyDown={onTriggerKeyDown} onClick={() => { setAgentMenuFocus(currentIndex); setAgentMenuOpen(open => !open); }} className="flex h-8 items-center gap-2 rounded-lg border border-stone-200 bg-white px-3 text-[12px] font-semibold text-stone-700 shadow-sm transition hover:border-stone-300 hover:text-stone-900">
+          <i className={`h-1.5 w-1.5 rounded-full ${agent === 'codex' ? 'bg-sky-500' : agent === 'openclaw' ? 'bg-emerald-500' : 'bg-indigo-500'}`} />
+          {current.label}<span className="ml-0.5 text-stone-400">⌄</span>
+        </button>
+        {agentMenuOpen && <div role="menu" aria-label="Available agents" className="absolute right-0 top-[calc(100%+8px)] z-40 w-[196px] rounded-[10px] border border-stone-200/90 bg-white p-1.5 shadow-[0_12px_28px_rgba(41,37,36,.14)]">
         {availableAgents.map((a) => {
           const cfg = AGENT_CONFIG[a]!;
           const isActive = agent === a;
           return (
             <button
               key={a}
-              onClick={() => handleAgentChange(a as 'claude' | 'codex' | 'openclaw' | 'opencode' | 'pi')}
-              className={`flex items-center gap-2 px-5 py-2.5 rounded-lg text-[13px] font-bold tracking-wide transition-all duration-200 ${isActive
-                ? `bg-white ${cfg.activeColor} shadow-[0_1px_3px_rgba(0,0,0,0.1)] ring-1 ring-stone-900/5`
-                : 'text-stone-500 hover:text-stone-800 hover:bg-stone-200/50'
-                }`}
+              ref={element => { agentOptionRefs.current[availableAgents.indexOf(a)] = element; }}
+              role="menuitemradio"
+              aria-checked={isActive}
+              tabIndex={agentMenuFocus === availableAgents.indexOf(a) ? 0 : -1}
+              onKeyDown={event => {
+                const index = availableAgents.indexOf(a);
+                if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); const next = (index + (event.key === 'ArrowDown' ? 1 : -1) + availableAgents.length) % availableAgents.length; setAgentMenuFocus(next); agentOptionRefs.current[next]?.focus(); }
+                else if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); selectAt(index); }
+                else if (event.key === 'Escape') { setAgentMenuOpen(false); agentTriggerRef.current?.focus(); }
+              }}
+              onClick={() => selectAt(availableAgents.indexOf(a))}
+              className={`flex w-full items-center gap-2 rounded-lg px-2.5 py-2 text-left text-[12px] font-semibold transition-colors ${isActive ? 'bg-indigo-50 text-indigo-600' : 'text-stone-600 hover:bg-stone-50 hover:text-stone-800'}`}
             >
-              {cfg.icon}
-              {cfg.label}
+              <i className={`h-1.5 w-1.5 rounded-full ${a === 'codex' ? 'bg-sky-500' : a === 'openclaw' ? 'bg-emerald-500' : 'bg-indigo-500'}`} />
+              {cfg.label}{isActive && <span className="ml-auto font-mono text-[10px] text-stone-400">active</span>}
             </button>
           );
         })}
+        </div>}
       </div>
     );
   };
@@ -684,7 +731,7 @@ export function Dashboard() {
             <div className="flex flex-col gap-2">
               <span className="text-[11px] font-semibold text-stone-400 uppercase tracking-wider">Metric</span>
               <div className="flex items-center gap-1.5">
-                <FilterTab options={[{ key: 'tokens', label: 'Tokens' }, { key: 'usd', label: 'Cost' }]} value={metric} onChange={v => setMetric(v as MetricMode)} />
+                <FilterTab options={[{ key: 'tokens', label: 'Tokens' }, { key: 'usd', label: 'Cost' }, { key: 'sessions', label: 'Sessions' }]} value={metric} onChange={v => setMetric(v as MetricMode)} />
                 {!isTokens && modelAgg.length > 0 && (
                   <div className="relative">
                     <button
@@ -727,6 +774,9 @@ export function Dashboard() {
         </div>
       </div>
 
+      {metric === 'sessions' ? (
+        <SessionAnalyticsSection key={`${agent}:${project}:${timeRange}`} agent={agent} project={project} range={timeRange} refreshVersion={sessionRefreshVersion} />
+      ) : <>
       {/* KPI Row */}
       <div className="grid grid-cols-2 md:grid-cols-5 gap-4 mb-6">
         <KPICard
@@ -962,6 +1012,7 @@ export function Dashboard() {
           </table>
         </div>
       </Panel>
+      </>}
     </div>
   );
 }

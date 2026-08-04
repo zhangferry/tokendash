@@ -12,7 +12,10 @@ export default defineConfig({
   server: {
     proxy: {
       '/api': {
-        target: 'http://localhost:3456',
+        // Keep development separate from the packaged desktop daemon on 3456.
+        // Otherwise its SPA fallback returns HTML for new API routes and breaks
+        // detail views that expect JSON.
+        target: 'http://127.0.0.1:3457',
         changeOrigin: true,
       },
     },

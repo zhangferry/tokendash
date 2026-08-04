@@ -1,4 +1,4 @@
-import type { DailyEntry, DailyResponse, ProjectsResponse, BlocksResponse, BlockEntry, AnalyticsResponse } from '../src/shared/types.js';
+import type { DailyEntry, DailyResponse, ProjectsResponse, BlocksResponse, BlockEntry, AnalyticsResponse, SessionAnalyticsResponse, SessionDetail, SessionSummary } from '../src/shared/types.js';
 
 // ---------------------------------------------------------------------------
 // Date helpers — all dates are relative to "now" so tests work on any day
@@ -269,6 +269,74 @@ export function generateAnalyticsResponse(agent: string): AnalyticsResponse | nu
   };
 }
 
+function sessionFor(agent: string, index: number): SessionSummary {
+  const config = AGENT_CONFIGS[agent] || AGENT_CONFIGS.claude;
+  const started = daysAgo(index % 28);
+  started.setHours(9 + (index % 8), 15, 0, 0);
+  const minutes = 8 + (index % 7) * 6;
+  return {
+    id: `ses_${agent}_${String(index).padStart(4, '0')}`,
+    agent,
+    project: config.projects[index % config.projects.length]?.path,
+    title: `Session task ${index + 1}`,
+    description: `${3 + (index % 8)} user turns · ${2 + (index % 5)} tool calls`,
+    startedAt: started.toISOString(),
+    endedAt: new Date(started.getTime() + minutes * 60_000).toISOString(),
+    status: index === 0 ? 'active' : 'complete',
+    models: [config.models[index % config.models.length]!],
+    llmCallCount: 8 + (index % 9),
+    ...(agent === 'codex' ? {} : { toolCallCount: 2 + (index % 5), userTurnCount: 3 + (index % 8) }),
+    durationMs: minutes * 60_000,
+    totalTokens: 24_000 + index * 900,
+    totalCost: index / 100,
+  };
+}
+
+export function generateSessionAnalyticsResponse(agent: string): SessionAnalyticsResponse {
+  const config = AGENT_CONFIGS[agent] || AGENT_CONFIGS.claude;
+  const sessions = Array.from({ length: 28 }, (_, index) => sessionFor(agent, index));
+  const supportsEvents = agent !== 'codex' && agent !== 'opencode' && agent !== 'pi';
+  const llmCallTrend = Array.from({ length: 8 }, (_, index) => {
+    const date = fmtDate(daysAgo(7 - index));
+    const first = 14 + index * 2;
+    return { date, total: first + 8, models: { [config.models[0]!]: first, [config.models[1] || 'Other']: 8 } };
+  });
+  const durations = sessions.map(session => session.durationMs || 0);
+  const avgUserTurnCount = supportsEvents ? sessions.reduce((sum, session) => sum + (session.userTurnCount || 0), 0) / sessions.length : undefined;
+  return {
+    summary: {
+      sessionCount: sessions.length,
+      llmCallCount: sessions.reduce((sum, session) => sum + session.llmCallCount, 0),
+      ...(supportsEvents ? { toolCallCount: sessions.reduce((sum, session) => sum + (session.toolCallCount || 0), 0), avgUserTurnCount, longSessionRate: 22.7, toolSuccessRate: 96.8 } : {}),
+      avgDurationMs: durations.reduce((sum, value) => sum + value, 0) / durations.length,
+      medianDurationMs: durations.sort((a, b) => a - b)[Math.floor(durations.length / 2)],
+    },
+    llmCallTrend,
+    ...(supportsEvents ? { skillDistribution: [{ name: 'frontend-design', count: 12 }, { name: 'implement', count: 6 }], toolDistribution: [{ name: 'Read', count: 42 }, { name: 'Edit', count: 31 }, { name: 'Bash', count: 19 }], userTurnDistribution: [{ bucket: '1–2', sessionCount: 4, percentage: 14.3 }, { bucket: '3–5', sessionCount: 8, percentage: 28.6 }, { bucket: '6–8', sessionCount: 10, percentage: 35.7 }, { bucket: '9–12', sessionCount: 6, percentage: 21.4 }] } : {}),
+    durationTurnTrend: llmCallTrend.map((entry, index) => ({ date: entry.date, avgDurationMs: (16 + index * 2) * 60_000, ...(supportsEvents ? { avgUserTurnCount: 4 + index / 3 } : {}) })),
+    sessions,
+    pagination: {},
+    capabilities: { userTurns: supportsEvents, skills: false, tools: supportsEvents, toolResults: supportsEvents, contentPreview: false },
+  };
+}
+
+export function generateSessionDetail(agent: string, id: string): SessionDetail {
+  const session = sessionFor(agent, Number(id.match(/(\d+)$/)?.[1] || 0));
+  session.id = id;
+  return {
+    session,
+    indexedAt: new Date().toISOString(),
+    capabilities: { userTurns: agent !== 'codex', skills: false, tools: agent !== 'codex', toolResults: agent !== 'codex', contentPreview: true },
+    events: [
+      { id: 'user-1', timestamp: session.startedAt, type: 'user_message', summary: 'User request', contentPreview: 'Review the dashboard’s session analytics detail and make the run history easier to inspect.', content: 'Review the dashboard’s session analytics detail and make the run history easier to inspect. Include the user input, tool arguments, tool results, and the final assistant response.', contentAvailable: true },
+      { id: 'llm-1', timestamp: new Date(Date.parse(session.startedAt) + 4000).toISOString(), type: 'llm_call', model: session.models[0], summary: 'Model reasoning', contentAvailable: false, usage: { inputTokens: 2800, outputTokens: 1100, cacheReadTokens: 18600, totalTokens: 22500 } },
+      { id: 'tool-1', callId: 'call-read-1', timestamp: new Date(Date.parse(session.startedAt) + 12_000).toISOString(), type: 'tool_call', toolName: 'Read', summary: 'Tool Read called', parameterSummary: 'Parameters { path: "src/client/Dashboard.tsx" }', contentAvailable: false },
+      { id: 'result-1', callId: 'call-read-1', timestamp: new Date(Date.parse(session.startedAt) + 14_000).toISOString(), type: 'tool_result', toolName: 'Read', resultSummary: 'Result { 230 lines read }', success: true, contentAvailable: false },
+      { id: 'assistant-1', timestamp: session.endedAt || session.startedAt, type: 'assistant_message', summary: 'Assistant reply', contentPreview: 'I traced the session detail flow and identified where the event metadata loses the meaningful request and response content.', content: 'I traced the session detail flow and identified where the event metadata loses the meaningful request and response content. The detail view should preserve safe previews and offer full text on demand.', contentAvailable: true },
+    ],
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Agents detection response
 // ---------------------------------------------------------------------------
@@ -417,8 +485,17 @@ export async function mockApiRoutes(
         break;
       }
 
+      case 'session-analytics':
+        await route.fulfill({ json: getOrGenerate(`session-analytics:${agent}`, () => generateSessionAnalyticsResponse(agent)) });
+        break;
+
       default:
+        if (path.startsWith('sessions/')) {
+          await route.fulfill({ json: generateSessionDetail(agent, decodeURIComponent(path.slice('sessions/'.length))) });
+          break;
+        }
         await route.continue();
+        break;
     }
   });
 }

@@ -1,4 +1,4 @@
-import type { DailyResponse, MonthlyResponse, SessionResponse, ProjectsResponse, BlocksResponse, AnalyticsResponse, AppSettingsResponse } from '../../shared/types.js';
+import type { DailyResponse, MonthlyResponse, SessionResponse, ProjectsResponse, BlocksResponse, AnalyticsResponse, AppSettingsResponse, SessionAnalyticsResponse, SessionDetail } from '../../shared/types.js';
 
 const BASE = '/api';
 
@@ -93,6 +93,47 @@ export async function fetchAnalytics(agent = 'claude', project = '', refresh = f
   const res = await fetch(`${BASE}/analytics${qs(agent, { ...(project ? { project } : {}), ...(refresh ? { refresh: '1' } : {}) })}`);
   if (!res.ok) {
     throw new Error(`Failed to fetch analytics: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export interface SessionAnalyticsRequest {
+  agent: string;
+  project?: string;
+  range: string;
+  model?: string;
+  status?: string;
+  query?: string;
+  cursor?: string;
+  limit?: number;
+  refresh?: boolean;
+  signal?: AbortSignal;
+}
+
+export async function fetchSessionAnalytics(request: SessionAnalyticsRequest): Promise<SessionAnalyticsResponse> {
+  const params: Record<string, string> = {
+    agent: request.agent,
+    range: request.range,
+    ...(request.project ? { project: request.project } : {}),
+    ...(request.model ? { model: request.model } : {}),
+    ...(request.status ? { status: request.status } : {}),
+    ...(request.query ? { query: request.query } : {}),
+    ...(request.cursor ? { cursor: request.cursor } : {}),
+    ...(request.limit ? { limit: String(request.limit) } : {}),
+    ...(request.refresh ? { refresh: '1' } : {}),
+  };
+  const res = await fetch(`${BASE}/session-analytics?${new URLSearchParams(params)}`, { signal: request.signal });
+  if (!res.ok) throw new Error(`Failed to fetch session analytics: ${res.status} ${res.statusText}`);
+  return res.json();
+}
+
+export async function fetchSessionDetail(agent: string, id: string, includeContent = false): Promise<SessionDetail> {
+  const params = new URLSearchParams({ agent, ...(includeContent ? { include: 'content' } : {}) });
+  const res = await fetch(`${BASE}/sessions/${encodeURIComponent(id)}?${params}`);
+  if (!res.ok) throw new Error(`Failed to fetch session detail: ${res.status} ${res.statusText}`);
+  const contentType = res.headers.get('content-type') || '';
+  if (!contentType.includes('application/json')) {
+    throw new Error('Session detail service returned an unexpected response. Start the current TokenDash development server and retry.');
   }
   return res.json();
 }

@@ -5,6 +5,7 @@ import { getSession } from './session.js';
 import { getProjects } from './projects.js';
 import { getBlocks } from './blocks.js';
 import { getAnalytics } from './analytics.js';
+import { getSessionAnalyticsRoute, getSessionDetailRoute } from './sessionAnalytics.js';
 import { detectAvailableAgents } from '../agentDetection.js';
 import { quotaService } from '../quota/index.js';
 import type { QuotaProviderId } from '../quota/index.js';
@@ -133,6 +134,8 @@ export function registerApiRoutes(router: Router, appInfo: AppInfo): void {
   router.get('/projects', getProjects);
   router.get('/blocks', getBlocks);
   router.get('/analytics', getAnalytics);
+  router.get('/session-analytics', getSessionAnalyticsRoute);
+  router.get('/sessions/:id', getSessionDetailRoute);
   router.get('/quota', getQuota);
   router.post('/quota/validate', validateQuotaCredential);
 }

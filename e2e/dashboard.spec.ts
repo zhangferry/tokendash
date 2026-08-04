@@ -1,5 +1,5 @@
 import { test, expect } from '@playwright/test';
-import { generateDailyResponse, mockApiRoutes } from './fixtures.js';
+import { generateDailyResponse, generateSessionDetail, mockApiRoutes } from './fixtures.js';
 import { formatTokens } from '../src/client/utils/formatters.js';
 
 // ---------------------------------------------------------------------------
@@ -432,6 +432,28 @@ test.describe('Metric switching', () => {
     await expect(detailDialog.getByText('The second task is independently grouped and does not show the first task’s events.', { exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.locator('[data-od-id="session-detail-dialog"]')).not.toBeVisible();
+  });
+
+  test('expanding readable detail keeps the task dialog in place while content loads', async ({ page }) => {
+    await page.route('**/api/sessions/**', async route => {
+      const url = new URL(route.request().url());
+      const includeContent = url.searchParams.get('include') === 'content';
+      if (includeContent) await page.waitForTimeout(750);
+      const agent = url.searchParams.get('agent') || 'claude';
+      const detail = generateSessionDetail(agent, decodeURIComponent(url.pathname.split('/').at(-1) || 'session'));
+      await route.fulfill({ json: includeContent ? detail : { ...detail, events: detail.events.map(({ content: _content, ...event }) => event) } });
+    });
+
+    await page.locator('button:has-text("Sessions")').click();
+    await page.locator('[data-od-id="session-detail-table"] tbody tr').first().click();
+    const detailDialog = page.locator('[data-od-id="session-detail-dialog"]');
+    await expect(detailDialog.getByRole('button', { name: 'Read full reasoning' })).toBeVisible();
+    await detailDialog.getByRole('button', { name: 'Read full reasoning' }).click();
+
+    await page.waitForTimeout(100);
+    expect(await detailDialog.locator('nav[aria-label="Tasks in this session"]').isVisible()).toBe(true);
+    expect(await detailDialog.locator('.skeleton').count()).toBe(0);
+    await expect(detailDialog.getByText('Full reasoning', { exact: true })).toBeVisible();
   });
 
   test('Sessions performs one stable initial request instead of reloading continuously', async ({ page }) => {

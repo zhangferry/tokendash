@@ -138,6 +138,12 @@ test.describe('Agent: Codex', () => {
   test('shows KPI data', async ({ page }) => {
     await expect(page.locator('span:text-is("Total tokens")')).toBeVisible();
   });
+
+  test('does not substitute tool events for unavailable Skill calls', async ({ page }) => {
+    await page.locator('button:has-text("Sessions")').click();
+    await expect(page.locator('[data-od-id="skill-usage"]')).toContainText('Skill calls are not available from this agent’s local logs.');
+    await expect(page.locator('[data-od-id="skill-usage"]')).not.toContainText('frontend-design');
+  });
 });
 
 test.describe('Agent: Pi', () => {
@@ -401,9 +407,12 @@ test.describe('Metric switching', () => {
     await page.locator('button:has-text("Sessions")').click();
     await expect(page.locator('text=Session analytics')).toBeVisible();
     await expect(page.locator('text=LLM call trend')).toBeVisible();
+    await expect(page.locator('text=Tool call distribution')).toBeVisible();
+    await expect(page.getByText('Bash', { exact: true })).toBeVisible();
+    await expect(page.locator('text=Skill usage')).toBeVisible();
     await expect(page.locator('text=frontend-design')).toBeVisible();
-    await expect(page.locator('text=Bash')).not.toBeVisible();
-    await expect(page.locator('text=Avg. user turns per session')).toBeVisible();
+    await expect(page.locator('text=Avg. user turns per session')).not.toBeVisible();
+    await expect(page.locator('[data-od-id="session-detail-table"] th', { hasText: 'Status' })).toHaveCount(0);
     await expect(page.locator('text=Session detail')).toBeVisible();
     await expect(page.getByText('Session task 1', { exact: true })).toBeVisible();
 

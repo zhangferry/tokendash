@@ -307,7 +307,7 @@ export function generateSessionAnalyticsResponse(agent: string): SessionAnalytic
     summary: {
       sessionCount: sessions.length,
       llmCallCount: sessions.reduce((sum, session) => sum + session.llmCallCount, 0),
-      ...(supportsEvents ? { toolCallCount: sessions.reduce((sum, session) => sum + (session.toolCallCount || 0), 0), avgUserTurnCount, longSessionRate: 22.7, toolSuccessRate: 96.8 } : {}),
+      ...(supportsEvents ? { toolCallCount: sessions.reduce((sum, session) => sum + (session.toolCallCount || 0), 0), skillCallCount: 18, avgUserTurnCount, longSessionRate: 22.7, toolSuccessRate: 96.8 } : {}),
       avgDurationMs: durations.reduce((sum, value) => sum + value, 0) / durations.length,
       medianDurationMs: durations.sort((a, b) => a - b)[Math.floor(durations.length / 2)],
     },
@@ -316,7 +316,7 @@ export function generateSessionAnalyticsResponse(agent: string): SessionAnalytic
     durationTurnTrend: llmCallTrend.map((entry, index) => ({ date: entry.date, avgDurationMs: (16 + index * 2) * 60_000, ...(supportsEvents ? { avgUserTurnCount: 4 + index / 3 } : {}) })),
     sessions,
     pagination: {},
-    capabilities: { userTurns: supportsEvents, skills: false, tools: supportsEvents, toolResults: supportsEvents, contentPreview: false },
+    capabilities: { userTurns: supportsEvents, skills: supportsEvents, tools: supportsEvents, toolResults: supportsEvents, contentPreview: false },
   };
 }
 

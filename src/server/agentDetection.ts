@@ -1,12 +1,12 @@
 import { existsSync, readdirSync } from 'node:fs';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
+import { isCodexSessionDirAccessible } from './codexDataSources.js';
 import { isOpenClawAccessible } from './openclawParser.js';
 import { isOpencodeAccessible } from './opencodeParser.js';
 import { isPiAccessible } from './piParser.js';
 
 const CLAUDE_PROJECTS_DIR = join(homedir(), '.claude', 'projects');
-const CODEX_SESSIONS_DIR = join(homedir(), '.codex', 'sessions');
 
 export function isClaudeCodeAvailable(): boolean {
   if (!existsSync(CLAUDE_PROJECTS_DIR)) return false;
@@ -19,7 +19,7 @@ export function isClaudeCodeAvailable(): boolean {
 }
 
 export function isCodexAvailable(): boolean {
-  return existsSync(CODEX_SESSIONS_DIR);
+  return isCodexSessionDirAccessible();
 }
 
 export function isOpencodeAvailable(): boolean {

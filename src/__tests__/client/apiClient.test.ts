@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchAnalytics, fetchBlocks, fetchDaily, fetchProjects } from '../../client/api/client.js';
+import { fetchAnalytics, fetchBlocks, fetchDaily, fetchProjects, fetchSettings, updateCodexDataPaths } from '../../client/api/client.js';
 
 describe('dashboard refresh requests', () => {
   afterEach(() => {
@@ -22,4 +22,20 @@ describe('dashboard refresh requests', () => {
     expect(fetchMock).toHaveBeenNthCalledWith(3, '/api/blocks?agent=pi&project=D%3A%5Cwork%5Capi&refresh=1');
     expect(fetchMock).toHaveBeenNthCalledWith(4, '/api/analytics?agent=pi&project=D%3A%5Cwork%5Capi&refresh=1');
   });
+
+  it('reads and updates Codex data-source settings', async () => {
+    const fetchMock = vi.fn().mockResolvedValue({ ok: true, json: async () => ({ codex: { customDataPaths: [] } }) });
+    vi.stubGlobal('fetch', fetchMock);
+
+    await fetchSettings();
+    await updateCodexDataPaths(['/tmp/custom-codex']);
+
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/settings');
+    expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/settings/codex-data-paths', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ paths: ['/tmp/custom-codex'] }),
+    });
+  });
+
 });

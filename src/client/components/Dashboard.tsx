@@ -15,6 +15,7 @@ import { modelTokenMode, modelBreakdownTokens } from '../utils/modelAggregation.
 
 import { shortModelName } from '../utils/modelNames.js';
 import { AnalyticsSection } from './AnalyticsSection.js';
+import { CodexDataSourcesSettings } from './CodexDataSourcesSettings.js';
 import type { DailyEntry, MetricMode } from '../../shared/types.js';
 
 const C = ['#4f46e5', '#10b981', '#f59e0b', '#ec4899', '#0ea5e9', '#8b5cf6', '#ef4444', '#14b8a6'];
@@ -196,6 +197,7 @@ export function Dashboard() {
   const [timeRange, setTimeRange] = useLocalStorageState<TimeRangeKey>('dashboard_timeRange', '30d');
   const [project, setProject] = useLocalStorageState('dashboard_project', '');
   const [showPricing, setShowPricing] = useState(false);
+  const [showDataSourceSettings, setShowDataSourceSettings] = useState(false);
 
   // Close pricing popup on outside click
   useEffect(() => {
@@ -205,9 +207,8 @@ export function Dashboard() {
     return () => document.removeEventListener('click', close);
   }, [showPricing]);
 
-  // Detect available agents on mount
-  useEffect(() => {
-    fetchAgents()
+  const refreshAgents = useCallback(() => {
+    return fetchAgents()
       .then((info) => {
         setAgentsInfo(info);
         // Fallback stored agent if unavailable
@@ -217,6 +218,11 @@ export function Dashboard() {
       })
       .catch(() => {})
       .finally(() => setAgentsLoading(false));
+  }, [agent, setAgent]);
+
+  // Detect available agents on mount and after settings changes.
+  useEffect(() => {
+    void refreshAgents();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const showAgentSwitcher = (agentsInfo?.available.length ?? 0) > 1;
@@ -233,6 +239,11 @@ export function Dashboard() {
     blocksData.refetch();
     analyticsData.refetch();
   }, [dailyData.refetch, projectsData.refetch, blocksData.refetch, analyticsData.refetch]);
+
+  const handleSettingsSaved = useCallback(() => {
+    void refreshAgents();
+    handleRefreshAll();
+  }, [handleRefreshAll, refreshAgents]);
 
   // 格式化上次更新时间（HH:mm:ss）
   const lastUpdatedStr = dailyData.lastUpdated
@@ -253,14 +264,19 @@ export function Dashboard() {
 
   const projectList = useMemo(() => Object.keys(projectsData.data?.projects || {}).sort(), [projectsData.data]);
 
-  // Filtered daily data: use projectsData for per-project filtering, fallback to dailyData
+  // Filtered daily data: dailyData is canonical for all-project totals.
+  // projectsData can be stale independently because the daemon caches each route
+  // separately; only use it when the user explicitly selects a project.
   const filteredDaily = useMemo(() => {
-    if (projectsData.data) {
+    if (project && projectsData.data) {
       return filterProjectDaily(projectsData.data.projects, project, timeRange);
     }
-    // Fallback while projectsData is loading: use dailyData flat entries
     if (dailyData.data) {
       return filterByTime(dailyData.data.daily, timeRange);
+    }
+    // Fallback while dailyData is loading: use projectsData if available.
+    if (projectsData.data) {
+      return filterProjectDaily(projectsData.data.projects, project, timeRange);
     }
     return [];
   }, [projectsData.data, dailyData.data, project, timeRange]);
@@ -534,9 +550,30 @@ export function Dashboard() {
     );
   };
 
+  const renderSettingsButton = () => (
+    <button
+      type="button"
+      onClick={() => setShowDataSourceSettings(true)}
+      title="Configure Codex data sources"
+      className="flex items-center justify-center w-8 h-8 rounded-lg text-stone-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+      aria-label="Configure Codex data sources"
+    >
+      <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 6V4m0 16v-2m8-6h-2M6 12H4m12.95 4.95-1.414-1.414M8.464 8.464 7.05 7.05m9.9 0-1.414 1.414M8.464 15.536 7.05 16.95M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6Z" /></svg>
+    </button>
+  );
+
+  const renderSettingsModal = () => (
+    <CodexDataSourcesSettings
+      open={showDataSourceSettings}
+      onClose={() => setShowDataSourceSettings(false)}
+      onSaved={handleSettingsSaved}
+    />
+  );
+
   if (coreLoading) {
     return (
       <div className="max-w-[1440px] mx-auto px-6 py-10">
+        {renderSettingsModal()}
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
           <div className="flex flex-col gap-1.5">
             <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">TokenDash</h1>
@@ -552,6 +589,7 @@ export function Dashboard() {
                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
               </svg>
             </button>
+            {renderSettingsButton()}
             {showAgentSwitcher && renderAgentSwitcher()}
           </div>
         </div>
@@ -565,6 +603,7 @@ export function Dashboard() {
 
   if (coreError) return (
     <div className="max-w-[1440px] mx-auto px-6 py-10">
+      {renderSettingsModal()}
       <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-8">
         <div className="flex flex-col gap-1.5">
           <h1 className="text-3xl font-extrabold tracking-tight text-stone-900">TokenDash</h1>
@@ -580,6 +619,7 @@ export function Dashboard() {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
             </svg>
           </button>
+          {renderSettingsButton()}
           {showAgentSwitcher && renderAgentSwitcher()}
         </div>
       </div>
@@ -591,6 +631,7 @@ export function Dashboard() {
 
   return (
     <div className="max-w-[1440px] mx-auto px-6 py-10">
+      {renderSettingsModal()}
       {/* Narrative Header & Filter Bar */}
       <div className="mb-8">
         <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-6 mb-6">
@@ -617,6 +658,7 @@ export function Dashboard() {
                 </svg>
               </button>
             </div>
+            {renderSettingsButton()}
             {showAgentSwitcher && renderAgentSwitcher()}
           </div>
         </div>

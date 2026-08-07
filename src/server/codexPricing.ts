@@ -88,9 +88,9 @@ function stripDateSuffix(model: string): string {
     .replace(/-\d{8}$/, '');
 }
 
-/** Normalize Codex log model labels to pricing keys. */
+/** Normalize Codex log model labels to stable display and pricing keys. */
 export function normalizeCodexModelName(model: string): string {
-  const stripped = stripDateSuffix(model.trim());
+  const stripped = stripDateSuffix(model.trim().toLowerCase());
   return stripped === 'gpt-5.6' ? 'gpt-5.6-sol' : stripped;
 }
 

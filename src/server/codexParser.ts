@@ -1,10 +1,10 @@
-import { readFileSync, readdirSync, statSync, accessSync, constants } from 'node:fs';
+import { readFileSync, readdirSync, statSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
-import { homedir } from 'node:os';
 import { z } from 'zod';
 import type { DailyEntry, DailyResponse, ProjectsResponse, BlockEntry, BlocksResponse, ModelBreakdown } from '../shared/types.js';
-import { calculateCost, isLongContextCodexRequest } from './codexPricing.js';
+import { calculateCost, isLongContextCodexRequest, normalizeCodexModelName } from './codexPricing.js';
 import { buildUsageFileIndex } from './usageFileIndex.js';
+import { getCodexSessionDirs, isCodexSessionDirAccessible } from './codexDataSources.js';
 
 // ---------------------------------------------------------------------------
 // Zod schemas for JSONL event validation (format change detector)
@@ -79,7 +79,7 @@ interface AggregateBucket {
   models: Map<string, TokenAccumulator>;
 }
 
-const CODEX_INDEX_VERSION = 'codex-session-v4';
+const CODEX_INDEX_VERSION = 'codex-session-v5-multihome';
 const DEFAULT_TZ = 'Asia/Shanghai';
 
 interface SerializedAggregateBucket {
@@ -167,18 +167,9 @@ function displayInputTokens(inputTokens: number, cachedInputTokens: number): num
 // Helpers
 // ---------------------------------------------------------------------------
 
-/** Resolve the Codex data root from CODEX_HOME, falling back to ~/.codex. */
-function getCodexHome(): string {
-  return process.env.CODEX_HOME || join(homedir(), '.codex');
-}
-
 /** Return every Codex transcript directory whose JSONL usage should be counted. */
 function getSessionDirs(): string[] {
-  const codexHome = getCodexHome();
-  return [
-    join(codexHome, 'sessions'),
-    join(codexHome, 'archived_sessions'),
-  ];
+  return getCodexSessionDirs();
 }
 
 /**
@@ -218,14 +209,7 @@ function detectReplaySecond(content: string): string | null {
 }
 
 export function isSessionsDirAccessible(): boolean {
-  return getSessionDirs().some(dir => {
-    try {
-      accessSync(dir, constants.R_OK);
-      return true;
-    } catch {
-      return false;
-    }
-  });
+  return isCodexSessionDirAccessible();
 }
 
 /**
@@ -235,6 +219,19 @@ export function isSessionsDirAccessible(): boolean {
  */
 export function scanCodexSessions(): string[] {
   const results: string[] = [];
+  const seen = new Set<string>();
+
+  function addResult(path: string): void {
+    let canonical = path;
+    try {
+      canonical = realpathSync(path);
+    } catch {
+      // Keep the original path if the file disappeared between stat and realpath.
+    }
+    if (seen.has(canonical)) return;
+    seen.add(canonical);
+    results.push(path);
+  }
 
   function walk(dir: string): void {
     let entries;
@@ -254,7 +251,7 @@ export function scanCodexSessions(): string[] {
       if (st.isDirectory()) {
         walk(full);
       } else if (entry.endsWith('.jsonl')) {
-        results.push(full);
+        addResult(full);
       }
     }
   }
@@ -561,8 +558,9 @@ function mergeAcc(a: TokenAccumulator, b: TokenAccumulator): void {
 function addAccToBucket(bucket: AggregateBucket, ev: ParsedTokenEvent, model: string): void {
   addAcc(bucket.acc, ev);
   if (!model) return;
-  if (!bucket.models.has(model)) bucket.models.set(model, emptyAcc());
-  addAcc(bucket.models.get(model)!, ev);
+  const normalizedModel = normalizeCodexModelName(model);
+  if (!bucket.models.has(normalizedModel)) bucket.models.set(normalizedModel, emptyAcc());
+  addAcc(bucket.models.get(normalizedModel)!, ev);
 }
 
 function emptySerializedBucket(): SerializedAggregateBucket {
@@ -577,8 +575,9 @@ function bucketFor(map: Record<string, SerializedAggregateBucket>, key: string):
 function addAccToSerializedBucket(bucket: SerializedAggregateBucket, ev: ParsedTokenEvent, model: string): void {
   addAcc(bucket.acc, ev);
   if (!model) return;
-  if (!bucket.models[model]) bucket.models[model] = emptyAcc();
-  addAcc(bucket.models[model], ev);
+  const normalizedModel = normalizeCodexModelName(model);
+  if (!bucket.models[normalizedModel]) bucket.models[normalizedModel] = emptyAcc();
+  addAcc(bucket.models[normalizedModel], ev);
 }
 
 function mergeSerializedBucket(target: SerializedAggregateBucket, source: SerializedAggregateBucket): void {

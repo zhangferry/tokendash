@@ -1,5 +1,6 @@
 import { test, expect } from '@playwright/test';
-import { mockApiRoutes } from './fixtures.js';
+import { generateDailyResponse, mockApiRoutes } from './fixtures.js';
+import { formatTokens } from '../src/client/utils/formatters.js';
 
 // ---------------------------------------------------------------------------
 // Helper: set up mocked page and wait for initial load
@@ -175,6 +176,37 @@ test.describe('Dashboard refresh', () => {
 
     await page.locator('button[title^="刷新数据"]').click();
     await Promise.all(refreshRequests);
+  });
+
+  test('all-project totals prefer fresh daily data when project cache is stale', async ({ page }) => {
+    await mockApiRoutes(page, { agents: ['codex'], staleProjectsForAgent: 'codex' });
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+    await page.waitForSelector('text=Total tokens', { timeout: 15000 });
+    await page.locator('button:has-text("Today")').click();
+
+    const expectedTodayTotal = generateDailyResponse('codex').daily.at(-1)!.totalTokens;
+    const totalCard = page.locator('div:has(> span:text-is("Total tokens"))').first();
+    await expect(totalCard.locator('span').nth(1)).toHaveText(formatTokens(expectedTodayTotal));
+  });
+});
+
+test.describe('Codex data-source settings', () => {
+  test('opens custom path settings and saves configured sources', async ({ page }) => {
+    await setupPage(page);
+    const settingsRequest = page.waitForResponse(response => response.url().includes('/api/settings') && response.request().method() === 'GET');
+    await page.locator('button[aria-label="Configure Codex data sources"]').click();
+    await settingsRequest;
+
+    await expect(page.locator('text=Codex data sources')).toBeVisible();
+    await expect(page.locator('text=Multiple paths are supported')).toBeVisible();
+    await expect(page.locator('textarea')).toHaveValue('/Users/test/.custom-codex');
+
+    const putRequest = page.waitForRequest(request => request.url().includes('/api/settings/codex-data-paths') && request.method() === 'PUT');
+    await page.locator('textarea').fill('/Users/test/.custom-codex\n/Users/test/.another-codex');
+    await page.locator('button:has-text("Save paths")').click();
+    const request = await putRequest;
+    expect(request.postDataJSON()).toEqual({ paths: ['/Users/test/.custom-codex', '/Users/test/.another-codex'] });
+    await expect(page.locator('text=Dashboard data is refreshing')).toBeVisible();
   });
 });
 

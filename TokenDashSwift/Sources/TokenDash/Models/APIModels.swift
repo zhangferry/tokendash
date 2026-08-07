@@ -51,6 +51,32 @@ struct ProjectsResponse: Codable {
     let projects: [String: [DailyEntry]]
 }
 
+
+// MARK: - App Settings Models
+
+struct AppSettingsResponse: Codable {
+    let codex: CodexSettingsResponse
+}
+
+struct CodexSettingsResponse: Codable {
+    let officialDataPaths: [String]
+    let environmentDataPaths: [String]
+    let customDataPaths: [String]
+    let resolvedDataPaths: [CodexDataPathStatusResponse]
+}
+
+struct CodexDataPathStatusResponse: Codable, Identifiable {
+    let path: String
+    let kind: String
+    let readable: Bool
+    let sessionDirs: [String]
+    var id: String { "\(kind):\(path)" }
+}
+
+struct CodexDataPathsRequest: Encodable {
+    let paths: [String]
+}
+
 // MARK: - Quota (Coding Plan) Models
 
 struct QuotaResponse: Codable {

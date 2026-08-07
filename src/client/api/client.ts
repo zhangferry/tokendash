@@ -1,10 +1,31 @@
-import type { DailyResponse, MonthlyResponse, SessionResponse, ProjectsResponse, BlocksResponse, AnalyticsResponse } from '../../shared/types.js';
+import type { DailyResponse, MonthlyResponse, SessionResponse, ProjectsResponse, BlocksResponse, AnalyticsResponse, AppSettingsResponse } from '../../shared/types.js';
 
 const BASE = '/api';
 
 export interface AgentsResponse {
   available: string[];
   default: string | null;
+}
+
+
+export async function fetchSettings(): Promise<AppSettingsResponse> {
+  const res = await fetch(`${BASE}/settings`);
+  if (!res.ok) {
+    throw new Error(`Failed to fetch settings: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
+}
+
+export async function updateCodexDataPaths(paths: string[]): Promise<AppSettingsResponse> {
+  const res = await fetch(`${BASE}/settings/codex-data-paths`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ paths }),
+  });
+  if (!res.ok) {
+    throw new Error(`Failed to update Codex data paths: ${res.status} ${res.statusText}`);
+  }
+  return res.json();
 }
 
 export async function fetchAgents(): Promise<AgentsResponse> {

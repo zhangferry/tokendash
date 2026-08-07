@@ -1,19 +1,44 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { describe, it, expect, afterEach } from 'vitest';
-import { buildCodexResponsesFromSessions, deduplicateParsedSessions, parseCodexSession, scanCodexSessions, type ParsedSession } from '../../server/codexParser.js';
+import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { buildCodexResponsesFromSessions, deduplicateParsedSessions, isSessionsDirAccessible, parseCodexSession, scanCodexSessions, type ParsedSession } from '../../server/codexParser.js';
 import { calculateCost } from '../../server/codexPricing.js';
+import { updateCodexCustomDataPaths } from '../../server/appSettings.js';
 import type { DailyEntry, Totals } from '../../shared/types.js';
 
 const tempDirs: string[] = [];
 const originalCodexHome = process.env.CODEX_HOME;
+const originalTokendashCodexHome = process.env.TOKENDASH_CODEX_HOME;
+const originalTokendashCodexHomes = process.env.TOKENDASH_CODEX_HOMES;
+const originalTokendashSettingsFile = process.env.TOKENDASH_SETTINGS_FILE;
+
+beforeEach(() => {
+  const settingsDir = mkdtempSync(join(tmpdir(), 'tokendash-settings-'));
+  tempDirs.push(settingsDir);
+  process.env.TOKENDASH_SETTINGS_FILE = join(settingsDir, 'settings.json');
+});
 
 afterEach(() => {
   if (originalCodexHome === undefined) {
     delete process.env.CODEX_HOME;
   } else {
     process.env.CODEX_HOME = originalCodexHome;
+  }
+  if (originalTokendashCodexHome === undefined) {
+    delete process.env.TOKENDASH_CODEX_HOME;
+  } else {
+    process.env.TOKENDASH_CODEX_HOME = originalTokendashCodexHome;
+  }
+  if (originalTokendashCodexHomes === undefined) {
+    delete process.env.TOKENDASH_CODEX_HOMES;
+  } else {
+    process.env.TOKENDASH_CODEX_HOMES = originalTokendashCodexHomes;
+  }
+  if (originalTokendashSettingsFile === undefined) {
+    delete process.env.TOKENDASH_SETTINGS_FILE;
+  } else {
+    process.env.TOKENDASH_SETTINGS_FILE = originalTokendashSettingsFile;
   }
   while (tempDirs.length > 0) {
     const dir = tempDirs.pop();
@@ -104,6 +129,46 @@ function sumDaily(entries: DailyEntry[]): Totals {
 }
 
 describe('scanCodexSessions', () => {
+  it('includes settings-configured Codex-compatible homes without hardcoded non-official defaults', () => {
+    const primaryHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-primary-'));
+    const customHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-custom-'));
+    tempDirs.push(primaryHome, customHome);
+    process.env.CODEX_HOME = primaryHome;
+    updateCodexCustomDataPaths([customHome]);
+
+    const primaryDir = join(primaryHome, 'sessions', '2026', '07', '23');
+    const customDir = join(customHome, 'archived_sessions');
+    const fixtureDir = join(customHome, '.tmp', 'fixtures');
+    mkdirSync(primaryDir, { recursive: true });
+    mkdirSync(customDir, { recursive: true });
+    mkdirSync(fixtureDir, { recursive: true });
+
+    const primarySession = join(primaryDir, 'rollout-primary.jsonl');
+    const customSession = join(customDir, 'rollout-custom.jsonl');
+    const ignoredFixture = join(fixtureDir, 'rollout-fixture.jsonl');
+    writeFileSync(primarySession, '');
+    writeFileSync(customSession, '');
+    writeFileSync(ignoredFixture, '');
+
+    expect(scanCodexSessions()).toEqual([primarySession, customSession].sort());
+    expect(isSessionsDirAccessible()).toBe(true);
+  });
+
+  it('accepts a direct custom sessions directory from settings', () => {
+    const primaryHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-primary-'));
+    const directRoot = mkdtempSync(join(tmpdir(), 'tokendash-codex-direct-'));
+    const directSessionsDir = join(directRoot, 'sessions');
+    tempDirs.push(primaryHome, directRoot);
+    mkdirSync(directSessionsDir, { recursive: true });
+    process.env.CODEX_HOME = primaryHome;
+    updateCodexCustomDataPaths([directSessionsDir]);
+
+    const sessionFile = join(directSessionsDir, 'rollout-direct.jsonl');
+    writeFileSync(sessionFile, '');
+
+    expect(scanCodexSessions()).toEqual([sessionFile]);
+  });
+
   it('keeps archived Codex sessions in the usage source set', () => {
     const codexHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-home-'));
     tempDirs.push(codexHome);
@@ -289,6 +354,18 @@ describe('parseCodexSession', () => {
 });
 
 describe('buildCodexResponsesFromSessions', () => {
+  it('normalizes model casing across Codex-compatible distributors', () => {
+    const responses = buildCodexResponsesFromSessions([
+      session('s1', '/repo/project-a', 'gpt-5.5', [event('2026-05-18T01:00:00.000Z', 1_000, 50)]),
+      session('s2', '/repo/project-a', 'GPT-5.5', [event('2026-05-18T02:00:00.000Z', 2_000, 100)]),
+    ], { timezone: 'UTC' });
+
+    const daily = responses.daily.daily[0];
+    expect(daily.modelsUsed).toEqual(['gpt-5.5']);
+    expect(daily.modelBreakdowns).toHaveLength(1);
+    expect(daily.modelBreakdowns[0]).toMatchObject({ modelName: 'gpt-5.5', inputTokens: 3_000, outputTokens: 150 });
+  });
+
   it('keeps daily, project table, and block totals consistent', () => {
     const responses = buildCodexResponsesFromSessions([
       session('s1', '/repo/project-a', 'gpt-5.4', [
@@ -423,6 +500,18 @@ describe('Codex pricing', () => {
     expect(gpt54).toBeCloseTo(16.375, 6);
     expect(gpt55).toBeCloseTo(32.75, 6);
     expect(gpt55).toBeCloseTo(gpt54 * 2, 6);
+  });
+
+  it('prices uppercase distributor model labels with the same canonical rates', () => {
+    const tokens = {
+      inputTokens: 1_000_000,
+      cachedInputTokens: 500_000,
+      outputTokens: 1_000_000,
+      reasoningOutputTokens: 0,
+      totalTokens: 2_000_000,
+    };
+
+    expect(calculateCost(tokens, new Set(['GPT-5.5']))).toBeCloseTo(32.75, 6);
   });
 
   it('normalizes GPT-5.6 aliases and date suffixes to Sol pricing', () => {

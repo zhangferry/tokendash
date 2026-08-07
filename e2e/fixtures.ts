@@ -289,6 +289,7 @@ export interface FixtureOverrides {
   // Allow selectively omitting data to test loading/error states
   emptyAgents?: boolean;
   noBlocks?: boolean;
+  staleProjectsForAgent?: string;
 }
 
 export async function mockApiRoutes(
@@ -297,6 +298,29 @@ export async function mockApiRoutes(
 ) {
   const agentList = overrides.agents || ['claude', 'opencode', 'codex'];
   const cache = new Map<string, unknown>();
+
+  function staleProjectsResponse(agent: string): ProjectsResponse {
+    const response = JSON.parse(JSON.stringify(generateProjectsResponse(agent))) as ProjectsResponse;
+    const today = todayStr();
+    for (const entries of Object.values(response.projects)) {
+      for (const entry of entries) {
+        if (entry.date !== today) continue;
+        entry.inputTokens = 0;
+        entry.outputTokens = 0;
+        entry.cacheReadTokens = 0;
+        entry.totalTokens = 0;
+        entry.totalCost = 0;
+        entry.modelBreakdowns = entry.modelBreakdowns.map(model => ({
+          ...model,
+          inputTokens: 0,
+          outputTokens: 0,
+          cacheReadTokens: 0,
+          cost: 0,
+        }));
+      }
+    }
+    return response;
+  }
 
   function getOrGenerate(key: string, generator: () => unknown): unknown {
     if (!cache.has(key)) cache.set(key, generator());
@@ -317,6 +341,40 @@ export async function mockApiRoutes(
         }
         break;
 
+
+      case 'settings':
+        await route.fulfill({
+          json: {
+            codex: {
+              officialDataPaths: ['/Users/test/.codex'],
+              environmentDataPaths: [],
+              customDataPaths: ['/Users/test/.custom-codex'],
+              resolvedDataPaths: [
+                { path: '/Users/test/.codex', kind: 'official', readable: true, sessionDirs: ['/Users/test/.codex/sessions', '/Users/test/.codex/archived_sessions'] },
+                { path: '/Users/test/.custom-codex', kind: 'custom', readable: true, sessionDirs: ['/Users/test/.custom-codex/sessions', '/Users/test/.custom-codex/archived_sessions'] },
+              ],
+            },
+          },
+        });
+        break;
+
+      case 'settings/codex-data-paths':
+        await route.fulfill({
+          json: {
+            codex: {
+              officialDataPaths: ['/Users/test/.codex'],
+              environmentDataPaths: [],
+              customDataPaths: ['/Users/test/.custom-codex', '/Users/test/.another-codex'],
+              resolvedDataPaths: [
+                { path: '/Users/test/.codex', kind: 'official', readable: true, sessionDirs: ['/Users/test/.codex/sessions', '/Users/test/.codex/archived_sessions'] },
+                { path: '/Users/test/.custom-codex', kind: 'custom', readable: true, sessionDirs: ['/Users/test/.custom-codex/sessions', '/Users/test/.custom-codex/archived_sessions'] },
+                { path: '/Users/test/.another-codex', kind: 'custom', readable: false, sessionDirs: ['/Users/test/.another-codex/sessions', '/Users/test/.another-codex/archived_sessions'] },
+              ],
+            },
+          },
+        });
+        break;
+
       case 'daily':
         await route.fulfill({
           json: getOrGenerate(`daily:${agent}`, () => generateDailyResponse(agent)),
@@ -325,7 +383,9 @@ export async function mockApiRoutes(
 
       case 'projects':
         await route.fulfill({
-          json: getOrGenerate(`projects:${agent}`, () => generateProjectsResponse(agent)),
+          json: overrides.staleProjectsForAgent === agent
+            ? getOrGenerate(`projects:${agent}:stale`, () => staleProjectsResponse(agent))
+            : getOrGenerate(`projects:${agent}`, () => generateProjectsResponse(agent)),
         });
         break;
 

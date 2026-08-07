@@ -47,6 +47,28 @@ actor APIClient: APIClientProtocol {
         try await fetch("/quota\(refresh ? "?refresh=1" : "")")
     }
 
+    func getSettings() async throws -> AppSettingsResponse {
+        try await fetch("/settings")
+    }
+
+    func updateCodexDataPaths(_ paths: [String]) async throws -> AppSettingsResponse {
+        guard let url = URL(string: baseURL + "/settings/codex-data-paths") else {
+            throw APIClientError.invalidURL
+        }
+
+        var request = URLRequest(url: url)
+        request.httpMethod = "PUT"
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try JSONEncoder().encode(CodexDataPathsRequest(paths: paths))
+
+        let (data, response) = try await URLSession.shared.data(for: request)
+        let statusCode = (response as? HTTPURLResponse)?.statusCode ?? -1
+        guard statusCode == 200 else {
+            throw APIClientError.httpError(statusCode)
+        }
+        return try JSONDecoder().decode(AppSettingsResponse.self, from: data)
+    }
+
     func validateCredential(provider: String, apiKey: String) async throws -> QuotaCredentialValidationResponse {
         guard let url = URL(string: baseURL + "/quota/validate") else {
             throw APIClientError.invalidURL

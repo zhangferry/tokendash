@@ -421,11 +421,17 @@ test.describe('Metric switching', () => {
     await expect(detailDialog).toBeVisible();
     expect(await detailDialog.getByRole('button', { name: 'Retry' }).count()).toBe(0);
     await expect(page.getByText('Task overview', { exact: true })).toBeVisible();
+    const inputContext = detailDialog.getByRole('region', { name: 'Input context' });
+    await expect(inputContext).toBeVisible();
+    await expect(inputContext.getByText('System prompt', { exact: true })).toBeVisible();
+    await expect(inputContext.getByText('AGENTS.md instructions', { exact: true })).toBeVisible();
+    await inputContext.getByRole('button', { name: 'Read full context' }).first().click();
+    await expect(inputContext.getByText('Preserve user files and verify implementation changes before reporting completion.', { exact: false })).toBeVisible();
     await expect(page.getByText('Tasks in this session', { exact: true })).toBeVisible();
     await expect(page.getByText('User request · Task 1', { exact: true })).toBeVisible();
     await expect(detailDialog.getByText('Review the dashboard’s session analytics detail and make the run history easier to inspect.', { exact: true }).last()).toBeVisible();
     await expect(page.getByText('I need to inspect the event model before deciding how the detail view should group requests, responses, and tool invocations.', { exact: true })).toBeVisible();
-    await page.getByRole('button', { name: 'Read full reasoning' }).click();
+    await detailDialog.locator('article').filter({ hasText: 'Model reasoning' }).getByRole('button', { name: 'Show details' }).click();
     await expect(page.getByText('The reasoning must remain visible alongside the final model response.', { exact: false })).toBeVisible();
     await expect(detailDialog.getByText('Final response', { exact: true }).first()).toBeVisible();
     await expect(detailDialog.getByText('I traced the session detail flow and identified where the event metadata loses the meaningful request and response content.', { exact: true })).toBeVisible();

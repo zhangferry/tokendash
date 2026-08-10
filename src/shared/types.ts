@@ -136,6 +136,7 @@ export interface AppSettingsResponse {
 export type SessionStatus = 'active' | 'complete' | 'interrupted' | 'unknown';
 
 export type SessionEventType =
+  | 'input_context'
   | 'user_message'
   | 'llm_call'
   | 'skill_call'
@@ -181,6 +182,10 @@ export interface SessionEvent {
   callId?: string;
   timestamp: string;
   type: SessionEventType;
+  /** Input supplied around the human request without being authored as that request. */
+  inputKind?: 'system' | 'developer' | 'runtime';
+  /** Human-readable source section such as Permissions, Skills, or AGENTS.md. */
+  contextLabel?: string;
   model?: string;
   skillName?: string;
   toolName?: string;
@@ -198,6 +203,8 @@ export interface SessionEvent {
   contentPreview?: string;
   /** True only when this individual event can be safely retrieved on demand. */
   contentAvailable: boolean;
+  /** True when a source record exceeded the bounded detail payload. */
+  contentTruncated?: boolean;
   /** Returned only for a single detail request with include=content. */
   content?: string;
 }

@@ -127,9 +127,11 @@ describe('buildSessionAnalyticsResponse', () => {
     expect(expanded.events[1]?.content).toContain('without collapsing the model response');
   });
 
-  it('uses canonical Codex task and agent messages instead of injected role=user context', () => {
+  it('keeps Codex system and runtime input context separate from canonical user requests', () => {
     const parsed = parseCodexTranscriptMetadata([
-      JSON.stringify({ timestamp: '2026-08-03T01:00:00.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>injected runtime context</environment_context>' }] } }),
+      JSON.stringify({ timestamp: '2026-08-03T00:59:59.000Z', type: 'response_item', payload: { type: 'message', role: 'system', content: [{ type: 'input_text', text: 'You are an AI coding assistant.\nKeep answers grounded in the workspace.' }] } }),
+      JSON.stringify({ timestamp: '2026-08-03T00:59:59.100Z', type: 'response_item', payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text: '<permissions instructions>Filesystem access is unrestricted.</permissions instructions>' }, { type: 'input_text', text: '<skills_instructions>Use applicable skills.</skills_instructions>' }] } }),
+      JSON.stringify({ timestamp: '2026-08-03T01:00:00.000Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: '<environment_context>injected runtime context</environment_context>' }, { type: 'input_text', text: '# AGENTS.md instructions\nDo not treat this as the user request.' }] } }),
       JSON.stringify({ timestamp: '2026-08-03T01:00:00.010Z', type: 'response_item', payload: { type: 'message', role: 'user', content: [{ type: 'input_text', text: 'Investigate the Hermes integration.' }] } }),
       JSON.stringify({ timestamp: '2026-08-03T01:00:00.010Z', type: 'event_msg', payload: { type: 'user_message', message: 'Investigate the Hermes integration.' } }),
       JSON.stringify({ timestamp: '2026-08-03T01:00:04.000Z', type: 'event_msg', payload: { type: 'agent_message', phase: 'commentary', message: 'I will inspect the current configuration first.' } }),
@@ -139,9 +141,41 @@ describe('buildSessionAnalyticsResponse', () => {
     expect(parsed.userTurns).toBe(1);
     expect(parsed.title).toBe('Investigate the Hermes integration.');
     expect(parsed.events).toMatchObject([
+      { type: 'input_context', inputKind: 'system', contextLabel: 'System prompt', contentPreview: 'You are an AI coding assistant.\nKeep answers grounded in the workspace.', contentAvailable: true },
+      { type: 'input_context', inputKind: 'developer', contextLabel: 'Permissions', contentPreview: '<permissions instructions>Filesystem access is unrestricted.</permissions instructions>', contentAvailable: true },
+      { type: 'input_context', inputKind: 'developer', contextLabel: 'Skills', contentPreview: '<skills_instructions>Use applicable skills.</skills_instructions>', contentAvailable: true },
+      { type: 'input_context', inputKind: 'runtime', contextLabel: 'Environment', contentPreview: '<environment_context>injected runtime context</environment_context>', contentAvailable: true },
+      { type: 'input_context', inputKind: 'runtime', contextLabel: 'AGENTS.md instructions', contentPreview: '# AGENTS.md instructions\nDo not treat this as the user request.', contentAvailable: true },
       { type: 'user_message', summary: 'User request', contentPreview: 'Investigate the Hermes integration.', contentAvailable: true },
       { type: 'assistant_message', phase: 'commentary', summary: 'Agent update', contentPreview: 'I will inspect the current configuration first.' },
       { type: 'assistant_message', phase: 'final_answer', summary: 'Final response', contentPreview: 'The Hermes integration is ready.' },
     ]);
+  });
+
+  it('retains large input context while redacting structured secrets and home-directory usernames', () => {
+    const longBody = 'x'.repeat(13_000);
+    const parsed = parseCodexTranscriptMetadata(JSON.stringify({
+      timestamp: '2026-08-03T01:00:00.000Z',
+      type: 'response_item',
+      payload: {
+        type: 'message',
+        role: 'developer',
+        content: [{ type: 'input_text', text: `<skills_instructions>\napiKey: "secret-value"\n<password>another-secret</password>\n"private_key": "json-private-key"\n<private_key>xml-private-key</private_key>\npath: /Users/alice/project\n${longBody}\n</skills_instructions>` }],
+      },
+    }));
+
+    const context = parsed.events[0];
+    expect(context).toMatchObject({ type: 'input_context', contextLabel: 'Skills', contentAvailable: true });
+    expect(context?.content?.length).toBeGreaterThan(12_000);
+    expect(context?.content).toContain('apiKey: [redacted]');
+    expect(context?.content).toContain('<password>[redacted]</password>');
+    expect(context?.content).toContain('"private_key": [redacted]');
+    expect(context?.content).toContain('<private_key>[redacted]</private_key>');
+    expect(context?.content).toContain('/Users/[user]/project');
+    expect(context?.content).not.toContain('secret-value');
+    expect(context?.content).not.toContain('another-secret');
+    expect(context?.content).not.toContain('json-private-key');
+    expect(context?.content).not.toContain('xml-private-key');
+    expect(context?.content).not.toContain('/Users/alice');
   });
 });

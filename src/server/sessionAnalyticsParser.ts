@@ -57,6 +57,7 @@ const TITLE_LIMIT = 96;
 const VALUE_LIMIT = 120;
 const CONTENT_PREVIEW_LIMIT = 280;
 const CONTENT_LIMIT = 12_000;
+const INPUT_CONTEXT_LIMIT = 64_000;
 const SENSITIVE_KEY = /(?:api[_-]?key|access[_-]?token|auth(?:orization)?|password|passwd|secret|client[_-]?secret|cookie|credential|private[_-]?key)/i;
 const BODY_KEY = /(?:body|content|stdout|stderr|output|text|prompt|message|transcript)/i;
 
@@ -65,32 +66,95 @@ function compactText(value: string): string {
 }
 
 /** Remove common secret forms before any source-derived text reaches an API response. */
-function redactText(value: string): string {
-  return compactText(value)
+function redactSecrets(value: string): string {
+  return value
     .replace(/\b(?:sk|pk|rk)_[A-Za-z0-9_-]{12,}\b/g, '[redacted]')
     .replace(/\b(?:ghp|gho|github_pat)_[A-Za-z0-9_-]{12,}\b/gi, '[redacted]')
     .replace(/\bAKIA[0-9A-Z]{16}\b/g, '[redacted]')
+    .replace(/-----BEGIN [A-Z ]*PRIVATE KEY-----[\s\S]*?-----END [A-Z ]*PRIVATE KEY-----/g, '[redacted private key]')
     .replace(/\bBearer\s+[^\s,;]+/gi, 'Bearer [redacted]')
-    .replace(/\b(api[_-]?key|access[_-]?token|auth(?:orization)?|password|passwd|secret|client[_-]?secret)\s*([:=])\s*([^\s,;]+)/gi, '$1$2[redacted]');
+    .replace(/(<(api[_-]?key|access[_-]?token|auth(?:orization)?|password|passwd|secret|client[_-]?secret|cookie|credential|private[_-]?key)>)[\s\S]*?(<\/\2>)/gi, '$1[redacted]$3')
+    .replace(/((?:["']?)(?:api[_-]?key|access[_-]?token|auth(?:orization)?|password|passwd|secret|client[_-]?secret|cookie|credential|private[_-]?key)(?:["']?)\s*[:=]\s*)(?:"[^"]*"|'[^']*'|[^\s,;]+)/gi, '$1[redacted]')
+    .replace(/\/Users\/[^/\s<>"']+/g, '/Users/[user]')
+    .replace(/\/home\/[^/\s<>"']+/g, '/home/[user]');
+}
+
+function redactText(value: string): string {
+  return redactSecrets(compactText(value));
+}
+
+function redactSourceText(value: string): string {
+  const normalized = value
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/g, ' ')
+    .trim();
+  return redactSecrets(normalized);
 }
 
 function truncate(value: string, limit: number): string {
   return value.length > limit ? `${value.slice(0, Math.max(1, limit - 1)).trimEnd()}…` : value;
 }
 
-function textFromContent(content: unknown): string | undefined {
-  if (typeof content === 'string') return compactText(content) || undefined;
-  if (!Array.isArray(content)) return undefined;
-  const texts = content
+function sourceTextItems(content: unknown): string[] {
+  if (typeof content === 'string') return content.trim() ? [content] : [];
+  if (!Array.isArray(content)) return [];
+  return content
     .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
     .filter(item => item.type === 'text' || item.type === 'input_text')
     .map(item => typeof item.text === 'string' ? item.text : '')
     .filter(Boolean);
+}
+
+const CONTEXT_SOURCES: Array<{ pattern: RegExp; label: string; runtime: boolean }> = [
+  { pattern: /^<app-context>/i, label: 'App context', runtime: true },
+  { pattern: /^<permissions(?:\s+instructions)?>/i, label: 'Permissions', runtime: true },
+  { pattern: /^<skills_instructions>/i, label: 'Skills', runtime: true },
+  { pattern: /^<environment_context>/i, label: 'Environment', runtime: true },
+  { pattern: /^<recommended_plugins>/i, label: 'Recommended plugins', runtime: true },
+  { pattern: /^<collaboration_mode>/i, label: 'Collaboration mode', runtime: true },
+  { pattern: /^<apps_instructions>/i, label: 'App instructions', runtime: true },
+  { pattern: /^<plugins_instructions>/i, label: 'Plugin instructions', runtime: true },
+  { pattern: /^<multi_agent_mode>/i, label: 'Multi-agent mode', runtime: true },
+  { pattern: /^#\s*AGENTS\.md/i, label: 'AGENTS.md instructions', runtime: true },
+];
+
+function contextSource(text: string) {
+  const value = text.trimStart();
+  return CONTEXT_SOURCES.find(source => source.pattern.test(value));
+}
+
+function isRuntimeContext(text: string): boolean {
+  return contextSource(text)?.runtime === true;
+}
+
+function textFromContent(content: unknown): string | undefined {
+  const texts = sourceTextItems(content);
   // Codex records environment and agent policy as role=user input_text blocks.
   // Those are not useful session titles and can be much larger than the actual request.
-  const userAuthored = texts.filter(text => !/^\s*(?:<(?:recommended_plugins|environment_context|permissions|app-context|skills_instructions)|#\s*AGENTS\.md)/i.test(text));
+  const userAuthored = texts.filter(text => !isRuntimeContext(text));
   const text = userAuthored.join(' ');
   return compactText(text) || undefined;
+}
+
+function contextLabel(text: string, kind: NonNullable<SessionEvent['inputKind']>): string {
+  return contextSource(text)?.label || (kind === 'system' ? 'System prompt' : kind === 'developer' ? 'Developer instructions' : 'Runtime context');
+}
+
+function inputContextEvent(text: string, kind: NonNullable<SessionEvent['inputKind']>, timestamp: string, index: number): SessionEvent | undefined {
+  const source = redactSourceText(text);
+  const content = truncate(source, INPUT_CONTEXT_LIMIT);
+  if (!content) return undefined;
+  const label = contextLabel(content, kind);
+  return {
+    id: `context-${index}`,
+    timestamp,
+    type: 'input_context',
+    inputKind: kind,
+    contextLabel: label,
+    summary: `${kind === 'system' ? 'System' : kind === 'developer' ? 'Developer' : 'Runtime'} input · ${label}`,
+    ...retainedContentFields(content),
+    ...(source.length > INPUT_CONTEXT_LIMIT ? { contentTruncated: true } : {}),
+  };
 }
 
 function promptSummary(content: unknown): Pick<SessionSummary, 'title'> | undefined {
@@ -327,7 +391,19 @@ export function parseCodexTranscriptMetadata(raw: string): CodexTranscriptMetada
       continue;
     }
     if (record.type !== 'response_item') continue;
+    if (item.type === 'message' && (item.role === 'system' || item.role === 'developer')) {
+      const kind = item.role;
+      for (const text of sourceTextItems(item.content)) {
+        const context = inputContextEvent(text, kind, record.timestamp, initial.events.length + 1);
+        if (context) initial.events.push(context);
+      }
+      continue;
+    }
     if (item.type === 'message' && item.role === 'user') {
+      for (const text of sourceTextItems(item.content).filter(isRuntimeContext)) {
+        const context = inputContextEvent(text, 'runtime', record.timestamp, initial.events.length + 1);
+        if (context) initial.events.push(context);
+      }
       if (hasCanonicalUserMessages) continue;
       const input = safeContent(item.content);
       if (!input) continue;

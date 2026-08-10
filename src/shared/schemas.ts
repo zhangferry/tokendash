@@ -142,6 +142,7 @@ export function validateAppSettings(data: unknown) {
 
 const SessionStatusSchema = z.enum(['active', 'complete', 'interrupted', 'unknown']);
 const SessionEventTypeSchema = z.enum([
+  'input_context',
   'user_message',
   'llm_call',
   'skill_call',
@@ -182,6 +183,8 @@ export const SessionEventSchema = z.object({
   callId: z.string().optional(),
   timestamp: z.string(),
   type: SessionEventTypeSchema,
+  inputKind: z.enum(['system', 'developer', 'runtime']).optional(),
+  contextLabel: z.string().optional(),
   model: z.string().optional(),
   skillName: z.string().optional(),
   toolName: z.string().optional(),
@@ -193,6 +196,7 @@ export const SessionEventSchema = z.object({
   resultSummary: z.string().optional(),
   contentPreview: z.string().optional(),
   contentAvailable: z.boolean().default(false),
+  contentTruncated: z.boolean().optional(),
   content: z.string().optional(),
 });
 

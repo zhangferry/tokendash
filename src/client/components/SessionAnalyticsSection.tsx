@@ -178,6 +178,35 @@ function toRunSteps(events: SessionEvent[]): RunStep[] {
   return steps;
 }
 
+function InputContextPanel({ events, expandedId, loading, error, withContent, onToggle }: {
+  events: SessionEvent[];
+  expandedId: string | null;
+  loading: boolean;
+  error: string | null;
+  withContent: boolean;
+  onToggle: (event: SessionEvent) => void;
+}) {
+  if (!events.length) return null;
+  const counts = events.reduce<Record<string, number>>((all, event) => {
+    const key = event.inputKind || 'runtime';
+    all[key] = (all[key] || 0) + 1;
+    return all;
+  }, {});
+  return <section aria-label="Input context" className="mt-4 rounded-xl border border-sky-100 bg-sky-50/35 p-4">
+    <div className="flex flex-wrap items-start justify-between gap-3">
+      <div><h3 className="text-[13px] font-semibold text-stone-900">Input context</h3><p className="mt-0.5 text-[11px] text-stone-400">System, developer, and runtime instructions supplied alongside the user request.</p></div>
+      <div className="flex flex-wrap gap-1.5">{(['system', 'developer', 'runtime'] as const).filter(kind => counts[kind]).map(kind => <span key={kind} className="rounded-full border border-sky-100 bg-white/80 px-2 py-1 text-[9px] font-semibold capitalize text-sky-700">{kind} · {counts[kind]}</span>)}</div>
+    </div>
+    <div className="mt-3 grid gap-2">{events.map(event => {
+      const expanded = expandedId === event.id;
+      return <article key={event.id} className="min-w-0 rounded-lg border border-sky-100/80 bg-white/80 px-3 py-2.5">
+        <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wide text-sky-600">{event.contextLabel || 'Input context'}</p><p className="mt-1 line-clamp-2 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-stone-600">{event.contentPreview || event.summary}</p></div><div className="flex shrink-0 gap-1"><span className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold capitalize text-sky-600">{event.inputKind || 'runtime'}</span>{event.contentTruncated && <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700" title="Source exceeded the 64,000 character detail limit">truncated</span>}</div></div>
+        {event.contentAvailable && <><button onClick={() => onToggle(event)} aria-expanded={expanded} className="mt-2 text-[10px] font-semibold text-indigo-600 hover:text-indigo-700">{expanded ? loading ? 'Loading full context…' : 'Hide full context' : withContent ? 'Show full context' : 'Read full context'}</button>{expanded && <div className="mt-2 max-h-72 overflow-auto rounded-lg bg-stone-950 px-3 py-2.5">{loading && <p className="text-[10px] text-stone-400">Loading full context…</p>}{error && <p className="text-[10px] text-rose-300">{error}</p>}{withContent && event.content && <pre className="whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-stone-200">{event.content}</pre>}</div>}</>}
+      </article>;
+    })}</div>
+  </section>;
+}
+
 function DetailDialog({ agent, session, onClose, restoreFocus }: { agent: string; session: SessionSummary; onClose: () => void; restoreFocus: () => void }) {
   const [detail, setDetail] = useState<SessionDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -210,6 +239,7 @@ function DetailDialog({ agent, session, onClose, restoreFocus }: { agent: string
   }, [onClose, restoreFocus]);
   const events = detail?.events || [];
   const meta = detail?.session || session;
+  const inputContext = useMemo(() => events.filter(event => event.type === 'input_context'), [events]);
   const groups = useMemo(() => taskGroups(events), [events]);
   const activeGroup = groups.find(group => group.id === selectedTask) || groups[0];
   const steps = useMemo(() => activeGroup ? toRunSteps(activeGroup.events) : [], [activeGroup]);
@@ -228,6 +258,7 @@ function DetailDialog({ agent, session, onClose, restoreFocus }: { agent: string
             {[["LLM calls", meta.llmCallCount], [meta.skillCallCount !== undefined ? "Skill calls" : "Tool calls", meta.skillCallCount ?? meta.toolCallCount ?? '—'], ["Total tokens", formatTokens(meta.totalTokens)], ["Duration", formatDuration(meta.durationMs)]].map(([label, value]) => <div key={String(label)} className="px-3 first:pl-0"><p className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">{label}</p><p className="mt-1 font-mono text-sm font-bold text-stone-800">{value}</p></div>)}
           </div>
         </section>
+        <InputContextPanel events={inputContext} expandedId={expandedStep} loading={contentLoading} error={contentError} withContent={withContent} onToggle={event => { const opening = expandedStep !== event.id; setExpandedStep(opening ? event.id : null); if (opening && !withContent) revealContent(); }} />
         <div className="mt-6"><h3 className="text-[13px] font-semibold text-stone-900">Tasks in this session</h3><p className="mt-0.5 text-[11px] text-stone-400">Requests, meaningful work, and delivered answers. Routine runtime noise is omitted.</p></div>
         {loading ? <div className="mt-4 space-y-3">{[1, 2, 3].map(i => <div key={i} className="skeleton h-16 rounded-xl" />)}</div> : error ? <div className="mt-4 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error} <button onClick={() => void load(withContent)} className="ml-2 font-semibold underline">Retry</button></div> : !activeGroup ? <div className="mt-4 rounded-xl bg-stone-50 p-4 text-sm text-stone-500">No readable task activity is available for this session.</div> : <><nav aria-label="Tasks in this session" className="mt-4 grid gap-2 sm:grid-cols-2">{groups.map(group => <button key={group.id} onClick={() => { setSelectedTask(group.id); setExpandedStep(null); }} className={`min-w-0 rounded-xl border px-3 py-2.5 text-left transition-colors ${activeGroup.id === group.id ? 'border-indigo-200 bg-indigo-50/70' : 'border-stone-100 bg-white hover:border-stone-200'}`}><span className="block text-[10px] font-bold uppercase tracking-wide text-stone-400">Task {group.index + 1}</span><span className="mt-0.5 block truncate text-[11px] font-semibold text-stone-700">{taskTitle(group)}</span></button>)}</nav>
         <section className="mt-4 rounded-xl border border-violet-100 bg-violet-50/40 p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-500">User request · Task {activeGroup.index + 1}</p><p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-stone-700">{activeGroup.request?.contentPreview || taskTitle(activeGroup)}</p></div><time className="shrink-0 font-mono text-[10px] text-stone-400">{activeGroup.request ? new Date(activeGroup.request.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</time></div>{activeGroup.request?.contentAvailable && <><button onClick={() => { const opening = expandedStep !== `request-${activeGroup.id}`; setExpandedStep(opening ? `request-${activeGroup.id}` : null); if (opening && !withContent) revealContent(); }} className="mt-2 text-[10px] font-semibold text-indigo-600 hover:text-indigo-700">{expandedStep === `request-${activeGroup.id}` ? contentLoading ? 'Loading full request…' : 'Hide full request' : withContent ? 'Show full request' : 'Read full request'}</button>{expandedStep === `request-${activeGroup.id}` && <>{contentLoading && <p className="mt-2 text-[10px] text-stone-400">Loading full request…</p>}{contentError && <p className="mt-2 text-[10px] text-rose-600">{contentError}</p>}{withContent && activeGroup.request.content && <p className="mt-2 whitespace-pre-wrap rounded-lg bg-white/80 p-3 text-[11px] leading-relaxed text-stone-600">{activeGroup.request.content}</p>}</>}</>}</section>

@@ -420,22 +420,32 @@ test.describe('Metric switching', () => {
     const detailDialog = page.locator('[data-od-id="session-detail-dialog"]');
     await expect(detailDialog).toBeVisible();
     expect(await detailDialog.getByRole('button', { name: 'Retry' }).count()).toBe(0);
-    await expect(page.getByText('Task overview', { exact: true })).toBeVisible();
-    const inputContext = detailDialog.getByRole('region', { name: 'Input context' });
-    await expect(inputContext).toBeVisible();
-    await expect(inputContext.getByText('System prompt', { exact: true })).toBeVisible();
-    await expect(inputContext.getByText('AGENTS.md instructions', { exact: true })).toBeVisible();
-    await inputContext.getByRole('button', { name: 'Read full context' }).first().click();
-    await expect(inputContext.getByText('Preserve user files and verify implementation changes before reporting completion.', { exact: false })).toBeVisible();
+    await expect(page.getByText('Session overview', { exact: true })).toBeVisible();
     await expect(page.getByText('Tasks in this session', { exact: true })).toBeVisible();
-    await expect(page.getByText('User request · Task 1', { exact: true })).toBeVisible();
+    const selectedTaskOverview = detailDialog.locator('[data-od-id="selected-task-overview"]');
+    const taskInput = detailDialog.locator('[data-od-id="task-input"]');
+    const taskActivity = detailDialog.locator('[data-od-id="task-activity"]');
+    await expect(selectedTaskOverview.getByText('Task overview', { exact: true })).toBeVisible();
+    await expect(taskInput.getByText('Input · Task 1', { exact: true })).toBeVisible();
+    await expect(taskInput.getByText('User message', { exact: true })).toBeVisible();
+    const contextToggle = taskInput.getByRole('button', { name: /Context inputs/ });
+    await expect(contextToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(taskInput.getByText('System prompt', { exact: true })).not.toBeVisible();
+    await contextToggle.click();
+    await expect(contextToggle).toHaveAttribute('aria-expanded', 'true');
+    await expect(taskInput.getByText('System prompt', { exact: true })).toBeVisible();
+    await expect(taskInput.getByText('AGENTS.md instructions', { exact: true })).toBeVisible();
+    await taskInput.getByRole('button', { name: 'Read full context' }).first().click();
+    await expect(taskInput.getByText('Preserve user files and verify implementation changes before reporting completion.', { exact: false })).toBeVisible();
+    const taskSectionOrder = await detailDialog.locator('[data-od-id="selected-task-overview"], [data-od-id="task-input"], [data-od-id="task-activity"]').evaluateAll(nodes => nodes.map(node => node.getAttribute('data-od-id')));
+    expect(taskSectionOrder).toEqual(['selected-task-overview', 'task-input', 'task-activity']);
     await expect(detailDialog.getByText('Review the dashboard’s session analytics detail and make the run history easier to inspect.', { exact: true }).last()).toBeVisible();
     await expect(page.getByText('I need to inspect the event model before deciding how the detail view should group requests, responses, and tool invocations.', { exact: true })).toBeVisible();
     await detailDialog.locator('article').filter({ hasText: 'Model reasoning' }).getByRole('button', { name: 'Show details' }).click();
     await expect(page.getByText('The reasoning must remain visible alongside the final model response.', { exact: false })).toBeVisible();
     await expect(detailDialog.getByText('Final response', { exact: true }).first()).toBeVisible();
     await expect(detailDialog.getByText('I traced the session detail flow and identified where the event metadata loses the meaningful request and response content.', { exact: true })).toBeVisible();
-    await detailDialog.getByRole('button', { name: 'Show full request' }).click();
+    await taskInput.getByRole('button', { name: 'Show full message' }).click();
     await expect(page.getByText('Include the user input, tool arguments, tool results, and the final assistant response.', { exact: false })).toBeVisible();
     await detailDialog.locator('article').filter({ hasText: 'Tool · Read' }).getByRole('button', { name: 'Show details' }).click();
     await expect(page.getByText('Parameters', { exact: true })).toBeVisible();
@@ -443,10 +453,59 @@ test.describe('Metric switching', () => {
     const taskTwo = detailDialog.getByRole('button', { name: 'Task 2 Now verify that the next task keeps its own request, progress, and answer together.', exact: true });
     await expect(taskTwo).toBeVisible();
     await taskTwo.click();
-    await expect(detailDialog.getByText('User request · Task 2', { exact: true })).toBeVisible();
+    await expect(taskInput.getByText('Input · Task 2', { exact: true })).toBeVisible();
+    await expect(taskInput.getByText('User message', { exact: true })).toBeVisible();
+    await expect(taskInput.getByRole('button', { name: /Context inputs/ })).toHaveAttribute('aria-expanded', 'false');
+    await expect(taskInput.getByText('Unchanged from Task 1', { exact: true })).toBeVisible();
     await expect(detailDialog.getByText('The second task is independently grouped and does not show the first task’s events.', { exact: true })).toBeVisible();
     await page.keyboard.press('Escape');
     await expect(page.locator('[data-od-id="session-detail-dialog"]')).not.toBeVisible();
+  });
+
+  test('Task input applies context updates without retaining the replaced value', async ({ page }) => {
+    await page.route('**/api/sessions/**', async route => {
+      const url = new URL(route.request().url());
+      const agent = url.searchParams.get('agent') || 'claude';
+      const detail = generateSessionDetail(agent, decodeURIComponent(url.pathname.split('/').at(-1) || 'session'));
+      const firstRequest = detail.events.findIndex(event => event.id === 'user-1');
+      detail.events.splice(firstRequest, 0, {
+        id: 'context-developer-1',
+        timestamp: new Date(Date.parse(detail.session.startedAt) - 500).toISOString(),
+        type: 'input_context',
+        inputKind: 'developer',
+        contextLabel: 'Developer instructions',
+        summary: 'Developer input · Developer instructions',
+        contentPreview: 'Use the original task layout.',
+        contentAvailable: true,
+      });
+      const secondRequest = detail.events.findIndex(event => event.id === 'user-2');
+      detail.events.splice(secondRequest, 0, {
+        id: 'context-developer-2',
+        timestamp: new Date(Date.parse(detail.session.startedAt) + 59_000).toISOString(),
+        type: 'input_context',
+        inputKind: 'developer',
+        contextLabel: 'Developer instructions',
+        summary: 'Developer input · Developer instructions',
+        contentPreview: 'Use the revised task layout.',
+        contentAvailable: true,
+      });
+      await route.fulfill({ json: detail });
+    });
+
+    await page.locator('button:has-text("Sessions")').click();
+    await page.locator('[data-od-id="session-detail-table"] tbody tr').first().click();
+    const detailDialog = page.locator('[data-od-id="session-detail-dialog"]');
+    const taskInput = detailDialog.locator('[data-od-id="task-input"]');
+    await taskInput.getByRole('button', { name: /Context inputs/ }).click();
+    await expect(taskInput.getByText('Use the original task layout.', { exact: true })).toBeVisible();
+
+    await detailDialog.getByRole('button', { name: 'Task 2 Now verify that the next task keeps its own request, progress, and answer together.', exact: true }).click();
+    const contextToggle = taskInput.getByRole('button', { name: /Context inputs/ });
+    await expect(contextToggle).toHaveAttribute('aria-expanded', 'false');
+    await expect(taskInput.getByText('Unchanged from Task 1', { exact: true })).toHaveCount(0);
+    await contextToggle.click();
+    await expect(taskInput.getByText('Use the revised task layout.', { exact: true })).toBeVisible();
+    await expect(taskInput.getByText('Use the original task layout.', { exact: true })).toHaveCount(0);
   });
 
   test('expanding readable detail keeps the task dialog in place while content loads', async ({ page }) => {

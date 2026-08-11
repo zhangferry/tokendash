@@ -106,11 +106,27 @@ function actionSummary(event: SessionEvent, related?: SessionEvent) {
 
 function taskGroups(events: SessionEvent[]): TaskGroup[] {
   const requests = events.filter(event => event.type === 'user_message' && Boolean(event.contentPreview || event.content));
-  if (!requests.length) return [{ id: 'session-activity', index: 0, events }];
+  if (!requests.length) return [{ id: 'session-activity', index: 0, events: events.filter(event => event.type !== 'input_context') }];
   return requests.map((request, index) => {
     const start = events.indexOf(request);
     const next = index < requests.length - 1 ? events.indexOf(requests[index + 1]!) : events.length;
-    return { id: request.id, index, request, events: events.slice(start, next) };
+    return { id: request.id, index, request, events: events.slice(start, next).filter(event => event.type !== 'input_context') };
+  });
+}
+
+function taskInputContexts(events: SessionEvent[], groups: TaskGroup[]): Array<{ events: SessionEvent[]; changed: boolean }> {
+  let snapshot: SessionEvent[] = [];
+  return groups.map((group, index) => {
+    const requestIndex = group.request ? events.indexOf(group.request) : events.length;
+    const previousRequest = index > 0 ? groups[index - 1]?.request : undefined;
+    const previousRequestIndex = previousRequest ? events.indexOf(previousRequest) : -1;
+    const updates = events.slice(previousRequestIndex + 1, requestIndex).filter(event => event.type === 'input_context');
+    if (updates.length) {
+      const bySource = new Map(snapshot.map(event => [`${event.inputKind || 'runtime'}\u0000${event.contextLabel || ''}`, event]));
+      for (const event of updates) bySource.set(`${event.inputKind || 'runtime'}\u0000${event.contextLabel || ''}`, event);
+      snapshot = [...bySource.values()];
+    }
+    return { events: snapshot, changed: updates.length > 0 };
   });
 }
 
@@ -163,10 +179,7 @@ function toRunSteps(events: SessionEvent[]): RunStep[] {
       if (!correlatedResult && hasResult) index += 1;
       continue;
     }
-    if (event.type === 'user_message') {
-      continue;
-      continue;
-    }
+    if (event.type === 'user_message' || event.type === 'input_context') continue;
     if (event.type === 'tool_result') {
       if (pairedResults.has(event.id)) continue;
       if (!isInspectableResult(event) && event.success !== false) continue;
@@ -178,32 +191,63 @@ function toRunSteps(events: SessionEvent[]): RunStep[] {
   return steps;
 }
 
-function InputContextPanel({ events, expandedId, loading, error, withContent, onToggle }: {
+function InputContextPanel({ events, open, unchangedFromTask, expandedId, loading, error, withContent, onToggleOpen, onToggle }: {
   events: SessionEvent[];
+  open: boolean;
+  unchangedFromTask?: number;
   expandedId: string | null;
   loading: boolean;
   error: string | null;
   withContent: boolean;
+  onToggleOpen: () => void;
   onToggle: (event: SessionEvent) => void;
 }) {
-  if (!events.length) return null;
   const counts = events.reduce<Record<string, number>>((all, event) => {
     const key = event.inputKind || 'runtime';
     all[key] = (all[key] || 0) + 1;
     return all;
   }, {});
-  return <section aria-label="Input context" className="mt-4 rounded-xl border border-sky-100 bg-sky-50/35 p-4">
-    <div className="flex flex-wrap items-start justify-between gap-3">
-      <div><h3 className="text-[13px] font-semibold text-stone-900">Input context</h3><p className="mt-0.5 text-[11px] text-stone-400">System, developer, and runtime instructions supplied alongside the user request.</p></div>
-      <div className="flex flex-wrap gap-1.5">{(['system', 'developer', 'runtime'] as const).filter(kind => counts[kind]).map(kind => <span key={kind} className="rounded-full border border-sky-100 bg-white/80 px-2 py-1 text-[9px] font-semibold capitalize text-sky-700">{kind} · {counts[kind]}</span>)}</div>
-    </div>
+  return <div className="mt-3 overflow-hidden rounded-xl border border-sky-100 bg-sky-50/35">
+    <button type="button" onClick={onToggleOpen} aria-expanded={open} className="flex w-full items-center justify-between gap-4 px-3.5 py-3 text-left hover:bg-sky-50/60">
+      <div className="min-w-0"><span className="text-[11px] font-semibold text-stone-700">Context inputs</span><span className="ml-2 text-[10px] text-stone-400">{events.length} item{events.length === 1 ? '' : 's'}</span>{unchangedFromTask !== undefined && <span className="ml-2 rounded-full bg-white/90 px-1.5 py-0.5 text-[9px] font-semibold text-emerald-700">Unchanged from Task {unchangedFromTask + 1}</span>}</div>
+      <span className={`shrink-0 text-sm text-stone-400 transition-transform ${open ? 'rotate-180' : ''}`}>⌄</span>
+    </button>
+    {open && <div className="border-t border-sky-100 px-3.5 py-3"><div className="flex flex-wrap items-start justify-between gap-3"><p className="text-[10px] leading-relaxed text-stone-400">System, developer, and runtime instructions supplied alongside this user message.</p><div className="flex flex-wrap gap-1.5">{(['system', 'developer', 'runtime'] as const).filter(kind => counts[kind]).map(kind => <span key={kind} className="rounded-full border border-sky-100 bg-white/80 px-2 py-1 text-[9px] font-semibold capitalize text-sky-700">{kind} · {counts[kind]}</span>)}</div></div>
     <div className="mt-3 grid gap-2">{events.map(event => {
       const expanded = expandedId === event.id;
       return <article key={event.id} className="min-w-0 rounded-lg border border-sky-100/80 bg-white/80 px-3 py-2.5">
         <div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-wide text-sky-600">{event.contextLabel || 'Input context'}</p><p className="mt-1 line-clamp-2 whitespace-pre-wrap break-words text-[11px] leading-relaxed text-stone-600">{event.contentPreview || event.summary}</p></div><div className="flex shrink-0 gap-1"><span className="rounded-full bg-sky-50 px-1.5 py-0.5 text-[9px] font-semibold capitalize text-sky-600">{event.inputKind || 'runtime'}</span>{event.contentTruncated && <span className="rounded-full bg-amber-50 px-1.5 py-0.5 text-[9px] font-semibold text-amber-700" title="Source exceeded the 64,000 character detail limit">truncated</span>}</div></div>
         {event.contentAvailable && <><button onClick={() => onToggle(event)} aria-expanded={expanded} className="mt-2 text-[10px] font-semibold text-indigo-600 hover:text-indigo-700">{expanded ? loading ? 'Loading full context…' : 'Hide full context' : withContent ? 'Show full context' : 'Read full context'}</button>{expanded && <div className="mt-2 max-h-72 overflow-auto rounded-lg bg-stone-950 px-3 py-2.5">{loading && <p className="text-[10px] text-stone-400">Loading full context…</p>}{error && <p className="text-[10px] text-rose-300">{error}</p>}{withContent && event.content && <pre className="whitespace-pre-wrap break-words font-mono text-[10px] leading-relaxed text-stone-200">{event.content}</pre>}</div>}</>}
       </article>;
-    })}</div>
+    })}</div></div>}
+  </div>;
+}
+
+function SelectedTaskOverview({ group, modelWork }: { group: TaskGroup; modelWork: ReturnType<typeof taskModelWork> }) {
+  return <section data-od-id="selected-task-overview" aria-label={`Task ${group.index + 1} overview`} className="mt-4 rounded-xl border border-stone-100 bg-stone-50/60 p-4">
+    <div className="flex items-center justify-between gap-3"><div><h3 className="text-[13px] font-semibold text-stone-900">Task overview</h3><p className="mt-0.5 text-[11px] text-stone-400">Model work for Task {group.index + 1}</p></div>{group.request && <time className="font-mono text-[10px] text-stone-400">{new Date(group.request.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>}</div>
+    <div className="mt-3 grid grid-cols-2 divide-x divide-stone-200 sm:grid-cols-4"><div className="px-2 first:pl-0"><p className="text-[9px] font-semibold uppercase tracking-wide text-stone-400">Model calls</p><p className="mt-1 font-mono text-[11px] font-bold text-stone-700">{modelWork.calls}</p></div><div className="px-2"><p className="text-[9px] font-semibold uppercase tracking-wide text-stone-400">Input</p><p className="mt-1 font-mono text-[11px] font-bold text-stone-700">{formatTokens(modelWork.inputTokens)}</p></div><div className="px-2"><p className="text-[9px] font-semibold uppercase tracking-wide text-stone-400">Output</p><p className="mt-1 font-mono text-[11px] font-bold text-stone-700">{formatTokens(modelWork.outputTokens)}</p></div><div className="px-2"><p className="text-[9px] font-semibold uppercase tracking-wide text-stone-400">Cached</p><p className="mt-1 font-mono text-[11px] font-bold text-stone-700">{formatTokens(modelWork.cacheReadTokens)}</p></div></div>
+  </section>;
+}
+
+function TaskInputPanel({ group, contextEvents, contextOpen, unchangedFromTask, expandedId, loading, error, withContent, onToggleContextOpen, onToggleContext, onToggleRequest }: {
+  group: TaskGroup;
+  contextEvents: SessionEvent[];
+  contextOpen: boolean;
+  unchangedFromTask?: number;
+  expandedId: string | null;
+  loading: boolean;
+  error: string | null;
+  withContent: boolean;
+  onToggleContextOpen: () => void;
+  onToggleContext: (event: SessionEvent) => void;
+  onToggleRequest: () => void;
+}) {
+  const requestExpanded = expandedId === `request-${group.id}`;
+  return <section data-od-id="task-input" aria-label={`Input for Task ${group.index + 1}`} className="mt-4 rounded-xl border border-violet-100 bg-violet-50/30 p-4">
+    <div><h3 className="text-[13px] font-semibold text-stone-900">Input · Task {group.index + 1}</h3><p className="mt-0.5 text-[11px] text-stone-400">The user message and context that shaped this task.</p></div>
+    <article className="mt-3 rounded-xl border border-violet-100 bg-white/80 px-3.5 py-3"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-500">User message</p><p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-stone-700">{group.request?.contentPreview || taskTitle(group)}</p></div>{group.request && <time className="shrink-0 font-mono text-[10px] text-stone-400">{new Date(group.request.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time>}</div>{group.request?.contentAvailable && <><button onClick={onToggleRequest} aria-expanded={requestExpanded} className="mt-2 text-[10px] font-semibold text-indigo-600 hover:text-indigo-700">{requestExpanded ? loading ? 'Loading full message…' : 'Hide full message' : withContent ? 'Show full message' : 'Read full message'}</button>{requestExpanded && <>{loading && <p className="mt-2 text-[10px] text-stone-400">Loading full message…</p>}{error && <p className="mt-2 text-[10px] text-rose-600">{error}</p>}{withContent && group.request.content && <p className="mt-2 whitespace-pre-wrap rounded-lg bg-violet-50/50 p-3 text-[11px] leading-relaxed text-stone-600">{group.request.content}</p>}</>}</>}</article>
+    <InputContextPanel events={contextEvents} open={contextOpen} unchangedFromTask={unchangedFromTask} expandedId={expandedId} loading={loading} error={error} withContent={withContent} onToggleOpen={onToggleContextOpen} onToggle={onToggleContext} />
   </section>;
 }
 
@@ -216,6 +260,7 @@ function DetailDialog({ agent, session, onClose, restoreFocus }: { agent: string
   const [withContent, setWithContent] = useState(false);
   const [expandedStep, setExpandedStep] = useState<string | null>(null);
   const [selectedTask, setSelectedTask] = useState<string | null>(null);
+  const [contextOpen, setContextOpen] = useState(false);
   const dialogRef = useRef<HTMLDivElement>(null);
 
   const load = async (content: boolean) => {
@@ -239,9 +284,13 @@ function DetailDialog({ agent, session, onClose, restoreFocus }: { agent: string
   }, [onClose, restoreFocus]);
   const events = detail?.events || [];
   const meta = detail?.session || session;
-  const inputContext = useMemo(() => events.filter(event => event.type === 'input_context'), [events]);
   const groups = useMemo(() => taskGroups(events), [events]);
   const activeGroup = groups.find(group => group.id === selectedTask) || groups[0];
+  const activeGroupIndex = activeGroup ? groups.indexOf(activeGroup) : -1;
+  const inputContexts = useMemo(() => taskInputContexts(events, groups), [events, groups]);
+  const activeInputContext = activeGroupIndex >= 0 ? inputContexts[activeGroupIndex] : undefined;
+  const inputContext = activeInputContext?.events || [];
+  const unchangedFromTask = activeGroupIndex > 0 && !activeInputContext?.changed ? groups[activeGroupIndex - 1]!.index : undefined;
   const steps = useMemo(() => activeGroup ? toRunSteps(activeGroup.events) : [], [activeGroup]);
   const modelWork = useMemo(() => activeGroup ? taskModelWork(activeGroup.events) : { calls: 0, inputTokens: 0, outputTokens: 0, cacheReadTokens: 0 }, [activeGroup]);
   const revealContent = () => { setWithContent(true); void load(true); };
@@ -252,18 +301,17 @@ function DetailDialog({ agent, session, onClose, restoreFocus }: { agent: string
         <button onClick={() => { onClose(); restoreFocus(); }} aria-label="Close dialog" className="flex h-7 w-7 items-center justify-center rounded-lg text-xl leading-none text-stone-400 hover:bg-stone-100 hover:text-stone-700">×</button>
       </header>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-5">
-        <section aria-label="Task overview" className="rounded-xl border border-stone-100 bg-stone-50/60 p-4">
-          <div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-stone-400">Task overview</p><p className="mt-1 text-[12px] leading-relaxed text-stone-600">{meta.description || 'Local session metadata, organized as one agent run.'}</p></div><span className="shrink-0 font-mono text-[10px] text-stone-400">{new Date(meta.startedAt).toLocaleString()}</span></div>
+        <section aria-label="Session overview" className="rounded-xl border border-stone-100 bg-stone-50/60 p-4">
+          <div className="flex items-center justify-between gap-3"><div><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-stone-400">Session overview</p><p className="mt-1 text-[12px] leading-relaxed text-stone-600">{meta.description || 'Local session metadata, organized as one agent run.'}</p></div><span className="shrink-0 font-mono text-[10px] text-stone-400">{new Date(meta.startedAt).toLocaleString()}</span></div>
           <div className="mt-4 grid grid-cols-2 divide-x divide-stone-200 sm:grid-cols-4">
             {[["LLM calls", meta.llmCallCount], [meta.skillCallCount !== undefined ? "Skill calls" : "Tool calls", meta.skillCallCount ?? meta.toolCallCount ?? '—'], ["Total tokens", formatTokens(meta.totalTokens)], ["Duration", formatDuration(meta.durationMs)]].map(([label, value]) => <div key={String(label)} className="px-3 first:pl-0"><p className="text-[10px] font-semibold uppercase tracking-wide text-stone-400">{label}</p><p className="mt-1 font-mono text-sm font-bold text-stone-800">{value}</p></div>)}
           </div>
         </section>
-        <InputContextPanel events={inputContext} expandedId={expandedStep} loading={contentLoading} error={contentError} withContent={withContent} onToggle={event => { const opening = expandedStep !== event.id; setExpandedStep(opening ? event.id : null); if (opening && !withContent) revealContent(); }} />
         <div className="mt-6"><h3 className="text-[13px] font-semibold text-stone-900">Tasks in this session</h3><p className="mt-0.5 text-[11px] text-stone-400">Requests, meaningful work, and delivered answers. Routine runtime noise is omitted.</p></div>
-        {loading ? <div className="mt-4 space-y-3">{[1, 2, 3].map(i => <div key={i} className="skeleton h-16 rounded-xl" />)}</div> : error ? <div className="mt-4 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error} <button onClick={() => void load(withContent)} className="ml-2 font-semibold underline">Retry</button></div> : !activeGroup ? <div className="mt-4 rounded-xl bg-stone-50 p-4 text-sm text-stone-500">No readable task activity is available for this session.</div> : <><nav aria-label="Tasks in this session" className="mt-4 grid gap-2 sm:grid-cols-2">{groups.map(group => <button key={group.id} onClick={() => { setSelectedTask(group.id); setExpandedStep(null); }} className={`min-w-0 rounded-xl border px-3 py-2.5 text-left transition-colors ${activeGroup.id === group.id ? 'border-indigo-200 bg-indigo-50/70' : 'border-stone-100 bg-white hover:border-stone-200'}`}><span className="block text-[10px] font-bold uppercase tracking-wide text-stone-400">Task {group.index + 1}</span><span className="mt-0.5 block truncate text-[11px] font-semibold text-stone-700">{taskTitle(group)}</span></button>)}</nav>
-        <section className="mt-4 rounded-xl border border-violet-100 bg-violet-50/40 p-4"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[10px] font-bold uppercase tracking-[0.14em] text-violet-500">User request · Task {activeGroup.index + 1}</p><p className="mt-1 whitespace-pre-wrap text-[12px] leading-relaxed text-stone-700">{activeGroup.request?.contentPreview || taskTitle(activeGroup)}</p></div><time className="shrink-0 font-mono text-[10px] text-stone-400">{activeGroup.request ? new Date(activeGroup.request.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</time></div>{activeGroup.request?.contentAvailable && <><button onClick={() => { const opening = expandedStep !== `request-${activeGroup.id}`; setExpandedStep(opening ? `request-${activeGroup.id}` : null); if (opening && !withContent) revealContent(); }} className="mt-2 text-[10px] font-semibold text-indigo-600 hover:text-indigo-700">{expandedStep === `request-${activeGroup.id}` ? contentLoading ? 'Loading full request…' : 'Hide full request' : withContent ? 'Show full request' : 'Read full request'}</button>{expandedStep === `request-${activeGroup.id}` && <>{contentLoading && <p className="mt-2 text-[10px] text-stone-400">Loading full request…</p>}{contentError && <p className="mt-2 text-[10px] text-rose-600">{contentError}</p>}{withContent && activeGroup.request.content && <p className="mt-2 whitespace-pre-wrap rounded-lg bg-white/80 p-3 text-[11px] leading-relaxed text-stone-600">{activeGroup.request.content}</p>}</>}</>}</section>
-        <div className="mt-3 grid grid-cols-2 divide-x divide-stone-200 rounded-xl border border-stone-100 bg-stone-50/60 px-3 py-2.5 sm:grid-cols-4"><div className="px-2 first:pl-0"><p className="text-[9px] font-semibold uppercase tracking-wide text-stone-400">Model work</p><p className="mt-1 font-mono text-[11px] font-bold text-stone-700">{modelWork.calls} calls</p></div><div className="px-2"><p className="text-[9px] font-semibold uppercase tracking-wide text-stone-400">Input</p><p className="mt-1 font-mono text-[11px] font-bold text-stone-700">{formatTokens(modelWork.inputTokens)}</p></div><div className="px-2"><p className="text-[9px] font-semibold uppercase tracking-wide text-stone-400">Output</p><p className="mt-1 font-mono text-[11px] font-bold text-stone-700">{formatTokens(modelWork.outputTokens)}</p></div><div className="px-2"><p className="text-[9px] font-semibold uppercase tracking-wide text-stone-400">Cached</p><p className="mt-1 font-mono text-[11px] font-bold text-stone-700">{formatTokens(modelWork.cacheReadTokens)}</p></div></div>
-        <div className="mt-5"><h3 className="text-[13px] font-semibold text-stone-900">Task activity</h3><p className="mt-0.5 text-[11px] text-stone-400">Agent updates, inspectable actions, and the delivered response</p></div>
+        {loading ? <div className="mt-4 space-y-3">{[1, 2, 3].map(i => <div key={i} className="skeleton h-16 rounded-xl" />)}</div> : error ? <div className="mt-4 rounded-xl bg-rose-50 p-4 text-sm text-rose-700">{error} <button onClick={() => void load(withContent)} className="ml-2 font-semibold underline">Retry</button></div> : !activeGroup ? <div className="mt-4 rounded-xl bg-stone-50 p-4 text-sm text-stone-500">No readable task activity is available for this session.</div> : <><nav aria-label="Tasks in this session" className="mt-4 grid gap-2 sm:grid-cols-2">{groups.map(group => <button key={group.id} onClick={() => { setSelectedTask(group.id); setExpandedStep(null); setContextOpen(false); }} className={`min-w-0 rounded-xl border px-3 py-2.5 text-left transition-colors ${activeGroup.id === group.id ? 'border-indigo-200 bg-indigo-50/70' : 'border-stone-100 bg-white hover:border-stone-200'}`}><span className="block text-[10px] font-bold uppercase tracking-wide text-stone-400">Task {group.index + 1}</span><span className="mt-0.5 block truncate text-[11px] font-semibold text-stone-700">{taskTitle(group)}</span></button>)}</nav>
+        <SelectedTaskOverview group={activeGroup} modelWork={modelWork} />
+        <TaskInputPanel group={activeGroup} contextEvents={inputContext} contextOpen={contextOpen} unchangedFromTask={unchangedFromTask} expandedId={expandedStep} loading={contentLoading} error={contentError} withContent={withContent} onToggleContextOpen={() => { setContextOpen(open => !open); setExpandedStep(null); }} onToggleContext={event => { const opening = expandedStep !== event.id; setExpandedStep(opening ? event.id : null); if (opening && !withContent) revealContent(); }} onToggleRequest={() => { const requestId = `request-${activeGroup.id}`; const opening = expandedStep !== requestId; setExpandedStep(opening ? requestId : null); if (opening && !withContent) revealContent(); }} />
+        <section data-od-id="task-activity" aria-label={`Task ${activeGroup.index + 1} activity`} className="mt-5"><div><h3 className="text-[13px] font-semibold text-stone-900">Task activity</h3><p className="mt-0.5 text-[11px] text-stone-400">Agent updates, inspectable actions, and the delivered response</p></div>
         {steps.length === 0 ? <div className="mt-4 rounded-xl bg-stone-50 p-4 text-sm text-stone-500">This task has token accounting but no readable progress, action, or response content.</div> : <ol className="mt-4 space-y-2.5">{steps.map((step, index) => {
           const detailEvents = [step.primary, step.related].filter((value): value is SessionEvent => Boolean(value));
           const contentEvent = detailEvents.find(item => item.contentPreview || item.contentAvailable);
@@ -276,7 +324,7 @@ function DetailDialog({ agent, session, onClose, restoreFocus }: { agent: string
             if (opening && contentEvent?.contentAvailable && !withContent) revealContent();
           };
           return <li key={step.id} className="relative grid grid-cols-[62px_18px_minmax(0,1fr)] gap-3"><time className="pt-3 font-mono text-[10px] text-stone-400">{new Date(step.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</time><div className="relative flex justify-center"><i className={`z-10 mt-3 h-2.5 w-2.5 rounded-full ring-4 ring-white ${color}`} />{index < steps.length - 1 && <span className="absolute top-6 bottom-[-12px] w-px bg-stone-200" />}</div><article className="min-w-0 rounded-xl border border-stone-100 bg-white px-3.5 py-3 shadow-[0_1px_2px_rgba(120,113,108,0.04)]"><div className="flex items-start justify-between gap-3"><div className="min-w-0"><p className="text-[12px] font-semibold text-stone-700">{step.title}</p><p className="mt-0.5 text-[11px] leading-relaxed text-stone-400">{step.summary}</p>{contentEvent?.contentPreview && <p className="mt-2 whitespace-pre-wrap border-l-2 border-stone-200 pl-2.5 text-[11px] leading-relaxed text-stone-600">{contentEvent.contentPreview}</p>}</div>{step.type === 'action' && <span className={`shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold uppercase tracking-wide ${detailEvents.some(item => item.success === false) ? 'bg-rose-50 text-rose-600' : 'bg-emerald-50 text-emerald-700'}`}>{detailEvents.some(item => item.success === false) ? 'failed' : 'done'}</span>}</div>{hasPayload && <><button onClick={toggleDetails} aria-expanded={expandedStep === step.id} className="mt-2 text-[10px] font-semibold text-indigo-600 hover:text-indigo-700">{expandedStep === step.id ? contentLoading ? `Loading full ${contentLabel}…` : 'Hide details' : contentEvent?.contentAvailable && !withContent ? `Read full ${contentLabel}` : 'Show details'}</button>{expandedStep === step.id && <dl className="mt-2 grid gap-2 rounded-lg bg-stone-50 px-3 py-2.5 text-[10px] leading-relaxed">{contentLoading && <p className="text-stone-400">Loading full {contentLabel}…</p>}{contentError && <p className="text-rose-600">{contentError}</p>}{detailEvents.flatMap(item => [{ label: 'Parameters', value: payloadValue(item.parameterSummary) }, { label: 'Result', value: payloadValue(item.resultSummary) }, ...(withContent && item.content ? [{ label: item.type === 'user_message' ? 'Full input' : item.type === 'llm_call' ? 'Full reasoning' : 'Full response', value: item.content }] : [])]).filter(item => item.value).map((item, payloadIndex) => <div key={`${item.label}-${payloadIndex}`} className="grid grid-cols-[72px_minmax(0,1fr)] gap-2"><dt className="font-semibold uppercase tracking-wide text-stone-400">{item.label}</dt><dd className="break-words whitespace-pre-wrap font-mono text-stone-600">{item.value}</dd></div>)}</dl>}</>}</article></li>;
-        })}</ol>}</>}
+        })}</ol>}</section></>}
       </div>
       <footer className="flex items-center justify-between border-t border-stone-100 px-6 py-3 text-[10px] text-stone-400"><span>Local index · {detail?.indexedAt ? new Date(detail.indexedAt).toLocaleString() : 'metadata only'}</span><button onClick={() => void navigator.clipboard?.writeText(session.id)} className="rounded-lg border border-stone-200 px-2.5 py-1 font-semibold text-stone-600 hover:bg-stone-50">Copy session ID</button></footer>
     </section>

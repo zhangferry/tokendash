@@ -1,5 +1,12 @@
 # Changelog
 
+### v1.8.9
+- **Inspectable session analytics** — add a Sessions dashboard with model-call trends, tool and Skill distributions, duration and turn metrics, searchable session history, and task-scoped detail views.
+- **Readable task execution traces** — organize each task as overview, combined user/runtime input, model reasoning, tool parameters and results, and final responses while keeping large content available on demand.
+- **Codex Skill usage recovery** — conservatively infer Skill usage from concrete `SKILL.md` reads, deduplicate repeated reads per task, prefer native Skill events when available, and label inferred or mixed semantics throughout the API and UI.
+- **Multiple Codex-compatible data sources** — discover official, environment, and custom Codex/Trae session homes and expose their status in web and native settings without inflating canonical totals.
+- **Stable session interactions** — prevent repeated requests, JSON fallback errors, modal jumps, and cross-task event leakage while loading or switching session details.
+
 ### v1.8.8
 - **Pi Agent usage support** — add Pi (`~/.pi/agent/sessions/`) as a dashboard data source, with daily, project, hourly, model, and cost views.
 - **Reliable dashboard refresh** — manual and 60-second automatic refreshes now bypass stale data caches across daily, projects, blocks, and analytics.

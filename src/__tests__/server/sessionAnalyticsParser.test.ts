@@ -152,6 +152,40 @@ describe('buildSessionAnalyticsResponse', () => {
     ]);
   });
 
+  it('infers one Codex Skill use per task from execution that reads its SKILL.md', () => {
+    const parsed = parseCodexTranscriptMetadata([
+      JSON.stringify({ timestamp: '2026-08-03T01:00:00.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'Implement the dashboard change.' } }),
+      JSON.stringify({ timestamp: '2026-08-03T01:00:01.000Z', type: 'response_item', payload: { type: 'custom_tool_call', call_id: 'call-read-1', name: 'exec', input: 'const r = await tools.exec_command({ cmd: "sed -n \'1,160p\' /Users/alice/.agents/skills/implement/SKILL.md" });' } }),
+      JSON.stringify({ timestamp: '2026-08-03T01:00:02.000Z', type: 'response_item', payload: { type: 'custom_tool_call', call_id: 'call-read-2', name: 'exec', input: 'const r = await tools.exec_command({ cmd: "sed -n \'161,320p\' /Users/alice/.agents/skills/implement/SKILL.md" });' } }),
+      JSON.stringify({ timestamp: '2026-08-03T01:00:03.000Z', type: 'response_item', payload: { type: 'custom_tool_call', call_id: 'call-edit', name: 'exec', input: 'const patch = "*** Update File: /work/project/SKILL.md"; await tools.apply_patch(patch);' } }),
+      JSON.stringify({ timestamp: '2026-08-03T01:00:04.000Z', type: 'response_item', payload: { type: 'message', role: 'developer', content: [{ type: 'input_text', text: '<skills_instructions>Available skill: frontend-design at /Users/alice/.agents/skills/frontend-design/SKILL.md</skills_instructions>' }] } }),
+      JSON.stringify({ timestamp: '2026-08-03T01:01:00.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'Apply the same implementation workflow to the next task.' } }),
+      JSON.stringify({ timestamp: '2026-08-03T01:01:01.000Z', type: 'response_item', payload: { type: 'function_call', call_id: 'call-read-3', name: 'Read', arguments: JSON.stringify({ file_path: '/Users/alice/.agents/skills/implement/SKILL.md' }) } }),
+    ].join('\n'));
+
+    expect(parsed.skillCalls).toBe(2);
+    expect(parsed.toolCalls).toBe(4);
+    expect(parsed.events.filter(event => event.type === 'skill_call')).toMatchObject([
+      { skillName: 'implement', skillOrigin: 'inferred', summary: 'Skill implement inferred from process' },
+      { skillName: 'implement', skillOrigin: 'inferred', summary: 'Skill implement inferred from process' },
+    ]);
+    expect(parsed.events.filter(event => event.type === 'skill_call')).toHaveLength(2);
+  });
+
+  it('lets an explicit Skill call replace the same inferred use within one task', () => {
+    const parsed = parseCodexTranscriptMetadata([
+      JSON.stringify({ timestamp: '2026-08-03T01:00:00.000Z', type: 'event_msg', payload: { type: 'user_message', message: 'Use the implementation workflow.' } }),
+      JSON.stringify({ timestamp: '2026-08-03T01:00:01.000Z', type: 'response_item', payload: { type: 'custom_tool_call', call_id: 'call-read', name: 'exec', input: 'sed -n \'1,200p\' /Users/alice/.agents/skills/implement/SKILL.md' } }),
+      JSON.stringify({ timestamp: '2026-08-03T01:00:02.000Z', type: 'response_item', payload: { type: 'function_call', call_id: 'call-skill', name: 'Skill', arguments: JSON.stringify({ skill: 'implement' }) } }),
+    ].join('\n'));
+
+    expect(parsed.skillCalls).toBe(1);
+    expect(parsed.toolCalls).toBe(1);
+    expect(parsed.events.filter(event => event.type === 'skill_call')).toMatchObject([
+      { skillName: 'implement', skillOrigin: 'explicit', summary: 'Skill implement called' },
+    ]);
+  });
+
   it('retains large input context while redacting structured secrets and home-directory usernames', () => {
     const longBody = 'x'.repeat(13_000);
     const parsed = parseCodexTranscriptMetadata(JSON.stringify({

@@ -139,10 +139,19 @@ test.describe('Agent: Codex', () => {
     await expect(page.locator('span:text-is("Total tokens")')).toBeVisible();
   });
 
-  test('does not substitute tool events for unavailable Skill calls', async ({ page }) => {
+  test('labels process-inferred Skill usage without presenting it as explicit calls', async ({ page }) => {
     await page.locator('button:has-text("Sessions")').click();
-    await expect(page.locator('[data-od-id="skill-usage"]')).toContainText('Skill calls are not available from this agent’s local logs.');
-    await expect(page.locator('[data-od-id="skill-usage"]')).not.toContainText('frontend-design');
+    await expect(page.locator('[data-od-id="session-kpi-row"]')).toContainText('Skill uses');
+    await expect(page.locator('[data-od-id="session-kpi-row"]')).toContainText('Inferred from SKILL.md reads');
+    await expect(page.locator('[data-od-id="skill-usage"]')).toContainText('Conservatively inferred from process-level SKILL.md reads');
+    await expect(page.locator('[data-od-id="skill-usage"]')).toContainText('7 total · inferred');
+    await expect(page.locator('[data-od-id="skill-usage"]')).toContainText('implement');
+    await page.locator('[data-od-id="session-detail-table"] tbody tr').first().click();
+    const detailDialog = page.locator('[data-od-id="session-detail-dialog"]');
+    await expect(detailDialog).toContainText('Skill uses · inferred');
+    const skillStep = detailDialog.locator('article').filter({ hasText: 'Skill · implement' });
+    await expect(skillStep).toContainText('Skill implement inferred from process');
+    await expect(skillStep).toContainText('inferred');
   });
 });
 

@@ -258,6 +258,25 @@ function toolInvocationName(name: string, input: unknown): { isSkill: boolean; n
   return { isSkill, name: skillName };
 }
 
+function serializedToolInput(input: unknown): string {
+  if (typeof input === 'string') return input;
+  try { return JSON.stringify(input); } catch { return ''; }
+}
+
+function inferredSkillNames(toolName: string, input: unknown): string[] {
+  const text = serializedToolInput(input);
+  if (!text || !/[/\\]skills[/\\]/i.test(text)) return [];
+  const directReader = /^(read|read_file)$/i.test(toolName);
+  const commandReader = /^(exec|exec_command|bash)$/i.test(toolName)
+    && /(?:^|[\s"';&|`])(?:cat|sed|head|tail|less|more)\b/i.test(text);
+  if (!directReader && !commandReader) return [];
+  const names = new Set<string>();
+  for (const match of text.matchAll(/[/\\]skills[/\\](?:[^\s"'`/\\]+[/\\])*([^\s"'`/\\]+)[/\\]SKILL\.md\b/gi)) {
+    if (match[1] && match[1] !== '.system') names.add(match[1]);
+  }
+  return [...names];
+}
+
 function sessionDescription(userTurns: number, toolCalls: number, skillCalls: number): string | undefined {
   const parts = [
     userTurns ? `${userTurns} user turn${userTurns === 1 ? '' : 's'}` : undefined,
@@ -355,6 +374,10 @@ export function parseCodexTranscriptMetadata(raw: string): CodexTranscriptMetada
     return record.type === 'event_msg' && payload?.type === 'user_message' && typeof payload.message === 'string';
   });
   const calls = new Map<string, { name: string; isSkill: boolean }>();
+  let taskIndex = -1;
+  const inferredByTask = new Map<number, Set<string>>();
+  const inferredEventsByTask = new Map<number, SessionEvent[]>();
+  const explicitSkillTasks = new Set<number>();
   for (const record of records) {
     if (!validTimestamp(record.timestamp)) continue;
     const payload = record.payload;
@@ -365,6 +388,7 @@ export function parseCodexTranscriptMetadata(raw: string): CodexTranscriptMetada
         const input = safeContent(item.message);
         if (!input) continue;
         initial.userTurns++;
+        taskIndex++;
         const prompt = promptSummary(item.message);
         if (prompt && !initial.title) Object.assign(initial, prompt);
         initial.events.push({
@@ -408,6 +432,7 @@ export function parseCodexTranscriptMetadata(raw: string): CodexTranscriptMetada
       const input = safeContent(item.content);
       if (!input) continue;
       initial.userTurns++;
+      taskIndex++;
       const prompt = promptSummary(item.content);
       if (prompt && !initial.title) Object.assign(initial, prompt);
       initial.events.push({
@@ -419,27 +444,62 @@ export function parseCodexTranscriptMetadata(raw: string): CodexTranscriptMetada
       });
       continue;
     }
-    if (item.type === 'function_call' && typeof item.name === 'string') {
-      let input: unknown = item.arguments;
+    if ((item.type === 'function_call' || item.type === 'custom_tool_call') && typeof item.name === 'string') {
+      let input: unknown = item.type === 'custom_tool_call' ? item.input : item.arguments;
       if (typeof input === 'string') {
         try { input = JSON.parse(input); } catch { /* preserve a bounded raw argument summary */ }
       }
       const invocation = toolInvocationName(item.name, input);
-      if (invocation.isSkill) initial.skillCalls++; else initial.toolCalls++;
+      if (invocation.isSkill) {
+        if (!explicitSkillTasks.has(taskIndex)) {
+          explicitSkillTasks.add(taskIndex);
+          const inferredEvents = inferredEventsByTask.get(taskIndex) || [];
+          if (inferredEvents.length) {
+            const inferredIds = new Set(inferredEvents.map(event => event.id));
+            initial.events = initial.events.filter(event => !inferredIds.has(event.id));
+            initial.skillCalls -= inferredEvents.length;
+          }
+        }
+        initial.skillCalls++;
+      } else initial.toolCalls++;
       if (typeof item.call_id === 'string') calls.set(item.call_id, invocation);
+      if (!invocation.isSkill && !explicitSkillTasks.has(taskIndex)) {
+        const taskSkills = inferredByTask.get(taskIndex) || new Set<string>();
+        inferredByTask.set(taskIndex, taskSkills);
+        for (const skillName of inferredSkillNames(item.name, input)) {
+          if (taskSkills.has(skillName)) continue;
+          taskSkills.add(skillName);
+          initial.skillCalls++;
+          const inferredEvent: SessionEvent = {
+            id: `skill-inferred-${initial.events.length + 1}`,
+            timestamp: record.timestamp,
+            type: 'skill_call',
+            skillName,
+            skillOrigin: 'inferred',
+            summary: `Skill ${skillName} inferred from process`,
+            parameterSummary: `Inferred from ${item.name} reading ${skillName}/SKILL.md`,
+            contentAvailable: false,
+          };
+          initial.events.push(inferredEvent);
+          const taskEvents = inferredEventsByTask.get(taskIndex) || [];
+          taskEvents.push(inferredEvent);
+          inferredEventsByTask.set(taskIndex, taskEvents);
+        }
+      }
       initial.events.push({
         id: `${invocation.isSkill ? 'skill' : 'tool'}-${initial.events.length + 1}`,
         ...(typeof item.call_id === 'string' ? { callId: item.call_id } : {}),
         timestamp: record.timestamp,
         type: invocation.isSkill ? 'skill_call' : 'tool_call',
         ...(invocation.isSkill ? { skillName: invocation.name } : { toolName: invocation.name }),
+        ...(invocation.isSkill ? { skillOrigin: 'explicit' as const } : {}),
         summary: `${invocation.isSkill ? 'Skill' : 'Tool'} ${invocation.name} called`,
         ...(parameterSummary(input) ? { parameterSummary: parameterSummary(input) } : {}),
         contentAvailable: false,
       });
       continue;
     }
-    if (item.type === 'function_call_output') {
+    if (item.type === 'function_call_output' || item.type === 'custom_tool_call_output') {
       const invocation = typeof item.call_id === 'string' ? calls.get(item.call_id) : undefined;
       const success = outputSuccess(item.output);
       initial.events.push({
@@ -749,6 +809,7 @@ function loadClaudeSessions(files: string[]): SessionSource {
     capabilities: {
       userTurns: true,
       skills: hasSkill,
+      ...(hasSkill ? { skillSemantics: 'explicit' as const } : {}),
       tools: true,
       // Claude tool_result has an explicit is_error field when success semantics are available.
       toolResults: hasToolResultSemantics,
@@ -770,6 +831,8 @@ function loadSource(agent: string, revision: string): SessionSource {
   if (agent === 'codex') {
     const sessions = parseAllSessions().map(codexSessionToIndexed);
     const hasSkill = sessions.some(session => session.events.some(event => event.type === 'skill_call'));
+    const hasInferredSkill = sessions.some(session => session.events.some(event => event.type === 'skill_call' && event.skillOrigin === 'inferred'));
+    const hasExplicitSkill = sessions.some(session => session.events.some(event => event.type === 'skill_call' && event.skillOrigin !== 'inferred'));
     const hasToolResults = sessions.some(session => session.events.some(event => event.type === 'tool_result'));
     const hasUserTurns = sessions.some(session => session.summary.userTurnCount !== undefined);
     for (const session of sessions) {
@@ -780,6 +843,7 @@ function loadSource(agent: string, revision: string): SessionSource {
       capabilities: {
         userTurns: hasUserTurns,
         skills: hasSkill,
+        ...(hasSkill ? { skillSemantics: hasInferredSkill && hasExplicitSkill ? 'mixed' as const : hasInferredSkill ? 'inferred' as const : 'explicit' as const } : {}),
         tools: true,
         toolResults: hasToolResults,
         contentPreview: false,

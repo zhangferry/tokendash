@@ -165,7 +165,7 @@ export interface SessionSummary {
   status: SessionStatus;
   models: string[];
   llmCallCount: number;
-  /** Present only when the source has explicit Skill semantics. */
+  /** Present when the source has explicit or process-inferred Skill semantics. */
   skillCallCount?: number;
   /** Tool calls are intentionally separate from Skills. */
   toolCallCount?: number;
@@ -188,6 +188,8 @@ export interface SessionEvent {
   contextLabel?: string;
   model?: string;
   skillName?: string;
+  /** Distinguishes native Skill events from conservative process inference. */
+  skillOrigin?: 'explicit' | 'inferred';
   toolName?: string;
   success?: boolean;
   usage?: SessionUsage;
@@ -219,6 +221,8 @@ export interface SessionDetail {
 export interface SessionAnalyticsCapabilities {
   userTurns: boolean;
   skills: boolean;
+  /** How Skill calls were derived when `skills` is available. */
+  skillSemantics?: 'explicit' | 'inferred' | 'mixed';
   /** Tool calls are available independently of explicit Skill calls. */
   tools: boolean;
   toolResults: boolean;
@@ -268,7 +272,7 @@ export interface SessionUserTurnDistributionEntry {
 export interface SessionAnalyticsResponse {
   summary: SessionAnalyticsSummary;
   llmCallTrend: SessionLlmCallTrendEntry[];
-  /** Explicit Skill invocations only, for example Claude's Skill tool. */
+  /** Native Skill invocations or conservatively inferred process usage. */
   skillDistribution?: SessionDistributionEntry[];
   /** General tools such as Bash, Read, TaskUpdate, and MCP calls. */
   toolDistribution?: SessionDistributionEntry[];

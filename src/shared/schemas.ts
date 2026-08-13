@@ -187,6 +187,7 @@ export const SessionEventSchema = z.object({
   contextLabel: z.string().optional(),
   model: z.string().optional(),
   skillName: z.string().optional(),
+  skillOrigin: z.enum(['explicit', 'inferred']).optional(),
   toolName: z.string().optional(),
   success: z.boolean().optional(),
   usage: SessionUsageSchema.optional(),
@@ -207,6 +208,7 @@ export const SessionDetailSchema = z.object({
   capabilities: z.object({
     userTurns: z.boolean(),
     skills: z.boolean(),
+    skillSemantics: z.enum(['explicit', 'inferred', 'mixed']).optional(),
     tools: z.boolean(),
     toolResults: z.boolean(),
     contentPreview: z.boolean(),
@@ -251,6 +253,7 @@ const SessionAnalyticsResponseSchema = z.object({
   capabilities: z.object({
     userTurns: z.boolean(),
     skills: z.boolean(),
+    skillSemantics: z.enum(['explicit', 'inferred', 'mixed']).optional(),
     tools: z.boolean(),
     toolResults: z.boolean(),
     contentPreview: z.boolean(),

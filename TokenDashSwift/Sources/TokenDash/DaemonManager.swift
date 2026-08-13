@@ -30,6 +30,7 @@ enum DaemonProbe: Equatable {
     private let daemonScriptFinder: () throws -> String
     private let processFactory: () -> any DaemonProcess
     private let probeOverride: ((Int) async -> DaemonProbe)?
+    private let dashboardProbeOverride: ((Int) async -> Bool)?
     private let startupTimeout: TimeInterval
     private let pollIntervalNanoseconds: UInt64
     private let discoveryPorts: [Int]
@@ -50,6 +51,7 @@ enum DaemonProbe: Equatable {
         daemonScriptFinder: (() throws -> String)? = nil,
         processFactory: @escaping () -> any DaemonProcess = { Process() },
         probe: ((Int) async -> DaemonProbe)? = nil,
+        dashboardProbe: ((Int) async -> Bool)? = nil,
         startupTimeout: TimeInterval = 10,
         pollIntervalNanoseconds: UInt64 = 500_000_000,
         discoveryPorts: [Int] = Array(3456...3475)
@@ -57,6 +59,7 @@ enum DaemonProbe: Equatable {
         self.dataDirOverride = dataDir
         self.processFactory = processFactory
         self.probeOverride = probe
+        self.dashboardProbeOverride = dashboardProbe
         self.startupTimeout = startupTimeout
         self.pollIntervalNanoseconds = pollIntervalNanoseconds
         self.discoveryPorts = discoveryPorts
@@ -247,9 +250,34 @@ enum DaemonProbe: Equatable {
     }
 
     private func probeDaemon(port: Int) async -> DaemonProbe {
+        let apiProbe: DaemonProbe
         if let probeOverride {
-            return await probeOverride(port)
+            apiProbe = await probeOverride(port)
+        } else {
+            apiProbe = await probeAPIIdentity(port: port)
         }
+
+        guard apiProbe == .compatible else { return apiProbe }
+
+        // A development API server can expose the same package/version while
+        // intentionally serving no built web client. Reusing it would enable
+        // the Dashboard button but open a 404 page. Packaged daemons are only
+        // compatible when both their API identity and HTML entrypoint work.
+        let dashboardAvailable: Bool
+        if let dashboardProbeOverride {
+            dashboardAvailable = await dashboardProbeOverride(port)
+        } else if probeOverride != nil {
+            // Existing lifecycle tests that replace the complete API probe do
+            // not need to stand up an HTTP server unless they exercise this
+            // additional contract explicitly.
+            dashboardAvailable = true
+        } else {
+            dashboardAvailable = await probeDashboard(port: port)
+        }
+        return dashboardAvailable ? .compatible : .unavailableOrForeign
+    }
+
+    private func probeAPIIdentity(port: Int) async -> DaemonProbe {
         do {
             let info = try await APIClient(port: port).getAppInfo(timeout: 1.0)
             guard info.packageName == APIClient.expectedPackageName else {
@@ -261,6 +289,18 @@ enum DaemonProbe: Equatable {
             return daemonVersion == normalizedAppVersion ? .compatible : .tokenDashVersionMismatch
         } catch {
             return .unavailableOrForeign
+        }
+    }
+
+    func probeDashboard(port: Int) async -> Bool {
+        guard let url = URL(string: "http://127.0.0.1:\(port)/") else { return false }
+        do {
+            let request = URLRequest(url: url, timeoutInterval: 1.0)
+            let (_, response) = try await URLSession.shared.data(for: request)
+            guard let http = response as? HTTPURLResponse else { return false }
+            return http.statusCode == 200 && http.mimeType == "text/html"
+        } catch {
+            return false
         }
     }
 

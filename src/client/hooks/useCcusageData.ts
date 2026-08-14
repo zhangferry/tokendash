@@ -31,7 +31,7 @@ export function useCcusageData<T>(fetcher: (refresh?: boolean) => Promise<T>, in
   // 定时自动刷新
   useEffect(() => {
     if (intervalMs <= 0) return;
-    timerRef.current = setInterval(() => { void fetchData(true); }, intervalMs);
+    timerRef.current = setInterval(() => { void fetchData(false); }, intervalMs);
     return () => {
       if (timerRef.current) clearInterval(timerRef.current);
     };

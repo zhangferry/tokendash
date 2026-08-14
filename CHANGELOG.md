@@ -1,5 +1,10 @@
 # Changelog
 
+### v1.8.10
+- **Cache-aligned automatic refreshes** — keep web timers, native background refreshes, popover opens, and optional pulse sampling on cache-aware requests; only an explicit manual refresh bypasses usage and quota caches.
+- **Faster OpenCode dashboard loading** — share one parsed event set across daily, project, and block aggregations until the SQLite database or its WAL changes, avoiding repeated multi-second full-table scans.
+- **Reliable native Dashboard links** — verify that a reused local daemon serves the web dashboard, not just compatible APIs, before opening it from the menu bar app.
+
 ### v1.8.9
 - **Inspectable session analytics** — add a Sessions dashboard with model-call trends, tool and Skill distributions, duration and turn metrics, searchable session history, and task-scoped detail views.
 - **Readable task execution traces** — organize each task as overview, combined user/runtime input, model reasoning, tool parameters and results, and final responses while keeping large content available on demand.

@@ -232,19 +232,23 @@ esac
     })).not.toThrow();
   });
 
-  it('forces native menu bar refreshes past server-side caches', () => {
+  it('reserves cache bypasses for explicit manual refreshes', () => {
     const apiClient = readFileSync('TokenDashSwift/Sources/TokenDash/Services/APIClient.swift', 'utf8');
     const badgeUpdater = readFileSync('TokenDashSwift/Sources/TokenDash/BadgeUpdater.swift', 'utf8');
+    const webRefreshHook = readFileSync('src/client/hooks/useCcusageData.ts', 'utf8');
     expect(apiClient).toContain('"&refresh=1"');
     expect(apiClient).toContain('"/quota\\(refresh ? "?refresh=1" : "")"');
-    // v1.8.0: detail endpoints take a `forceRefresh` flag — true on popover open
-    // (forces past the cache), false on the 60s background timer (cache-served).
+    // Detail endpoints take a `forceRefresh` flag, but automatic refreshes stay
+    // cache-aware. Only refreshNow() is allowed to bypass usage and quota caches.
     expect(badgeUpdater).toContain('api.getDaily(agent: agent, refresh: forceRefresh)');
     expect(badgeUpdater).toContain('api.getBlocks(agent: agent, refresh: forceRefresh)');
     expect(badgeUpdater).toContain('api.getProjects(agent: agent, refresh: forceRefresh)');
     expect(badgeUpdater).toContain('api.getQuota(refresh: force)');
-    // popover open must still force-refresh (the v1.7.5 guarantee, now via flag)
-    expect(badgeUpdater).toContain('performFullUpdate(forceRefresh: true, forceQuota: false)');
+    expect(badgeUpdater).toContain('refreshNow()');
+    expect(badgeUpdater).toContain('forceRefresh: true, forceQuota: true, recordRefreshTime: true');
+    expect(badgeUpdater).not.toContain('performBackgroundRefresh() async {\n        await performFullUpdate(forceRefresh: true');
+    expect(webRefreshHook).toContain('setInterval(() => { void fetchData(false); }, intervalMs)');
+    expect(webRefreshHook).toContain('const refetch = useCallback(() => fetchData(true)');
     expect(badgeUpdater).toContain('retainUsableQuotas');
     expect(badgeUpdater).toContain('snapshot.freshness != "stale"');
   });

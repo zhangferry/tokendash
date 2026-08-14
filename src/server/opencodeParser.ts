@@ -1,4 +1,4 @@
-import { existsSync } from 'node:fs';
+import { existsSync, statSync } from 'node:fs';
 import { execSync } from 'node:child_process';
 import { join } from 'node:path';
 import { homedir } from 'node:os';
@@ -76,15 +76,48 @@ interface RawMessage {
   data: string;
 }
 
+interface OpenCodeEventCache {
+  fingerprint: string;
+  events: OpenCodeTokenEvent[];
+}
+
+let openCodeEventCache: OpenCodeEventCache | null = null;
+
+function sourceFingerprint(): string | null {
+  try {
+    const db = statSync(OPENCODE_DB);
+    let walMtimeMs = 0;
+    let walSize = 0;
+    try {
+      const wal = statSync(`${OPENCODE_DB}-wal`);
+      walMtimeMs = wal.mtimeMs;
+      walSize = wal.size;
+    } catch {
+      // SQLite may checkpoint and remove the WAL between reads.
+    }
+    return `${db.mtimeMs}:${db.size}:${walMtimeMs}:${walSize}`;
+  } catch {
+    return null;
+  }
+}
+
+export function clearOpenCodeEventCache(): void {
+  openCodeEventCache = null;
+}
+
 export function parseAllOpenCodeEvents(project?: string | null): OpenCodeTokenEvent[] {
-  let sql = `SELECT data FROM message WHERE json_extract(data, '$.role') = 'assistant'`;
-  if (project) {
-    sql += ` AND json_extract(data, '$.path.cwd') = '${project.replace(/'/g, "''")}'`;
+  const fingerprint = sourceFingerprint();
+  if (fingerprint === null) return [];
+
+  if (openCodeEventCache?.fingerprint === fingerprint) {
+    return project
+      ? openCodeEventCache.events.filter(event => event.project === project)
+      : openCodeEventCache.events;
   }
 
   let raw: string;
   try {
-    raw = queryOpenCodeDB(sql);
+    raw = queryOpenCodeDB(`SELECT data FROM message WHERE json_extract(data, '$.role') = 'assistant'`);
   } catch {
     return [];
   }
@@ -131,7 +164,8 @@ export function parseAllOpenCodeEvents(project?: string | null): OpenCodeTokenEv
     });
   }
 
-  return events;
+  openCodeEventCache = { fingerprint, events };
+  return project ? events.filter(event => event.project === project) : events;
 }
 
 // ---------------------------------------------------------------------------

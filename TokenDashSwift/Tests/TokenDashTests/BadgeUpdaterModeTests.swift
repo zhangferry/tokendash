@@ -20,14 +20,14 @@ final class BadgeUpdaterModeTests: XCTestCase {
         XCTAssertEqual(counts.quota, 0, "dormant 不得拉 quota")
     }
 
-    // MARK: - active: 打开瞬间全量拉详情，但 quota 走缓存（refresh=false）
+    // MARK: - active: 自动刷新详情与 quota 都走缓存
 
     func testActivePerformFullUpdateFetchesDetailsButCachesQuota() async throws {
         let state = AppState()
         let mock = MockAPIClient()
         let updater = BadgeUpdater(state: state, client: mock)
 
-        await updater.performFullUpdate(forceRefresh: true, forceQuota: false)
+        await updater.performFullUpdate(forceRefresh: false, forceQuota: false, recordRefreshTime: true)
         // Detail state paints synchronously; quota refreshes async — give the
         // detached quota task a moment to run before asserting on it.
         try await Task.sleep(nanoseconds: 200_000_000)  // 0.2s
@@ -39,6 +39,9 @@ final class BadgeUpdaterModeTests: XCTestCase {
         XCTAssertGreaterThan(counts.quota, 0, "active 详情刷新最终要拉 quota（异步）")
         let lastQuotaRefresh = await mock.lastQuotaRefresh
         XCTAssertEqual(lastQuotaRefresh, false, "非手动刷新时 quota 必须走缓存")
+        let lastDailyRefresh = await mock.lastDailyRefresh
+        XCTAssertEqual(lastDailyRefresh, false, "非手动刷新时详情必须走缓存")
+        XCTAssertNotNil(state.lastUpdatedAt, "完成自动刷新后必须记录节流时间")
     }
 
     // MARK: - 手动刷新：quota 强刷
@@ -76,14 +79,14 @@ final class BadgeUpdaterModeTests: XCTestCase {
         now.addTimeInterval(60)
         let refreshedOnOpen = await updater.refreshOnPopoverOpenIfNeeded()
 
-        XCTAssertTrue(refreshedOnOpen, "the first popover open after launch must still bypass stale daemon caches")
+        XCTAssertTrue(refreshedOnOpen, "the first popover open after launch must still perform a cache-aware refresh")
         let openedCounts = await mock.snapshot()
         XCTAssertGreaterThan(openedCounts.daily, launchCounts.daily)
         XCTAssertGreaterThan(openedCounts.blocks, launchCounts.blocks)
         XCTAssertGreaterThan(openedCounts.projects, launchCounts.projects)
         let openDailyRefresh = await mock.lastDailyRefresh
-        XCTAssertEqual(openDailyRefresh, true, "popover open must force a fresh detail refresh after cache-served launch warm-up")
-        XCTAssertNotNil(state.lastUpdatedAt, "fresh popover refresh should record the throttle timestamp")
+        XCTAssertEqual(openDailyRefresh, false, "popover open is automatic and must not bypass daemon caches")
+        XCTAssertNotNil(state.lastUpdatedAt, "popover refresh should record the throttle timestamp")
     }
 
     func testPopoverOpenDuringLaunchWarmupQueuesFreshRefresh() async throws {
@@ -109,8 +112,8 @@ final class BadgeUpdaterModeTests: XCTestCase {
         }
 
         let lastDailyRefresh = await mock.lastDailyRefresh
-        XCTAssertEqual(lastDailyRefresh, true, "active popover open during cache-served launch warm-up must queue a fresh refresh")
-        XCTAssertNotNil(state.lastUpdatedAt, "queued fresh refresh should record the throttle timestamp")
+        XCTAssertEqual(lastDailyRefresh, false, "queued automatic popover refresh must stay cache-aware")
+        XCTAssertNotNil(state.lastUpdatedAt, "queued popover refresh should record the throttle timestamp")
     }
 
     func testPopoverRefreshIsThrottledForThirtyMinutes() async throws {
@@ -129,7 +132,7 @@ final class BadgeUpdaterModeTests: XCTestCase {
         let firstCounts = await mock.snapshot()
         XCTAssertGreaterThan(firstCounts.daily, 0)
         let firstDailyRefresh = await mock.lastDailyRefresh
-        XCTAssertEqual(firstDailyRefresh, true)
+        XCTAssertEqual(firstDailyRefresh, false)
 
         now.addTimeInterval(29 * 60 + 59)
         let refreshedBeforeInterval = await updater.refreshOnPopoverOpenIfNeeded()
@@ -144,17 +147,18 @@ final class BadgeUpdaterModeTests: XCTestCase {
         XCTAssertGreaterThan(finalCounts.daily, firstCounts.daily)
     }
 
-    func testBackgroundRefreshForceRefreshesDetailsAndQuota() async throws {
+    func testBackgroundRefreshUsesCachedDetailsAndQuota() async throws {
         let state = AppState()
         let mock = MockAPIClient()
         let updater = BadgeUpdater(state: state, client: mock)
 
         await updater.performBackgroundRefresh()
+        try await waitUntil { await mock.lastQuotaRefresh != nil }
 
         let lastDailyRefresh = await mock.lastDailyRefresh
         let lastQuotaRefresh = await mock.lastQuotaRefresh
-        XCTAssertEqual(lastDailyRefresh, true, "每小时后台刷新必须绕过详情缓存")
-        XCTAssertEqual(lastQuotaRefresh, true, "每小时后台刷新必须绕过 quota 缓存")
+        XCTAssertEqual(lastDailyRefresh, false, "定时后台刷新必须复用详情缓存")
+        XCTAssertEqual(lastQuotaRefresh, false, "定时后台刷新必须复用 quota 缓存")
         XCTAssertNotNil(state.lastUpdatedAt)
         XCTAssertFalse(state.isRefreshing)
     }

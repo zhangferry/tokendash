@@ -164,14 +164,17 @@ import AppKit
 
     /// Manual refresh (refresh button) — force everything, including external quota.
     func refreshNow() {
-        Task { await self.performFullUpdate(forceRefresh: true, forceQuota: true) }
+        Task {
+            await self.performFullUpdate(
+                forceRefresh: true, forceQuota: true, recordRefreshTime: true)
+        }
     }
 
-    /// Full detail refresh for the background timer. It bypasses the
-    /// daemon and quota caches so a closed popover still has current content
-    /// when the user next opens it.
+    /// Full detail refresh for the background timer. Automatic work remains
+    /// cache-aware; only the user's refresh action bypasses daemon caches.
     func performBackgroundRefresh() async {
-        await performFullUpdate(forceRefresh: true, forceQuota: true)
+        await performFullUpdate(
+            forceRefresh: false, forceQuota: false, recordRefreshTime: true)
     }
 
     /// Returns true when opening the popover triggered its allowed automatic
@@ -188,7 +191,8 @@ import AppKit
            currentTime.timeIntervalSince(lastUpdatedAt) < popoverRefreshInterval {
             return false
         }
-        await performFullUpdate(forceRefresh: true, forceQuota: false)
+        await performFullUpdate(
+            forceRefresh: false, forceQuota: false, recordRefreshTime: true)
         return true
     }
 
@@ -231,13 +235,20 @@ import AppKit
 
     /// Refreshes daily, blocks, projects, quota, and all derived popover data.
     /// `forceRefresh` bypasses the daemon usage cache; `forceQuota` bypasses
-    /// the quota cache for manual and hourly background refreshes.
-    func performFullUpdate(forceRefresh: Bool, forceQuota: Bool) async {
+    /// the quota cache. Both are reserved for an explicit manual refresh.
+    /// `recordRefreshTime` lets cache-aware scheduled work advance its throttle
+    /// without treating the launch warm-up as a completed automatic refresh.
+    func performFullUpdate(
+        forceRefresh: Bool,
+        forceQuota: Bool,
+        recordRefreshTime: Bool? = nil
+    ) async {
         guard let api = apiClient else {
             NSLog("[TokenDash] performFullUpdate called but apiClient is nil")
             return
         }
         guard !state.isRefreshing else { return }
+        let shouldRecordRefreshTime = recordRefreshTime ?? forceRefresh
         state.isRefreshing = true
         if state.todaySummary == nil {
             state.isLoading = true
@@ -245,7 +256,7 @@ import AppKit
         defer {
             state.isLoading = false
             state.isRefreshing = false
-            if forceRefresh {
+            if shouldRecordRefreshTime {
                 pendingFreshPopoverRefresh = false
             } else if pendingFreshPopoverRefresh && mode == .active {
                 pendingFreshPopoverRefresh = false
@@ -328,12 +339,10 @@ import AppKit
             } else {
                 Task { await self.refreshQuota(force: false) }
             }
-            // Only a cache-bypassing detail refresh proves the popover is fresh.
-            // The launch warm-up intentionally uses refresh=false and may be
-            // served from the daemon's stale disk cache; recording it here would
-            // suppress the first popover-open refresh and leave the menu showing
-            // zeroes until the next background/manual refresh.
-            if forceRefresh {
+            // Launch warm-up intentionally does not advance the throttle. Timed,
+            // popover, and manual refreshes do, even when the automatic paths are
+            // cache-served.
+            if shouldRecordRefreshTime {
                 self.state.lastUpdatedAt = now()
             }
         } catch {
@@ -359,9 +368,8 @@ import AppKit
 
     // MARK: - Pulse sampling (active only)
 
-    /// Samples today's cumulative token count every activePulseInterval. refresh:true
-    /// because rate deltas need fresh totals (a cache-served value would freeze the
-    /// rate chart at zero). Only scheduled in `.active`.
+    /// Samples today's cumulative token count every activePulseInterval. This
+    /// optional automatic path remains cache-aware like all non-manual refreshes.
     private func samplePulse() {
         guard let api = apiClient, !isPulseSampling else { return }
         isPulseSampling = true
@@ -380,7 +388,7 @@ import AppKit
                 var totalTokens = 0, inputTokens = 0, outputTokens = 0, ok = 0
                 for agent in agents {
                     do {
-                        let r = try await api.getDaily(agent: agent, refresh: true)
+                        let r = try await api.getDaily(agent: agent, refresh: false)
                         if let e = r.daily.first(where: { $0.date == today }) {
                             totalTokens += e.totalTokens
                             inputTokens += e.inputTokens

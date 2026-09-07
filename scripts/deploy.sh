@@ -143,10 +143,14 @@ if ! gh release upload "$TAG" "$DMG" "$APPCAST" --repo "$REPO"; then
 fi
 
 step "Publishing npm package"
-if ! npm publish --access public --registry "$REGISTRY"; then
-    echo "npm publish failed; deleting draft GitHub Release $TAG" >&2
-    gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag >/dev/null 2>&1 || true
-    exit 1
+if [ "${TRUSTED_PUBLISHING:-0}" = "1" ]; then
+    echo "TRUSTED_PUBLISHING=1 — npm publish delegated to GitHub Actions (tag push triggers release-npm.yml)."
+else
+    if ! npm publish --access public --registry "$REGISTRY"; then
+        echo "npm publish failed; deleting draft GitHub Release $TAG" >&2
+        gh release delete "$TAG" --repo "$REPO" --yes --cleanup-tag >/dev/null 2>&1 || true
+        exit 1
+    fi
 fi
 
 step "Publishing git tag and GitHub Release"
@@ -154,6 +158,10 @@ git tag -a "$TAG" -m "Release $TAG"
 git push origin main
 git push origin "$TAG"
 gh release edit "$TAG" --repo "$REPO" --draft=false --latest
+
+if [ "${TRUSTED_PUBLISHING:-0}" = "1" ]; then
+    echo "npm publish is running in GitHub Actions: https://github.com/$REPO/actions/workflows/release-npm.yml"
+fi
 
 step "Published $TAG"
 echo "npm: https://www.npmjs.com/package/@zhangferry-dev/tokendash/v/$VERSION"

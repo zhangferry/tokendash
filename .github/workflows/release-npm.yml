@@ -1,0 +1,31 @@
+name: Release npm package
+
+# Publishes @zhangferry-dev/tokendash to npm via Trusted Publishing (OIDC) —
+# no npm tokens, no OTP. Bound in the package's npm Settings → Trusted
+# Publishing to this repository and this workflow file.
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write   # required for npm OIDC trusted publishing
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org/
+
+      # Trusted publishing needs npm >= 11.5.1; the bundled npm is older.
+      - name: Upgrade npm for OIDC support
+        run: npm install -g npm@latest
+
+      - name: Publish to npm (trusted publishing)
+        run: npm publish --access public

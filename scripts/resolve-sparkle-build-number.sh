@@ -35,7 +35,9 @@ fi
 
 fetch_url() {
     local url="$1"
-    "$CURL_BIN" -LfsS \
+    # --retry covers transient CDN drops (a single failed appcast fetch would
+    # otherwise abort the whole release build under the strict checks below).
+    "$CURL_BIN" -LfsS --retry 3 --retry-delay 1 --retry-all-errors \
         -H "Accept: application/vnd.github+json, application/xml, text/xml;q=0.9, */*;q=0.8" \
         -H "User-Agent: TokenDash-release" \
         "$url"

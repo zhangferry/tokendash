@@ -18,10 +18,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # No registry-url / NODE_AUTH_TOKEN here: an injected placeholder token
+      # overrides npm's OIDC flow. npm >= 11.5 picks up trusted publishing
+      # automatically inside GitHub Actions with the id-token permission.
       - uses: actions/setup-node@v4
         with:
           node-version: 22
-          registry-url: https://registry.npmjs.org/
 
       # Trusted publishing needs npm >= 11.5.1; the bundled npm is older.
       - name: Upgrade npm for OIDC support

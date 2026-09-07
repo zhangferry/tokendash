@@ -57,5 +57,9 @@
     "typescript": "^5.8.3",
     "vite": "^6.3.3",
     "vitest": "^4.1.4"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/zhangferry/tokendash.git"
   }
 }

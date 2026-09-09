@@ -2,11 +2,15 @@
 // assistant message, each line carrying the same message.id and possibly growing
 // cumulative usage snapshots. Verify whether the parser double-counts.
 import { describe, it, expect, vi, beforeAll, afterAll } from 'vitest';
-import { mkdirSync, writeFileSync, rmSync, mkdtempSync } from 'node:fs';
+import { mkdirSync, writeFileSync, rmSync, mkdtempSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { tmpdir } from 'node:os';
 
-const FIXTURE_HOME = mkdtempSync('/tmp/tokendash-snapshots-');
-afterAll(() => rmSync(FIXTURE_HOME, { recursive: true, force: true }));
+const FIXTURE_HOME = mkdtempSync(join(tmpdir(), 'tokendash-snapshots-'));
+afterAll(() => {
+  vi.unstubAllEnvs();
+  rmSync(FIXTURE_HOME, { recursive: true, force: true });
+});
 const PROJ_DIR = join(FIXTURE_HOME, '.claude', 'projects', '-tmp-fixture-demo');
 
 vi.mock('node:os', async (importOriginal) => {
@@ -15,6 +19,8 @@ vi.mock('node:os', async (importOriginal) => {
 });
 
 beforeAll(() => {
+  vi.stubEnv('CLAUDE_HOME', join(FIXTURE_HOME, '.claude'));
+  vi.stubEnv('TOKENDASH_USAGE_INDEX_DIR', join(FIXTURE_HOME, 'index'));
   mkdirSync(PROJ_DIR, { recursive: true });
   const usage = { input_tokens: 1000, output_tokens: 200, cache_creation_input_tokens: 0, cache_read_input_tokens: 5000 };
   const lines = [
@@ -54,4 +60,31 @@ it('analytics preserves tool content from later blocks', async () => {
   expect(detail!.events.filter(e => e.type === 'tool_call')).toHaveLength(1);
   expect(detail!.events.filter(e => e.type === 'assistant_message')).toHaveLength(2);
   expect(detail!.events.filter(e => e.type === 'llm_call')).toHaveLength(1);
+});
+
+// Old installations already have file summaries on disk; a restart alone must
+// replace those pre-dedup totals even when the source transcript is unchanged.
+it('rebuilds historical aggregates from the pre-dedup disk cache', async () => {
+  const { getDailyResponse, getProjectsResponse, getBlocksResponse } = await import('../../server/claudeJsonlParser.js');
+  const { clearUsageFileIndexMemory } = await import('../../server/usageFileIndex.js');
+  const expectedDaily = getDailyResponse();
+  const expectedProjects = getProjectsResponse();
+  const expectedBlocks = getBlocksResponse(null, 'UTC', 'hour');
+  const indexPath = join(FIXTURE_HOME, 'index', 'claude-usage.json');
+  const oldIndex = JSON.parse(readFileSync(indexPath, 'utf8'));
+  oldIndex.parserVersion = 'claude-aggregate-v3-1min';
+  const doubleNumbers = (value: unknown): unknown => {
+    if (typeof value === 'number') return value * 2;
+    if (Array.isArray(value)) return value.map(doubleNumbers);
+    if (value && typeof value === 'object') {
+      return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, doubleNumbers(item)]));
+    }
+    return value;
+  };
+  for (const file of oldIndex.files) file.value = doubleNumbers(file.value);
+  writeFileSync(indexPath, JSON.stringify(oldIndex));
+  clearUsageFileIndexMemory();
+  expect(getDailyResponse()).toEqual(expectedDaily);
+  expect(getProjectsResponse()).toEqual(expectedProjects);
+  expect(getBlocksResponse(null, 'UTC', 'hour')).toEqual(expectedBlocks);
 });

@@ -1,4 +1,4 @@
-import { claudeUsageLines } from './claudeUsageLines.js';
+import { claudeMessageKey, claudeUsageLines } from './claudeUsageLines.js';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -195,6 +195,34 @@ function thinkingContent(content: unknown): string | undefined {
     .join(' ');
   const safe = redactText(text);
   return safe ? truncate(safe, CONTENT_LIMIT) : undefined;
+}
+
+/** Attach every thinking block to the selected usage record for its message.
+ * Both the index and on-demand hydration use this mapping, even when the
+ * selected snapshot precedes a later content block with lower output usage.
+ */
+function claudeReasoningByUsageLine(lines: string[], usageLines: Set<number>): Map<number, string> {
+  const reasoningByMessage = new Map<string | number, string[]>();
+  const selectedKeys = new Map<number, string | number>();
+  lines.forEach((line, index) => {
+    let entry: Record<string, unknown>;
+    try { entry = JSON.parse(line) as Record<string, unknown>; } catch { return; }
+    if (!entry || entry.type !== 'assistant' || !validTimestamp(entry.timestamp)) return;
+    const key = claudeMessageKey(entry) ?? index;
+    if (usageLines.has(index)) selectedKeys.set(index, key);
+    const message = entry.message as Record<string, unknown> | undefined;
+    const reasoning = thinkingContent(message?.content);
+    if (!reasoning) return;
+    const parts = reasoningByMessage.get(key) ?? [];
+    parts.push(reasoning);
+    reasoningByMessage.set(key, parts);
+  });
+  const result = new Map<number, string>();
+  for (const [index, key] of selectedKeys) {
+    const parts = reasoningByMessage.get(key);
+    if (parts) result.set(index, truncate(parts.join(' '), CONTENT_LIMIT));
+  }
+  return result;
 }
 
 function contentFields(content: string | undefined): Pick<SessionEvent, 'contentPreview' | 'contentAvailable' | 'content'> {
@@ -637,6 +665,7 @@ function claudeSessionsFromFile(filepath: string): MutableClaudeSession[] {
   const toolNames = new Map<string, { name: string; isSkill: boolean }>();
   const lines = raw.split('\n');
   const usageLines = claudeUsageLines(lines);
+  const reasoningByUsageLine = claudeReasoningByUsageLine(lines, usageLines);
 
   for (const [lineIndex, line] of lines.entries()) {
     if (!line.trim()) continue;
@@ -711,7 +740,7 @@ function claudeSessionsFromFile(filepath: string): MutableClaudeSession[] {
     const cacheReadTokens = typeof usage.cache_read_input_tokens === 'number' ? usage.cache_read_input_tokens : 0;
     const totalTokens = inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens;
     const content = message.content;
-    const reasoning = thinkingContent(content);
+    const reasoning = reasoningByUsageLine.get(lineIndex);
     const assistantText = textContent(content);
     const contentTypes = Array.isArray(content)
       ? new Set(content.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object').map(item => item.type))
@@ -726,7 +755,7 @@ function claudeSessionsFromFile(filepath: string): MutableClaudeSession[] {
         timestamp,
         type: 'llm_call',
         model,
-        summary: contentTypes.has('thinking') ? 'Model reasoning' : contentTypes.has('tool_use') ? 'Tool decision' : assistantText ? 'Model response generated' : 'Model inference',
+        summary: reasoning || contentTypes.has('thinking') ? 'Model reasoning' : contentTypes.has('tool_use') ? 'Tool decision' : assistantText ? 'Model response generated' : 'Model inference',
         ...contentFields(reasoning),
         usage: { inputTokens, outputTokens, cacheReadTokens, totalTokens, cost },
       });
@@ -1078,11 +1107,15 @@ function hydrateClaudeEventContent(indexed: SessionAnalyticsIndexedSession): Ses
     available.set(key, matches);
   }
   const hydrated = new Map<string, string>();
-  for (const line of raw.split('\n')) {
+  const lines = raw.split('\n');
+  const reasoningByUsageLine = claudeReasoningByUsageLine(lines, claudeUsageLines(lines));
+  for (const [lineIndex, line] of lines.entries()) {
     if (!line.trim()) continue;
     let entry: Record<string, unknown>;
     try { entry = JSON.parse(line) as Record<string, unknown>; } catch { continue; }
     if (!validTimestamp(entry.timestamp)) continue;
+    const sessionId = entry.sessionId ?? entry.session_id ?? basename(indexed.sourceFile, '.jsonl');
+    if (sessionId !== indexed.summary.id) continue;
     const message = entry.message as Record<string, unknown> | undefined;
     const content = message?.content;
     if (entry.type === 'user' && entry.isMeta === true) continue;
@@ -1095,9 +1128,8 @@ function hydrateClaudeEventContent(indexed: SessionAnalyticsIndexedSession): Ses
     }
     if (entry.type !== 'assistant') continue;
 
-    // A single Claude assistant record can carry both a private thinking block
-    // and its visible text reply. Hydrate each independently by its event type.
-    const reasoning = thinkingContent(content);
+    // Reasoning follows the selected usage snapshot; replies stay on their own rows.
+    const reasoning = reasoningByUsageLine.get(lineIndex);
     if (reasoning) {
       const event = available.get(`llm_call:${entry.timestamp}`)?.shift();
       if (event) hydrated.set(event.id, reasoning);

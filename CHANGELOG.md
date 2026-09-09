@@ -1,5 +1,10 @@
 # Changelog
 
+### v1.9.1
+- **Accurate Claude Code usage totals** — reconcile repeated message usage snapshots across content blocks instead of summing them repeatedly, while retaining the greatest cumulative output snapshot. Thanks to @roy-tong for PR #37.
+- **Correct historical totals after upgrading** — invalidate persisted Claude usage aggregates so unchanged transcripts are recalculated with the corrected accounting rule.
+- **Preserved session reasoning** — retain thinking content from all blocks of a message without counting additional model calls or duplicating token costs; keep assistant replies and tool calls visible.
+
 ### v1.8.10
 - **Cache-aligned automatic refreshes** — keep web timers, native background refreshes, popover opens, and optional pulse sampling on cache-aware requests; only an explicit manual refresh bypasses usage and quota caches.
 - **Faster OpenCode dashboard loading** — share one parsed event set across daily, project, and block aggregations until the SQLite database or its WAL changes, avoiding repeated multi-second full-table scans.

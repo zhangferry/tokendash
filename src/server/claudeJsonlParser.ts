@@ -104,7 +104,7 @@ interface ClaudeFileAggregate {
 // ---------------------------------------------------------------------------
 
 const CLAUDE_PROJECTS_DIR = join(homedir(), '.claude', 'projects');
-const CLAUDE_INDEX_VERSION = 'claude-aggregate-v3-1min';
+const CLAUDE_INDEX_VERSION = 'claude-aggregate-v4-usage-snapshots';
 
 const projectNameCache = new Map<string, string>();
 

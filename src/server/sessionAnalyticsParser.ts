@@ -1,3 +1,4 @@
+import { claudeUsageLines } from './claudeUsageLines.js';
 import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { homedir } from 'node:os';
@@ -634,8 +635,10 @@ function claudeSessionsFromFile(filepath: string): MutableClaudeSession[] {
   const fallbackId = basename(filepath, '.jsonl');
   const sessions = new Map<string, MutableClaudeSession>();
   const toolNames = new Map<string, { name: string; isSkill: boolean }>();
+  const lines = raw.split('\n');
+  const usageLines = claudeUsageLines(lines);
 
-  for (const line of raw.split('\n')) {
+  for (const [lineIndex, line] of lines.entries()) {
     if (!line.trim()) continue;
     let entry: Record<string, unknown>;
     try {
@@ -701,7 +704,7 @@ function claudeSessionsFromFile(filepath: string): MutableClaudeSession[] {
     const message = entry.message as Record<string, unknown> | undefined;
     if (!message) continue;
     const model = typeof message.model === 'string' ? message.model : 'unknown';
-    const usage = (message.usage ?? {}) as Record<string, unknown>;
+    const usage = (usageLines.has(lineIndex) ? message.usage ?? {} : {}) as Record<string, unknown>;
     const inputTokens = typeof usage.input_tokens === 'number' ? usage.input_tokens : 0;
     const outputTokens = typeof usage.output_tokens === 'number' ? usage.output_tokens : 0;
     const cacheCreationTokens = typeof usage.cache_creation_input_tokens === 'number' ? usage.cache_creation_input_tokens : 0;

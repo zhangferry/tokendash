@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
@@ -73,8 +73,8 @@
   <body>
     <div class="card" id="card">
       <div class="spinner"></div>
-      <div class="title" id="title">正在启动本地服务</div>
-      <div class="message" id="message">首次启动需要解析历史用量数据，请稍候。</div>
+      <div class="title" id="title">Starting local server</div>
+      <div class="message" id="message">On first launch, TokenDash parses your usage history. Please wait.</div>
     </div>
     <script>
       // The stub only exists until the local daemon answers on 127.0.0.1; then the
@@ -92,15 +92,15 @@
           }
           if (status.state === 'error') {
             card.classList.add('error');
-            title.textContent = '本地服务启动失败';
+            title.textContent = 'Local server failed to start';
             message.textContent = status.message;
             return false;
           }
-          title.textContent = '正在启动本地服务';
-          message.textContent = status.message || '首次启动需要解析历史用量数据，请稍候。';
+          title.textContent = 'Starting local server';
+          message.textContent = status.message || 'On first launch, TokenDash parses your usage history. Please wait.';
           return true;
         } catch (error) {
-          title.textContent = '无法连接本地服务';
+          title.textContent = 'Unable to connect to local server';
           message.textContent = String(error);
           return true;
         }

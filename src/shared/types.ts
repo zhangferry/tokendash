@@ -1,4 +1,18 @@
-export interface ModelBreakdown {
+/** False means numeric cost is only the known, priced subtotal. */
+export interface CostAvailability {
+  costAvailable?: boolean;
+}
+
+export interface SourceError {
+  agent: string;
+  message: string;
+}
+
+export interface SourceDiagnostics {
+  sourceErrors?: SourceError[];
+}
+
+export interface ModelBreakdown extends CostAvailability {
   totalTokens?: number;
   modelName: string;
   inputTokens: number;
@@ -10,7 +24,7 @@ export interface ModelBreakdown {
   estimatedTokens: number;
 }
 
-export interface DailyEntry {
+export interface DailyEntry extends CostAvailability {
   date: string;
   inputTokens: number;
   outputTokens: number;
@@ -24,7 +38,7 @@ export interface DailyEntry {
   estimatedTokens: number;
 }
 
-export interface Totals {
+export interface Totals extends CostAvailability {
   inputTokens: number;
   outputTokens: number;
   cacheCreationTokens: number;
@@ -35,26 +49,26 @@ export interface Totals {
   estimatedTokens: number;
 }
 
-export interface DailyResponse {
+export interface DailyResponse extends SourceDiagnostics {
   daily: DailyEntry[];
   totals: Totals;
 }
 
-export interface MonthlyResponse {
+export interface MonthlyResponse extends SourceDiagnostics {
   daily: DailyEntry[];
   totals: Totals;
 }
 
-export interface SessionResponse {
+export interface SessionResponse extends SourceDiagnostics {
   daily: DailyEntry[];
   totals: Totals;
 }
 
-export interface ProjectsResponse {
+export interface ProjectsResponse extends SourceDiagnostics {
   projects: Record<string, DailyEntry[]>;
 }
 
-export interface BlockEntry {
+export interface BlockEntry extends CostAvailability {
   id: string;
   startTime: string;
   endTime: string;
@@ -73,7 +87,7 @@ export interface BlockEntry {
   models: string[];
 }
 
-export interface BlocksResponse {
+export interface BlocksResponse extends SourceDiagnostics {
   blocks: BlockEntry[];
 }
 
@@ -109,7 +123,7 @@ export interface ProductivityKPIs {
   activeDaysWithEdits: number;
 }
 
-export interface AnalyticsResponse {
+export interface AnalyticsResponse extends SourceDiagnostics {
   codeChangeTrend: DailyCodeChange[];
   toolUsageDistribution: ToolUsageEntry[];
   productivityKPIs: ProductivityKPIs;
@@ -152,7 +166,8 @@ export type SessionEventType =
   | 'tool_result'
   | 'assistant_message';
 
-export interface SessionUsage {
+export interface SessionUsage extends CostAvailability {
+  cacheWriteTokens?: number;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
@@ -160,7 +175,7 @@ export interface SessionUsage {
   cost?: number;
 }
 
-export interface SessionSummary {
+export interface SessionSummary extends CostAvailability {
   id: string;
   agent: string;
   project?: string;
@@ -237,7 +252,7 @@ export interface SessionAnalyticsCapabilities {
   contentPreview: boolean;
 }
 
-export interface SessionAnalyticsSummary {
+export interface SessionAnalyticsSummary extends CostAvailability {
   totalTokens?: number;
   totalCost?: number;
   sessionCount: number;
@@ -279,7 +294,7 @@ export interface SessionUserTurnDistributionEntry {
   percentage: number;
 }
 
-export interface SessionAnalyticsResponse {
+export interface SessionAnalyticsResponse extends SourceDiagnostics {
   summary: SessionAnalyticsSummary;
   llmCallTrend: SessionLlmCallTrendEntry[];
   /** Native Skill invocations or conservatively inferred process usage. */

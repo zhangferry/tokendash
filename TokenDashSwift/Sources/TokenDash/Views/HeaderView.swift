@@ -48,8 +48,10 @@ struct HeaderView: View {
             // Right: cost + cache badge
             VStack(alignment: .trailing, spacing: 6) {
                 if let s = summary {
-                    Text(formatCost(s.cost))
+                    Text(s.costAvailable ? formatCost(s.cost) : "Partial estimate")
                         .font(.system(size: 22, weight: .semibold, design: .default))
+                        .minimumScaleFactor(0.65)
+                        .lineLimit(1)
                         .monospacedDigit()
                         .foregroundStyle(Color.accentGreen)
                 } else {

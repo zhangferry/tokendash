@@ -101,11 +101,12 @@ struct UsageSection: View {
 
     @ViewBuilder private var typeRows: some View {
         if let s = summary {
-            let total = max(s.inputTokens + s.outputTokens + s.cacheReadTokens, 1)
+            let cached = s.cacheReadTokens + s.cacheWriteTokens
+            let total = max(s.inputTokens + s.outputTokens + cached, 1)
             VStack(spacing: 6) {
                 bar(color: .inputColor, label: "Input", value: formatTokens(s.inputTokens), pct: Double(s.inputTokens) / Double(total))
                 bar(color: .outputColor, label: "Output", value: formatTokens(s.outputTokens), pct: Double(s.outputTokens) / Double(total))
-                bar(color: .cachedColor, label: "Cached", value: formatTokens(s.cacheReadTokens), pct: Double(s.cacheReadTokens) / Double(total))
+                bar(color: .cachedColor, label: "Cached", value: formatTokens(cached), pct: Double(cached) / Double(total))
             }
         } else {
             empty("No usage yet.")

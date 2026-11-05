@@ -96,7 +96,7 @@ async function ensureUsageSupportAvailable(): Promise<boolean> {
     const agents = detectAvailableAgents();
     if (!hasUsageDataSource(agents)) {
       console.error('Error: No AI coding assistant data found.');
-      console.error('\nDetails: Could not find Claude Code, Codex, OpenClaw, OpenCode, or Pi usage data.');
+      console.error('\nDetails: Could not find Claude Code, Codex, OpenClaw, OpenCode, Pi, or DeepSeek Harness usage data.');
       console.error('Please install at least one supported AI coding assistant.');
       return false;
     }
@@ -105,6 +105,7 @@ async function ensureUsageSupportAvailable(): Promise<boolean> {
     if (agents.openclaw) console.log('  ✓ OpenClaw detected');
     if (agents.opencode) console.log('  ✓ OpenCode detected');
     if (agents.pi) console.log('  ✓ Pi detected');
+    if (agents.deepseek) console.log('  ✓ DeepSeek Harness detected');
     return true;
   } catch (error) {
     console.error('Error: failed to detect available AI coding assistants');

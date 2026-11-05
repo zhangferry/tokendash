@@ -1,5 +1,11 @@
 # Changelog
 
+### v1.11.0
+- **Consistent English interface** — unify dashboard, session analytics, settings, desktop menus, and user-facing diagnostics in English.
+- **DeepSeek Harness support** — read V4 JSONL and multi-frame Zstandard sessions for token, model, project and time statistics, searchable session details, reasoning and tool analysis; account for replacement samples, retries and inherited fork history without duplicate usage.
+- **Complete reference-cost reporting** — retain token totals for unpriced models while marking incomplete costs across dashboard, sessions and desktop views.
+- **Resilient source aggregation** — retain healthy agent data in All Agents and desktop totals, surface unavailable sources, and preserve the last display when every source fails.
+
 ### v1.10.0
 - **Windows desktop support** — add a Windows 10/11 x64 NSIS installer with system-tray usage, a popover panel, per-user launch at login, quota notifications, and packaged daemon resources. Node.js 20.10+ is required; the installer provisions WebView2 when needed.
 - **Ubuntu desktop support** — ship deb and AppImage packages with the Tauri tray panel, activity ranges, usage breakdowns, trends, settings, and quota status. Thanks to @ReachForStar for PR #39.

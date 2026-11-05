@@ -31,7 +31,7 @@ export function CurrencyProvider({ children }: { children: ReactNode }) {
   const [exchangeRate, setExchangeRate] = useLocalStorageState<number>('dashboard_exchange_rate', 6);
 
   useEffect(() => {
-    void fetchSettings().then(settings => { if (settings.billing) setExchangeRate(settings.billing.exchangeRate); }).catch(error => console.error('无法读取计费汇率', error));
+    void fetchSettings().then(settings => { if (settings.billing) setExchangeRate(settings.billing.exchangeRate); }).catch(error => console.error('Failed to load the billing exchange rate', error));
   }, []);
   setPricingExchangeRate(exchangeRate);
   const value = useMemo<CurrencyContextValue>(() => ({

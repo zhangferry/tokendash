@@ -15,6 +15,8 @@ export interface TranscriptMessage {
   toolName?: string;
   success?: boolean;
   error?: boolean;
+  /** Source settlement sequence, used when timestamps are shared by multiple requests. */
+  sourceSeq?: number;
 }
 
 function record(value: unknown): Record<string, unknown> {
@@ -65,7 +67,7 @@ export function readOpenCodeTranscripts(): TranscriptMessage[] {
         if (!parts.has(key)) parts.set(key, []);
         parts.get(key)!.push(JSON.parse(String(row.data)));
       }
-    } else throw new Error('OpenCode 数据库缺少消息表');
+    } else throw new Error('The OpenCode database does not contain a message table.');
     return rows.map(row => {
       const data = JSON.parse(String(row.data)) as Record<string, unknown>;
       const time = record(data.time);

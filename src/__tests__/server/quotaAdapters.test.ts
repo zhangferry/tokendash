@@ -1,4 +1,19 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+
+// Adapter normalization must never pick up the developer's saved credentials.
+vi.mock('../../server/quota/credentialsFile.js', () => ({ readStoredCredential: () => null }));
+let isolatedConfigDir: string;
+beforeEach(() => {
+  isolatedConfigDir = mkdtempSync(join(tmpdir(), 'tokendash-quota-config-'));
+  vi.stubEnv('CLAUDE_CONFIG_DIR', isolatedConfigDir);
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+  rmSync(isolatedConfigDir, { recursive: true, force: true });
+});
 import {
   clampPercent,
   windowFromPercent,

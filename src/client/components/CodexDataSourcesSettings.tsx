@@ -75,9 +75,9 @@ export function CodexDataSourcesSettings({ open, onClose, onSaved }: CodexDataSo
       <div className="w-full max-w-2xl rounded-2xl bg-white shadow-[0_24px_80px_rgba(28,25,23,0.22)] border border-stone-200/70">
         <div className="flex items-start justify-between gap-4 border-b border-stone-100 px-6 py-5">
           <div>
-            <h2 className="text-lg font-extrabold tracking-tight text-stone-900">设置</h2>
+            <h2 className="text-lg font-extrabold tracking-tight text-stone-900">Settings</h2>
             <p className="mt-1 text-[13px] font-medium leading-relaxed text-stone-500">
-              设置金额显示、人民币汇率与 Codex 数据源。数据源默认扫描官方 Codex 目录。
+              Configure the display currency, CNY exchange rate, and Codex data sources. The official Codex directory is scanned by default.
             </p>
           </div>
           <button
@@ -96,21 +96,21 @@ export function CodexDataSourcesSettings({ open, onClose, onSaved }: CodexDataSo
           ) : (
             <div className="space-y-5">
               <div className="rounded-xl border border-stone-200 p-3 space-y-2">
-                <label className="flex justify-between text-sm">显示币种
-                  <select aria-label="显示币种" value={currency} onChange={event => setCurrency(event.target.value as 'USD' | 'CNY')}>
-                    <option value="USD">美元 USD</option><option value="CNY">人民币 CNY</option>
+                <label className="flex justify-between text-sm">Display currency
+                  <select aria-label="Display currency" value={currency} onChange={event => setCurrency(event.target.value as 'USD' | 'CNY')}>
+                    <option value="USD">US dollar (USD)</option><option value="CNY">Chinese yuan (CNY)</option>
                   </select>
                 </label>
-                <label className="flex justify-between text-sm">1 USD 对应人民币
-                  <input aria-label="人民币汇率" type="number" min="0.0001" step="0.01" value={rateDraft} onChange={event => { setRateDraft(event.target.value); setSaved(false); }} className="w-24 border rounded px-2" />
+                <label className="flex justify-between text-sm">CNY per USD
+                  <input aria-label="CNY exchange rate" type="number" min="0.0001" step="0.01" value={rateDraft} onChange={event => { setRateDraft(event.target.value); setSaved(false); }} className="w-24 border rounded px-2" />
                 </label>
                 <button type="button" disabled={saving || !Number.isFinite(Number(rateDraft)) || Number(rateDraft) <= 0} onClick={async () => {
                   setSaving(true); setError(null); setSaved(false);
                   try { const next = await updateBillingExchangeRate(Number(rateDraft)); setExchangeRate(next.billing!.exchangeRate); setSaved(true); onSaved(); }
-                  catch (failure) { setError(failure instanceof Error ? failure.message : '汇率保存失败'); }
+                  catch (failure) { setError(failure instanceof Error ? failure.message : 'Failed to save the exchange rate'); }
                   finally { setSaving(false); }
-                }} className="text-sm text-indigo-600 disabled:opacity-40">保存汇率</button>
-                <p className="text-xs text-stone-500">币种保存在浏览器，汇率保存在服务端设置。AMAX 单价以人民币保存，按此汇率换算。汇率不是实时数据。</p>
+                }} className="text-sm text-indigo-600 disabled:opacity-40">Save exchange rate</button>
+                <p className="text-xs text-stone-500">The display currency is saved in this browser; the exchange rate is saved on the server. AMAX prices are stored in CNY and converted at this rate. The rate is not updated automatically.</p>
               </div>
               <div>
                 <label className="text-[12px] font-bold uppercase tracking-wider text-stone-400">Custom paths</label>
@@ -129,7 +129,7 @@ export function CodexDataSourcesSettings({ open, onClose, onSaved }: CodexDataSo
               <div className="rounded-xl border border-stone-200/70 bg-stone-50/60 p-3">
                 <div className="mb-2 flex items-center justify-between">
                   <span className="text-[12px] font-bold uppercase tracking-wider text-stone-500">Resolved sources</span>
-                  <span className="text-[11px] font-semibold text-stone-400">{settings?.codex.resolvedDataPaths.length ?? 0} paths</span>
+                  <span className="text-[11px] font-semibold text-stone-400">{settings?.codex.resolvedDataPaths.length ?? 0} path{settings?.codex.resolvedDataPaths.length === 1 ? '' : 's'}</span>
                 </div>
                 <div className="max-h-52 space-y-2 overflow-y-auto pr-1">
                   {(settings?.codex.resolvedDataPaths ?? []).map(source => (

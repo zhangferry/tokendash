@@ -8,18 +8,18 @@ final class SettingsStoreHourlyRangeTests: XCTestCase {
     }
 
     func testDefaultRangeIsOneDay() {
-        XCTAssertEqual(SettingsStore.shared.hourlyRange, .oneDay, "升级用户默认保持 1D 视图")
+        XCTAssertEqual(SettingsStore.shared.hourlyRange, .oneDay, "Existing users must keep the default 1D view")
     }
 
     func testRawValueRoundTrip() {
         XCTAssertEqual(SettingsStore.HourlyRange(rawValue: "threeHours"), .threeHours)
         XCTAssertEqual(SettingsStore.HourlyRange(rawValue: "fifteenMinutes"), .fifteenMinutes)
-        XCTAssertNil(SettingsStore.HourlyRange(rawValue: "bogus"), "损坏的持久化值应返回 nil 走默认")
+        XCTAssertNil(SettingsStore.HourlyRange(rawValue: "bogus"), "Invalid persisted values must return nil and use the default")
     }
 
     func testLegacyRawValuesMigrate() {
         XCTAssertEqual(SettingsStore.HourlyRange.migrate("today"), .oneDay)
-        XCTAssertEqual(SettingsStore.HourlyRange.migrate("oneHour"), .fifteenMinutes, "旧 1H 档偏好迁移到新的实时 15M 档")
+        XCTAssertEqual(SettingsStore.HourlyRange.migrate("oneHour"), .fifteenMinutes, "Legacy 1H preferences must migrate to the realtime 15M range")
         XCTAssertEqual(SettingsStore.HourlyRange.migrate("fifteenMinutes"), .fifteenMinutes)
         XCTAssertNil(SettingsStore.HourlyRange.migrate("bogus"))
     }

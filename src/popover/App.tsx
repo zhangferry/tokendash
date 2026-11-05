@@ -120,9 +120,11 @@ export function App() {
       {data.error ? (
         <div className="error-banner">
           <WarningIcon />
-          <span>Unable to fetch data. Retrying…</span>
+          <span>{data.error}</span>
         </div>
       ) : null}
+
+      {data.warning && <div className="error-banner" role="status"><WarningIcon /><span>{data.warning}</span></div>}
 
       {showSettings ? (
         <SettingsView

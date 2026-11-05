@@ -14,7 +14,7 @@ export const GO_PRICING_SOURCE = 'https://opencode.ai/v2/docs/console/go/';
 let exchangeRate = 6;
 
 export function setPricingExchangeRate(rate: number): void {
-  if (!Number.isFinite(rate) || rate <= 0) throw new Error('汇率必须是大于零的有限数值');
+  if (!Number.isFinite(rate) || rate <= 0) throw new Error('Exchange rate must be a finite number greater than zero.');
   exchangeRate = rate;
 }
 

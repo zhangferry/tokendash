@@ -52,7 +52,7 @@ export async function getAnalytics(req: Request, res: Response): Promise<void> {
 }
 
 function fetchAnalyticsData(agent: string, project?: string) {
-  const toolCalls = agent === 'opencode' || agent === 'pi' ? extractSessionToolCalls(agent, project) : agent === 'openclaw'
+  const toolCalls = agent === 'opencode' || agent === 'pi' || agent === 'deepseek' ? extractSessionToolCalls(agent, project) : agent === 'openclaw'
     ? extractOpenClawToolCalls(project || null)
     : extractClaudeToolCalls(project || null);
   return validateAnalytics(computeAnalytics(toolCalls));

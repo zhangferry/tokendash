@@ -17,7 +17,7 @@ impl ApiClient {
             .no_proxy()
             .timeout(timeout)
             .build()
-            .map_err(|error| format!("无法创建 HTTP 客户端：{error}"))?;
+            .map_err(|error| format!("Failed to create HTTP client: {error}"))?;
         Ok(Self {
             client,
             base: format!("http://127.0.0.1:{port}"),
@@ -32,7 +32,10 @@ impl ApiClient {
             .await
             .map_err(|error| error.to_string())?;
         if !response.status().is_success() {
-            return Err(format!("{path} 返回 HTTP {}", response.status().as_u16()));
+            return Err(format!(
+                "{path} returned HTTP {}",
+                response.status().as_u16()
+            ));
         }
         response
             .json::<T>()

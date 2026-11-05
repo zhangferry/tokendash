@@ -106,7 +106,7 @@ pub async fn ensure_started(app: &AppHandle) -> Result<u16, String> {
     }
 
     if !state.script_found {
-        let message = "未找到内置服务脚本，请重新安装应用。".to_string();
+        let message = "The bundled server script was not found. Reinstall TokenDash.".to_string();
         state.set_error(Some(message.clone()));
         return Err(message);
     }
@@ -132,18 +132,19 @@ pub async fn ensure_started(app: &AppHandle) -> Result<u16, String> {
 
     let Some(node) = state.node_path.clone() else {
         let message =
-            "未找到受支持的 Node.js 20.10 或更高版本。请检查 TOKENDASH_NODE 或安装 Node.js 后重新打开 TokenDash。".to_string();
+            "A supported Node.js 20.10 or later runtime was not found. Check TOKENDASH_NODE or install Node.js, then reopen TokenDash.".to_string();
         state.set_error(Some(message.clone()));
         return Err(message);
     };
 
     cleanup_files();
-    paths::ensure_data_dir().map_err(|error| format!("无法创建数据目录：{error}"))?;
+    paths::ensure_data_dir()
+        .map_err(|error| format!("Failed to create data directory: {error}"))?;
 
     // Preserve startup failures from the headless GUI launch. Recreate this
     // small log per attempt so repeated restarts cannot grow it indefinitely.
     let mut log = fs::File::create(paths::data_dir().join("daemon.log"))
-        .map_err(|error| format!("无法创建服务日志：{error}"))?;
+        .map_err(|error| format!("Failed to create server log: {error}"))?;
     let _ = writeln!(
         log,
         "node={}\nscript={}",
@@ -157,7 +158,7 @@ pub async fn ensure_started(app: &AppHandle) -> Result<u16, String> {
         .stdout(Stdio::null())
         .stderr(Stdio::from(log))
         .spawn()
-        .map_err(|error| format!("无法启动本地服务：{error}"))?;
+        .map_err(|error| format!("Failed to start local server: {error}"))?;
 
     let deadline = Instant::now() + STARTUP_TIMEOUT;
     while Instant::now() < deadline {
@@ -171,14 +172,14 @@ pub async fn ensure_started(app: &AppHandle) -> Result<u16, String> {
         }
         match child.try_wait() {
             Ok(Some(status)) => {
-                let message = format!("本地服务进程提前退出（退出码 {status}）。");
+                let message = format!("The local server exited early (exit status {status}).");
                 state.set_error(Some(message.clone()));
                 cleanup_files();
                 return Err(message);
             }
             Ok(None) => {}
             Err(error) => {
-                let message = format!("无法检查本地服务状态：{error}");
+                let message = format!("Failed to check local server status: {error}");
                 state.set_error(Some(message.clone()));
                 return Err(message);
             }
@@ -188,7 +189,7 @@ pub async fn ensure_started(app: &AppHandle) -> Result<u16, String> {
 
     terminate_child(&mut child);
     cleanup_files();
-    let message = "本地服务在 15 秒内未就绪。".to_string();
+    let message = "The local server did not become ready within 15 seconds.".to_string();
     state.set_error(Some(message.clone()));
     Err(message)
 }

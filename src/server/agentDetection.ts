@@ -5,6 +5,7 @@ import { isCodexSessionDirAccessible } from './codexDataSources.js';
 import { isOpenClawAccessible } from './openclawParser.js';
 import { isOpencodeAccessible } from './opencodeParser.js';
 import { isPiAccessible } from './piParser.js';
+import { isDeepseekAccessible } from './deepseekParser.js';
 
 const CLAUDE_PROJECTS_DIR = join(homedir(), '.claude', 'projects');
 
@@ -32,6 +33,7 @@ export interface AvailableAgents {
   openclaw: boolean;
   opencode: boolean;
   pi: boolean;
+  deepseek: boolean;
 }
 
 export function detectAvailableAgents(): AvailableAgents {
@@ -41,5 +43,6 @@ export function detectAvailableAgents(): AvailableAgents {
     openclaw: isOpenClawAccessible(),
     opencode: isOpencodeAvailable(),
     pi: isPiAccessible(),
+    deepseek: isDeepseekAccessible(),
   };
 }

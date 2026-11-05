@@ -2,19 +2,19 @@ import { writeFileSync } from 'node:fs';
 import ts from 'typescript';
 
 const response = await fetch('https://ai.amaxsmp.com/api/pricing', { signal: AbortSignal.timeout(20000) });
-if (!response.ok) throw new Error(`价格接口返回 HTTP ${response.status}`);
+if (!response.ok) throw new Error(`The pricing API returned HTTP ${response.status}`);
 const data = await response.json();
-if (!Array.isArray(data.data) || data.data.length === 0) throw new Error('价格接口没有返回模型列表');
+if (!Array.isArray(data.data) || data.data.length === 0) throw new Error('The pricing API did not return a model list.');
 function tierRates(node) {
-  if (!ts.isCallExpression(node) || node.expression.getText() !== 'tier') throw new Error('不支持的价格表达式');
+  if (!ts.isCallExpression(node) || node.expression.getText() !== 'tier') throw new Error('Unsupported pricing expression.');
   const rates = {};
   function visit(part) {
     if (ts.isBinaryExpression(part) && part.operatorToken.kind === ts.SyntaxKind.PlusToken) {
       visit(part.left); visit(part.right); return;
     }
-    if (!ts.isBinaryExpression(part) || part.operatorToken.kind !== ts.SyntaxKind.AsteriskToken || !ts.isIdentifier(part.left) || !ts.isNumericLiteral(part.right)) throw new Error('不支持的价格项');
+    if (!ts.isBinaryExpression(part) || part.operatorToken.kind !== ts.SyntaxKind.AsteriskToken || !ts.isIdentifier(part.left) || !ts.isNumericLiteral(part.right)) throw new Error('Unsupported price item.');
     const key = { p: 'input', c: 'output', cr: 'cacheRead', cc: 'cacheWrite' }[part.left.text];
-    if (!key) throw new Error('不支持的计费单位');
+    if (!key) throw new Error('Unsupported billing unit.');
     rates[key] = Number(part.right.text);
   }
   visit(node.arguments[1]);

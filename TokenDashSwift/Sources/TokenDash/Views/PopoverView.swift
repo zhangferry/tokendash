@@ -105,7 +105,7 @@ struct PopoverView: View {
         HStack(spacing: 6) {
             Image(systemName: "exclamationmark.triangle.fill")
                 .font(.system(size: 10))
-            Text("Unable to fetch data. Retrying...")
+            Text(message)
                 .font(.system(size: 11, weight: .medium))
         }
         .foregroundStyle(.red.opacity(0.8))

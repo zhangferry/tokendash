@@ -7,6 +7,7 @@ import { getBlocksResponse as getOpenClawBlocksResponse } from '../openclawParse
 import { getBlocksResponse as getOpencodeBlocksResponse } from '../opencodeParser.js';
 import { getBlocksResponse as getClaudeBlocksResponse } from '../claudeJsonlParser.js';
 import { getBlocksResponse as getPiBlocksResponse } from '../piParser.js';
+import { getBlocksResponse as getDeepseekBlocksResponse } from '../deepseekParser.js';
 
 function parseGranularity(raw: unknown): BlockGranularity {
   return raw === '15m' || raw === '5m' || raw === '1m' ? raw : 'hour';   // invalid values fall back to hour
@@ -62,6 +63,8 @@ async function fetchBlocksData(agent: string, project: string | undefined, granu
     return validateBlocks(getOpencodeBlocksResponse({ project: project || null, granularity }));
   } else if (agent === 'codex') {
     return validateBlocks(await getCodexBlocksResponse({ project: project || null, granularity }));
+  } else if (agent === 'deepseek') {
+    return validateBlocks(getDeepseekBlocksResponse({ project: project || null, granularity }));
   } else if (agent === 'pi') {
     return validateBlocks(getPiBlocksResponse({ project: project || null, granularity }));
   } else {

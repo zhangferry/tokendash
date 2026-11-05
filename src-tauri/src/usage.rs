@@ -10,10 +10,23 @@ use serde::Deserialize;
 
 use crate::http::ApiClient;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TodayTotals {
     pub tokens: u64,
     pub cost: f64,
+    pub cost_available: bool,
+    pub failed_sources: Vec<String>,
+}
+
+impl Default for TodayTotals {
+    fn default() -> Self {
+        Self {
+            tokens: 0,
+            cost: 0.0,
+            cost_available: true,
+            failed_sources: Vec::new(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -25,6 +38,13 @@ struct AgentsResponse {
 #[serde(rename_all = "camelCase")]
 struct DailyResponse {
     daily: Vec<DailyEntry>,
+    #[serde(default)]
+    source_errors: Vec<SourceError>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SourceError {
+    agent: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -33,6 +53,7 @@ struct DailyEntry {
     date: String,
     total_tokens: u64,
     total_cost: f64,
+    cost_available: Option<bool>,
 }
 
 /// Day key in the user's local timezone, matching how the web dashboard and the
@@ -47,15 +68,46 @@ pub async fn fetch_today(port: u16) -> Result<TodayTotals, String> {
     let client = ApiClient::new(port, Duration::from_secs(20))?;
     let agents: AgentsResponse = client.get_json("/api/agents").await?;
     let today = today_key();
-    let mut totals = TodayTotals::default();
+    let mut results = Vec::new();
     for agent in agents.available {
         let path = format!("/api/daily?agent={agent}&refresh=1");
-        let response: DailyResponse = client.get_json(&path).await?;
-        if let Some(entry) = response.daily.iter().find(|entry| entry.date == today) {
-            totals.tokens += entry.total_tokens;
-            totals.cost += entry.total_cost;
+        results.push((agent, client.get_json::<DailyResponse>(&path).await));
+    }
+    aggregate_today(&today, results)
+}
+
+fn aggregate_today(
+    today: &str,
+    results: Vec<(String, Result<DailyResponse, String>)>,
+) -> Result<TodayTotals, String> {
+    let source_count = results.len();
+    let mut successes = 0;
+    let mut totals = TodayTotals::default();
+    for (agent, result) in results {
+        match result {
+            Ok(response) => {
+                successes += 1;
+                totals
+                    .failed_sources
+                    .extend(response.source_errors.into_iter().map(|error| error.agent));
+                if let Some(entry) = response.daily.iter().find(|entry| entry.date == today) {
+                    totals.tokens += entry.total_tokens;
+                    totals.cost += entry.total_cost;
+                    totals.cost_available &= entry.cost_available != Some(false);
+                }
+            }
+            Err(error) => {
+                eprintln!("[tokendash] Failed to read {agent} usage: {error}");
+                totals.failed_sources.push(agent);
+            }
         }
     }
+    if source_count > 0 && successes == 0 {
+        return Err("Failed to read usage from all sources; keeping previous data".to_string());
+    }
+    totals.failed_sources.sort();
+    totals.failed_sources.dedup();
+    totals.cost_available &= totals.failed_sources.is_empty();
     Ok(totals)
 }
 
@@ -98,5 +150,59 @@ mod tests {
         .expect("daemon payload parses");
         assert_eq!(parsed.daily[0].total_tokens, 1200);
         assert_eq!(parsed.daily[0].total_cost, 3.5);
+        assert_eq!(parsed.daily[0].cost_available, None);
+    }
+
+    fn response(json: &str) -> Result<DailyResponse, String> {
+        serde_json::from_str(json).map_err(|error| error.to_string())
+    }
+
+    #[test]
+    fn one_failed_source_preserves_healthy_usage_and_marks_partial() {
+        let totals = aggregate_today(
+            "2026-11-05",
+            vec![
+                (
+                    "claude".into(),
+                    response(
+                        r#"{"daily":[{"date":"2026-11-05","totalTokens":1200,"totalCost":3.5}]}"#,
+                    ),
+                ),
+                ("deepseek".into(), Err("missing decoder".into())),
+            ],
+        )
+        .unwrap();
+        assert_eq!(totals.tokens, 1200);
+        assert_eq!(totals.cost, 3.5);
+        assert!(!totals.cost_available);
+        assert_eq!(totals.failed_sources, vec!["deepseek"]);
+    }
+
+    #[test]
+    fn all_failed_is_error_but_empty_sources_is_valid_empty_usage() {
+        assert!(aggregate_today(
+            "2026-11-05",
+            vec![("deepseek".into(), Err("bad log".into()))]
+        )
+        .is_err());
+        assert_eq!(
+            aggregate_today("2026-11-05", vec![]).unwrap(),
+            TodayTotals::default()
+        );
+    }
+
+    #[test]
+    fn unknown_price_is_not_treated_as_a_complete_zero_cost() {
+        let totals = aggregate_today(
+            "2026-11-05",
+            vec![(
+                "deepseek".into(),
+                response(r#"{"daily":[{"date":"2026-11-05","totalTokens":900,"totalCost":0,"costAvailable":false}]}"#),
+            )],
+        )
+        .unwrap();
+        assert_eq!(totals.tokens, 900);
+        assert!(!totals.cost_available);
+        assert!(totals.failed_sources.is_empty());
     }
 }

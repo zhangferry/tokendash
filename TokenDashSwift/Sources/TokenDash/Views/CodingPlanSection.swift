@@ -186,6 +186,7 @@ func formatResetCountdown(_ iso: String) -> String? {
     let days = hours / 24
     if days < 7 { return "in \(days)d" }
     let df = DateFormatter()
+    df.locale = Locale(identifier: "en_US_POSIX")
     df.dateFormat = "MMM d"
     return "on \(df.string(from: resetsAt))"
 }

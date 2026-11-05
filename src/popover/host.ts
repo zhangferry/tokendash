@@ -18,7 +18,7 @@ export function isHosted(): boolean {
 export function invoke<T>(command: string, args?: Record<string, unknown>): Promise<T> {
   const api = host();
   if (!api) {
-    return Promise.reject(new Error(`面板未运行在桌面端内，无法调用 ${command}`));
+    return Promise.reject(new Error(`The panel must run in the desktop app to call ${command}`));
   }
   return api.core.invoke(command, args) as Promise<T>;
 }

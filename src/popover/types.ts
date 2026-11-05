@@ -29,9 +29,11 @@ export const APPEARANCE_CHOICES: Array<{ value: Appearance; label: string }> = [
 export interface TodaySummary {
   tokens: number;
   cost: number;
+  costAvailable?: boolean;
   inputTokens: number;
   outputTokens: number;
   cacheReadTokens: number;
+  cacheWriteTokens?: number;
   cacheRate: number;
 }
 
@@ -39,12 +41,14 @@ export interface ModelRow {
   name: string;
   tokens: number;
   cost: number;
+  costAvailable?: boolean;
 }
 
 export interface TrendPoint {
   date: string;
   tokens: number;
   cost: number;
+  costAvailable?: boolean;
 }
 
 export type { QuotaSnapshot };

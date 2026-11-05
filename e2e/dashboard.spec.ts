@@ -191,7 +191,7 @@ test.describe('Dashboard refresh', () => {
       return url.pathname === `/api/${path}` && url.searchParams.get('refresh') === '1';
     }));
 
-    await page.locator('button[title^="刷新数据"]').click();
+    await page.locator('button[title^="Refresh data"]').click();
     await Promise.all(refreshRequests);
   });
 
@@ -211,10 +211,10 @@ test.describe('Codex data-source settings', () => {
   test('opens custom path settings and saves configured sources', async ({ page }) => {
     await setupPage(page);
     const settingsRequest = page.waitForResponse(response => response.url().includes('/api/settings') && response.request().method() === 'GET');
-    await page.locator('button[aria-label="设置"]').click();
+    await page.locator('button[aria-label="Settings"]').click();
     await settingsRequest;
 
-    await expect(page.getByRole('heading', { name: '设置', exact: true })).toBeVisible();
+    await expect(page.getByRole('heading', { name: 'Settings', exact: true })).toBeVisible();
     await expect(page.locator('text=Multiple paths are supported')).toBeVisible();
     await expect(page.locator('textarea')).toHaveValue('/Users/test/.custom-codex');
 
@@ -345,7 +345,7 @@ test.describe('Agent switching', () => {
     await expect(page.getByRole('menuitemradio', { name: 'OpenClaw' })).not.toBeVisible();
   });
 
-  test('仅一个来源时仍可切换到所有 Agent', async ({ page }) => {
+  test('a single source can still switch to All Agents', async ({ page }) => {
     await setupPage(page, { agents: ['claude'] });
 
     await expect(page.locator('button:has-text("Claude Code")')).toBeVisible();

@@ -21,6 +21,8 @@ import { parseAllSessions, scanCodexSessions, type ParsedSession } from './codex
 import { calculateCost as calculateCodexCost } from './codexPricing.js';
 import { parseAllOpenCodeEvents } from './opencodeParser.js';
 import { scanPiSessions, parsePiSession } from './piParser.js';
+import { scanDeepseekSessions, parseDeepseekSession, getDeepseekRevision } from './deepseekParser.js';
+import { readDeepseekTranscript } from './deepseekTranscripts.js';
 
 export type SessionAnalyticsRange = 'today' | '7d' | '30d' | '60d' | 'all';
 
@@ -46,6 +48,7 @@ interface SessionSource {
   sessions: SessionAnalyticsIndexedSession[];
   capabilities: SessionAnalyticsCapabilities;
   indexedAt: string;
+  sourceErrors?: { agent: string; message: string }[];
 }
 
 const NO_SESSION_CAPABILITIES: SessionAnalyticsCapabilities = {
@@ -360,10 +363,14 @@ function claudeFiles(): string[] {
 
 /** A revision is source metadata only; neither contents nor paths are sent to clients. */
 export function getSessionAnalyticsSourceRevision(agent: string): string {
-  if (agent === 'all') return Object.entries(detectAvailableAgents()).filter(([, available]) => available).map(([source]) => source + ':' + getSessionAnalyticsSourceRevision(source)).join('|');
+  if (agent === 'all') return Object.entries(detectAvailableAgents()).filter(([, available]) => available).map(([source]) => {
+    try { return source + ':' + getSessionAnalyticsSourceRevision(source); }
+    catch (error) { return source + ':unavailable:' + String(error); }
+  }).join('|');
   if (agent === 'codex') return sourceSignature(scanCodexSessions());
   if (agent === 'claude') return sourceSignature(claudeFiles());
   if (agent === 'pi') return sourceSignature(scanPiSessions());
+  if (agent === 'deepseek') return getDeepseekRevision();
   if (agent === 'opencode') {
     try {
       const db = statSync(join(homedir(), '.local', 'share', 'opencode', 'opencode.db'));
@@ -873,6 +880,9 @@ function loadClaudeSessions(files: string[]): SessionSource {
 
 interface TranscriptUsage {
   timestamp: string; model: string; inputTokens: number; outputTokens: number; cacheReadTokens: number; totalTokens: number; cost: number;
+  cacheWriteTokens?: number;
+  seq?: number;
+  costAvailable?: boolean;
 }
 
 function indexedTranscript(agent: string, id: string, project: string | undefined, messages: TranscriptMessage[], usage: TranscriptUsage[], createdAt?: string): SessionAnalyticsIndexedSession {
@@ -880,6 +890,7 @@ function indexedTranscript(agent: string, id: string, project: string | undefine
   const toolCalls: ToolCallRecord[] = [];
   const usageByTime = new Map<string, TranscriptUsage[]>();
   for (const value of usage) { if (!usageByTime.has(value.timestamp)) usageByTime.set(value.timestamp, []); usageByTime.get(value.timestamp)!.push(value); }
+  const usageBySeq = new Map(usage.filter(value => value.seq !== undefined).map(value => [value.seq!, value]));
   const results = new Map<string, boolean>();
   for (const message of messages) {
     if (message.callId && message.success !== undefined) results.set(message.callId, message.success);
@@ -898,8 +909,8 @@ function indexedTranscript(agent: string, id: string, project: string | undefine
   }
   for (const message of messages) {
     const timestamp = message.timestamp;
-    if (message.role === 'system' || message.role === 'runtime') {
-      const event = inputContextEvent(sourceTextItems(message.content).join('\n'), message.role === 'system' ? 'system' : 'runtime', timestamp, events.length);
+    if (message.role === 'system' || message.role === 'developer' || message.role === 'runtime') {
+      const event = inputContextEvent(sourceTextItems(message.content).join('\n'), message.role === 'system' ? 'system' : message.role === 'developer' ? 'developer' : 'runtime', timestamp, events.length);
       if (event) events.push(event);
     } else if (message.role === 'user') {
       const human = sourceTextItems(message.content).filter(value => !isRuntimeContext(value));
@@ -910,10 +921,10 @@ function indexedTranscript(agent: string, id: string, project: string | undefine
       if (human.length) events.push({ id: 'user-' + events.length, timestamp, type: 'user_message', summary: 'User request', ...retained(human.join('\n')) });
     } else if (message.role === 'toolResult') result(timestamp, message.callId, message.toolName, message.content, message.success);
     else if (message.role === 'assistant' || message.role === 'tool') {
-      const tokens = usageByTime.get(timestamp)?.shift();
+      const tokens = agent === 'deepseek' ? usageBySeq.get(message.sourceSeq!) : usageByTime.get(timestamp)?.shift();
       const parts = Array.isArray(message.content) ? message.content as Record<string, unknown>[] : [];
       const reasoning = parts.filter(part => part.type === 'thinking').map(part => String(part.thinking ?? '')).join('\n');
-      if (message.role === 'assistant') events.push({ id: 'llm-' + events.length, timestamp, type: 'llm_call', model: message.model || tokens?.model || 'unknown', ...(tokens ? { usage: { inputTokens: tokens.inputTokens, outputTokens: tokens.outputTokens, cacheReadTokens: tokens.cacheReadTokens, totalTokens: tokens.totalTokens, cost: tokens.cost } } : {}), summary: message.error ? 'Model call failed' : 'Model call', ...retained(reasoning) });
+      if (message.role === 'assistant') events.push({ id: 'llm-' + events.length, timestamp, type: 'llm_call', model: (agent === 'deepseek' ? tokens?.model || message.model : message.model || tokens?.model) || 'unknown', ...(tokens ? { usage: { inputTokens: tokens.inputTokens, outputTokens: tokens.outputTokens, cacheReadTokens: tokens.cacheReadTokens, ...(tokens.cacheWriteTokens === undefined ? {} : { cacheWriteTokens: tokens.cacheWriteTokens }), totalTokens: tokens.totalTokens, cost: tokens.cost, ...(tokens.costAvailable === false ? { costAvailable: false } : {}) } } : {}), summary: message.error ? 'Model call failed' : 'Model call', ...retained(reasoning) });
       const output = sourceTextItems(message.content).join('\n');
       if (output) events.push({ id: 'assistant-' + events.length, timestamp, type: 'assistant_message', model: message.model, summary: 'Model response', ...retained(output) });
       for (const part of parts) {
@@ -922,10 +933,13 @@ function indexedTranscript(agent: string, id: string, project: string | undefine
         const name = String(part.name);
         const callId = typeof part.id === 'string' ? part.id : undefined;
         const input = part.arguments && typeof part.arguments === 'object' ? part.arguments as Record<string, unknown> : {};
-        const invocation = toolInvocationName(name, input);
+        const invocation = agent === 'deepseek' ? { name, isSkill: false } : toolInvocationName(name, input);
         events.push({ id: 'tool-' + events.length, timestamp, type: invocation.isSkill ? 'skill_call' : 'tool_call', callId, ...(invocation.isSkill ? { skillName: invocation.name, skillOrigin: 'explicit' as const } : { toolName: name }), summary: name, parameterSummary: parameterSummary(input), ...retained(serializedToolInput(input)) });
-        toolCalls.push(structuredToolCall(name, input, timestamp, callId ? results.get(callId) === false : false));
-        for (const skill of inferredSkillNames(name, input)) events.push({ id: 'skill-' + events.length, timestamp, type: 'skill_call', skillName: skill, skillOrigin: 'inferred', summary: 'Skill file accessed', contentAvailable: false });
+        const failedOrUnconfirmed = agent === 'deepseek'
+          ? !callId || results.get(callId) !== true
+          : callId ? results.get(callId) === false : false;
+        toolCalls.push(structuredToolCall(name, input, timestamp, failedOrUnconfirmed));
+        if (agent !== 'deepseek') for (const skill of inferredSkillNames(name, input)) events.push({ id: 'skill-' + events.length, timestamp, type: 'skill_call', skillName: skill, skillOrigin: 'inferred', summary: 'Skill file accessed', contentAvailable: false });
       }
     }
   }
@@ -934,9 +948,9 @@ function indexedTranscript(agent: string, id: string, project: string | undefine
   const skillCount = events.filter(event => event.type === 'skill_call').length;
   const firstUser = events.find(event => event.type === 'user_message');
   const startedAt = createdAt || messages[0]?.timestamp || usage[0]?.timestamp;
-  if (!startedAt) throw new Error('会话缺少开始时间');
+  if (!startedAt) throw new Error('The session does not have a start time.');
   const endedAt = messages.at(-1)?.timestamp || usage.at(-1)?.timestamp || startedAt;
-  return { summary: { id, agent, project, ...(firstUser?.contentPreview ? { title: truncate(firstUser.contentPreview, TITLE_LIMIT) } : {}), description: sessionDescription(userTurns, toolCount, skillCount), startedAt, endedAt, status: messages.at(-1)?.error ? 'interrupted' : 'complete', models: [...new Set([...usage.map(value => value.model), ...messages.flatMap(message => message.model ? [message.model] : [])])], llmCallCount: events.filter(event => event.type === 'llm_call').length, toolCallCount: toolCount, skillCallCount: skillCount, userTurnCount: userTurns, durationMs: Math.max(0, Date.parse(endedAt) - Date.parse(startedAt)), totalTokens: usage.reduce((sum, value) => sum + value.totalTokens, 0), totalCost: usage.reduce((sum, value) => sum + value.cost, 0) }, events, toolCalls };
+  return { summary: { id, agent, project, ...(firstUser?.contentPreview ? { title: truncate(firstUser.contentPreview, TITLE_LIMIT) } : {}), description: sessionDescription(userTurns, toolCount, skillCount), startedAt, endedAt, status: messages.at(-1)?.error ? 'interrupted' : 'complete', models: [...new Set([...usage.map(value => value.model), ...messages.flatMap(message => message.model ? [message.model] : [])])], llmCallCount: events.filter(event => event.type === 'llm_call').length, toolCallCount: toolCount, ...(agent !== 'deepseek' ? { skillCallCount: skillCount } : {}), userTurnCount: userTurns, durationMs: Math.max(0, Date.parse(endedAt) - Date.parse(startedAt)), totalTokens: usage.reduce((sum, value) => sum + value.totalTokens, 0), totalCost: usage.reduce((sum, value) => sum + value.cost, 0), ...(usage.some(value => value.costAvailable === false) ? { costAvailable: false } : {}) }, events, toolCalls };
 }
 
 function opencodeSessionsToIndexed(): SessionAnalyticsIndexedSession[] {
@@ -961,6 +975,22 @@ function piSessionsToIndexed(): SessionAnalyticsIndexedSession[] {
   });
 }
 
+function deepseekSessionsToIndexed(): SessionAnalyticsIndexedSession[] {
+  return scanDeepseekSessions().flatMap(file => {
+    const session = parseDeepseekSession(file);
+    if (!session) return [];
+    const transcript = readDeepseekTranscript(file, session.tokenEvents);
+    if (!transcript.messages.length && !session.tokenEvents.length) return [];
+    const indexed = indexedTranscript('deepseek', session.id, session.cwd || undefined, transcript.messages, session.tokenEvents, session.createdAt);
+    indexed.summary.status = transcript.status;
+    if (transcript.endedAt) {
+      indexed.summary.endedAt = transcript.endedAt;
+      indexed.summary.durationMs = Math.max(0, Date.parse(transcript.endedAt) - Date.parse(indexed.summary.startedAt));
+    }
+    return [indexed];
+  });
+}
+
 function transcriptCapabilities(sessions: SessionAnalyticsIndexedSession[]): SessionAnalyticsCapabilities {
   const events = sessions.flatMap(session => session.events);
   const semantics = new Set(events.filter(event => event.type === 'skill_call').map(event => event.skillOrigin ?? 'explicit'));
@@ -981,12 +1011,19 @@ function loadSource(agent: string, revision: string): SessionSource {
   }
   let source: SessionSource;
   if (agent === 'all') {
-    const sources = Object.entries(detectAvailableAgents()).filter(([, available]) => available).map(([name]) => ({ name, source: loadSource(name, getSessionAnalyticsSourceRevision(name)) }));
+    const available = Object.entries(detectAvailableAgents()).filter(([, present]) => present);
+    const sources: Array<{ name: string; source: SessionSource }> = [];
+    const sourceErrors: NonNullable<SessionSource['sourceErrors']> = [];
+    for (const [name] of available) {
+      try { sources.push({ name, source: loadSource(name, getSessionAnalyticsSourceRevision(name)) }); }
+      catch (error) { sourceErrors.push({ agent: name, message: truncate(redactText(error instanceof Error ? error.message : String(error)), VALUE_LIMIT) }); }
+    }
+    if (available.length && !sources.length) throw new Error('All session sources failed: ' + sourceErrors.map(error => error.agent).join(', '));
     const capabilities = { ...NO_SESSION_CAPABILITIES };
     for (const key of ['userTurns', 'skills', 'tools', 'toolResults', 'contentPreview'] as const) capabilities[key] = sources.some(({ source }) => source.capabilities[key]);
     const semantics = new Set(sources.filter(({ source }) => source.capabilities.skills).map(({ source }) => source.capabilities.skillSemantics ?? 'explicit'));
     if (capabilities.skills) capabilities.skillSemantics = semantics.size > 1 ? 'mixed' : [...semantics][0];
-    source = { sessions: sources.flatMap(({ name, source }) => source.sessions.map(session => ({ ...session, events: session.events.map(event => event.model ? { ...event, model: normalizePricingModel(event.model) } : event), summary: { ...session.summary, id: name + '::' + session.summary.id, models: [...new Set(session.summary.models.map(normalizePricingModel))], project: session.summary.project ? canonicalProjectName(session.summary.project) : undefined } }))), capabilities, indexedAt: new Date().toISOString() };
+    source = { sessions: sources.flatMap(({ name, source }) => source.sessions.map(session => ({ ...session, events: session.events.map(event => event.model ? { ...event, model: normalizePricingModel(event.model) } : event), summary: { ...session.summary, id: name + '::' + session.summary.id, models: [...new Set(session.summary.models.map(normalizePricingModel))], project: session.summary.project ? canonicalProjectName(session.summary.project) : undefined } }))), capabilities, indexedAt: new Date().toISOString(), ...(sourceErrors.length ? { sourceErrors } : {}) };
   } else if (agent === 'codex') {
     const sessions = parseAllSessions().map(codexSessionToIndexed);
     const hasSkill = sessions.some(session => session.events.some(event => event.type === 'skill_call'));
@@ -1016,6 +1053,9 @@ function loadSource(agent: string, revision: string): SessionSource {
     source = { sessions, capabilities: transcriptCapabilities(sessions), indexedAt: new Date().toISOString() };
   } else if (agent === 'pi') {
     const sessions = piSessionsToIndexed();
+    source = { sessions, capabilities: transcriptCapabilities(sessions), indexedAt: new Date().toISOString() };
+  } else if (agent === 'deepseek') {
+    const sessions = deepseekSessionsToIndexed();
     source = { sessions, capabilities: transcriptCapabilities(sessions), indexedAt: new Date().toISOString() };
   } else {
     source = { sessions: [], capabilities: NO_SESSION_CAPABILITIES, indexedAt: new Date().toISOString() };
@@ -1072,6 +1112,7 @@ function filteredSessions(source: SessionSource, filters: SessionAnalyticsFilter
         ...(session.summary.userTurnCount === undefined ? {} : { userTurnCount: events.filter(event => event.type === 'user_message').length }),
         totalTokens: calls.reduce((sum, event) => sum + (event.usage?.totalTokens ?? 0), 0),
         totalCost: calls.reduce((sum, event) => sum + (event.usage?.cost ?? 0), 0),
+        ...(calls.some(event => event.usage?.costAvailable === false) ? { costAvailable: false } : { costAvailable: undefined }),
         durationMs: Math.max(0, last - Math.max(since, Date.parse(session.summary.startedAt))),
       } };
     })
@@ -1186,6 +1227,7 @@ export function buildSessionAnalyticsResponse(
       sessionCount: sessions.length,
       totalTokens: sessions.reduce((sum, session) => sum + session.summary.totalTokens, 0),
       totalCost: sessions.reduce((sum, session) => sum + session.summary.totalCost, 0),
+      ...(sessions.some(session => session.summary.costAvailable === false) ? { costAvailable: false } : {}),
       llmCallCount,
       ...(capabilities.skills ? { skillCallCount } : {}),
       // Tool counts have a distinct semantics and remain useful even without Skills.
@@ -1215,7 +1257,8 @@ export function buildSessionAnalyticsResponse(
 
 export function getSessionAnalytics(agent: string, filters: SessionAnalyticsFilters = {}, revision = getSessionAnalyticsSourceRevision(agent)): SessionAnalyticsResponse {
   const source = loadSource(agent, revision);
-  return buildSessionAnalyticsResponse(source.sessions, source.capabilities, filters);
+  const response = buildSessionAnalyticsResponse(source.sessions, source.capabilities, filters);
+  return source.sourceErrors?.length ? { ...response, sourceErrors: source.sourceErrors, summary: { ...response.summary, costAvailable: false } } : response;
 }
 
 export function invalidateSessionAnalyticsSource(agent?: string): void {

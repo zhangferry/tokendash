@@ -6,6 +6,7 @@ import { getProjectsResponse as getOpenClawProjectsResponse } from '../openclawP
 import { getProjectsResponse as getOpencodeProjectsResponse } from '../opencodeParser.js';
 import { getProjectsResponse as getClaudeProjectsResponse } from '../claudeJsonlParser.js';
 import { getProjectsResponse as getPiProjectsResponse } from '../piParser.js';
+import { getProjectsResponse as getDeepseekProjectsResponse } from '../deepseekParser.js';
 
 export async function getProjects(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
@@ -48,6 +49,8 @@ async function fetchProjectsData(agent: string) {
     return validateProjects(getOpenClawProjectsResponse());
   } else if (agent === 'opencode') {
     return validateProjects(getOpencodeProjectsResponse());
+  } else if (agent === 'deepseek') {
+    return validateProjects(getDeepseekProjectsResponse());
   } else if (agent === 'pi') {
     return validateProjects(getPiProjectsResponse());
   } else {

@@ -14,12 +14,12 @@ final class BadgeUpdaterModeTests: XCTestCase {
         await updater.performBadgeUpdate()
 
         let counts = await mock.snapshot()
-        XCTAssertGreaterThan(counts.daily, 0, "dormant badge 更新必须拉 daily")
+        XCTAssertGreaterThan(counts.daily, 0, "Dormant badge refresh must fetch daily usage")
         let lastDailyRefresh = await mock.lastDailyRefresh
-        XCTAssertEqual(lastDailyRefresh, true, "菜单栏 token 数必须绕过 daemon 响应缓存，否则 coding agent 使用中会停住")
-        XCTAssertEqual(counts.blocks, 0, "dormant 不得拉 blocks")
-        XCTAssertEqual(counts.projects, 0, "dormant 不得拉 projects")
-        XCTAssertEqual(counts.quota, 0, "dormant 不得拉 quota")
+        XCTAssertEqual(lastDailyRefresh, true, "Menu bar tokens must bypass the daemon response cache to stay current")
+        XCTAssertEqual(counts.blocks, 0, "Dormant mode must not fetch blocks")
+        XCTAssertEqual(counts.projects, 0, "Dormant mode must not fetch projects")
+        XCTAssertEqual(counts.quota, 0, "Dormant mode must not fetch quota")
     }
 
     // MARK: - active: 自动刷新详情与 quota 都走缓存
@@ -38,12 +38,12 @@ final class BadgeUpdaterModeTests: XCTestCase {
         XCTAssertGreaterThan(counts.daily, 0)
         XCTAssertGreaterThan(counts.blocks, 0)
         XCTAssertGreaterThan(counts.projects, 0)
-        XCTAssertGreaterThan(counts.quota, 0, "active 详情刷新最终要拉 quota（异步）")
+        XCTAssertGreaterThan(counts.quota, 0, "Active detail refresh must eventually fetch quota asynchronously")
         let lastQuotaRefresh = await mock.lastQuotaRefresh
-        XCTAssertEqual(lastQuotaRefresh, false, "非手动刷新时 quota 必须走缓存")
+        XCTAssertEqual(lastQuotaRefresh, false, "Automatic quota refresh must use the cache")
         let lastDailyRefresh = await mock.lastDailyRefresh
-        XCTAssertEqual(lastDailyRefresh, false, "非手动刷新时详情必须走缓存")
-        XCTAssertNotNil(state.lastUpdatedAt, "完成自动刷新后必须记录节流时间")
+        XCTAssertEqual(lastDailyRefresh, false, "Automatic detail refresh must use the cache")
+        XCTAssertNotNil(state.lastUpdatedAt, "Completed automatic refresh must record its throttle timestamp")
     }
 
 
@@ -63,9 +63,9 @@ final class BadgeUpdaterModeTests: XCTestCase {
         updater.stop()
 
         let counts = await mock.snapshot()
-        XCTAssertGreaterThanOrEqual(counts.daily, 2, "打开 popover 后必须持续刷新详情，而不是等 30 分钟/1 小时")
+        XCTAssertGreaterThanOrEqual(counts.daily, 2, "An open popover must keep refreshing details without waiting for the background interval")
         let lastDailyRefresh = await mock.lastDailyRefresh
-        XCTAssertEqual(lastDailyRefresh, true, "active 详情刷新必须绕过 usage 响应缓存")
+        XCTAssertEqual(lastDailyRefresh, true, "Active detail refresh must bypass the usage response cache")
     }
 
     // MARK: - 手动刷新：quota 强刷
@@ -78,9 +78,9 @@ final class BadgeUpdaterModeTests: XCTestCase {
         await updater.performFullUpdate(forceRefresh: true, forceQuota: true)
 
         let lastQuotaRefresh = await mock.lastQuotaRefresh
-        XCTAssertEqual(lastQuotaRefresh, true, "手动刷新必须强刷 quota")
-        XCTAssertNotNil(state.lastUpdatedAt, "手动刷新完成后必须记录最近刷新时间")
-        XCTAssertFalse(state.isRefreshing, "手动刷新完成后必须退出 loading 状态")
+        XCTAssertEqual(lastQuotaRefresh, true, "Manual refresh must force a quota refresh")
+        XCTAssertNotNil(state.lastUpdatedAt, "Completed manual refresh must record its timestamp")
+        XCTAssertFalse(state.isRefreshing, "Completed manual refresh must clear the loading state")
     }
 
     func testCacheServedLaunchPrimeDoesNotThrottleFirstPopoverRefresh() async throws {
@@ -181,8 +181,8 @@ final class BadgeUpdaterModeTests: XCTestCase {
 
         let lastDailyRefresh = await mock.lastDailyRefresh
         let lastQuotaRefresh = await mock.lastQuotaRefresh
-        XCTAssertEqual(lastDailyRefresh, false, "定时后台刷新必须复用详情缓存")
-        XCTAssertEqual(lastQuotaRefresh, false, "定时后台刷新必须复用 quota 缓存")
+        XCTAssertEqual(lastDailyRefresh, false, "Scheduled background refresh must reuse the detail cache")
+        XCTAssertEqual(lastQuotaRefresh, false, "Scheduled background refresh must reuse the quota cache")
         XCTAssertNotNil(state.lastUpdatedAt)
         XCTAssertFalse(state.isRefreshing)
     }
@@ -205,7 +205,7 @@ final class BadgeUpdaterModeTests: XCTestCase {
         now.addTimeInterval(10 * 60)
         let refreshedOnOpen = await updater.refreshOnPopoverOpenIfNeeded()
 
-        XCTAssertFalse(refreshedOnOpen, "打开菜单栏的自动刷新必须把最近一次后台/手动全量刷新也算进同一个节流周期")
+        XCTAssertFalse(refreshedOnOpen, "Automatic popover refresh must share the latest background or manual refresh throttle")
         let openedCounts = await mock.snapshot()
         XCTAssertEqual(openedCounts.daily, backgroundCounts.daily)
         XCTAssertEqual(openedCounts.blocks, backgroundCounts.blocks)
@@ -240,7 +240,7 @@ final class BadgeUpdaterModeTests: XCTestCase {
         try await waitUntil { state.realtimeBuckets.first?.minutes == 1 }
 
         let lastBlocksRefresh = await mock.lastBlocksRefresh
-        XCTAssertEqual(lastBlocksRefresh, false, "realtime 轮询走缓存（refresh=false）")
+        XCTAssertEqual(lastBlocksRefresh, false, "Realtime polling must use cached responses (refresh=false)")
     }
 
     func testRealtimeFetchStaysOffOutsidePopover() async throws {
@@ -256,7 +256,7 @@ final class BadgeUpdaterModeTests: XCTestCase {
         try await Task.sleep(nanoseconds: 200_000_000)  // 0.2s
 
         let counts = await mock.snapshot()
-        XCTAssertEqual(counts.blocks, 0, "popover 关闭时不得轮询 realtime 数据")
+        XCTAssertEqual(counts.blocks, 0, "Realtime data must not be polled while the popover is closed")
     }
 
     // MARK: - stale-while-revalidate vs empty fine-grained windows
@@ -291,7 +291,7 @@ final class BadgeUpdaterModeTests: XCTestCase {
             SettingsStore.shared.hourlyRange = range
             await updater.performFullUpdate(forceRefresh: false, forceQuota: false)
             let granularity = await mock.lastBlocksGranularity
-            XCTAssertEqual(granularity, .fiveMin, "所有档位共用一份 5min 基座（\(range)）")
+            XCTAssertEqual(granularity, .fiveMin, "All ranges must share one 5-minute base (\(range))")
         }
     }
 
@@ -311,7 +311,7 @@ final class BadgeUpdaterModeTests: XCTestCase {
         now.addTimeInterval(6 * 60)   // 6min：30min 节流内、5min 节流外
         SettingsStore.shared.hourlyRange = .fifteenMinutes
         let refreshed = await updater.refreshOnPopoverOpenIfNeeded()
-        XCTAssertTrue(refreshed, "15M 档位下 popover 打开的节流必须收紧到 5min")
+        XCTAssertTrue(refreshed, "The 15M popover refresh throttle must tighten to 5 minutes")
         let countsAfterOpen = await mock.snapshot().daily
         XCTAssertGreaterThan(countsAfterOpen, countsAfterFirst)
     }

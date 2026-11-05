@@ -1,20 +1,21 @@
-import type { AnalyticsResponse, DailyEntry, DailyResponse, Totals } from '../../shared/types.js';
+import type { AnalyticsResponse, DailyEntry, DailyResponse, ProjectsResponse, Totals } from '../../shared/types.js';
 import { normalizePricingModel } from '../../shared/modelPricing.js';
 import { projectName } from '../../shared/projectNames.js';
 import { modelBreakdownTokens, modelTokenMode } from './modelAggregation.js';
 
-export const AGENT_LABELS: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', openclaw: 'OpenClaw', opencode: 'OpenCode', pi: 'Pi' };
+export const AGENT_LABELS: Record<string, string> = { claude: 'Claude Code', codex: 'Codex', openclaw: 'OpenClaw', opencode: 'OpenCode', pi: 'Pi', deepseek: 'DeepSeek Harness' };
 
-export function mergeProjects(responses: { projects: Record<string, DailyEntry[]> }[]): { projects: Record<string, DailyEntry[]> } {
+export function mergeProjects(responses: ProjectsResponse[]): ProjectsResponse {
   const projects: Record<string, DailyEntry[]> = {};
   for (const response of responses) for (const [path, days] of Object.entries(response.projects)) {
     const name = projectName(path);
     projects[name] = mergeDailyResponses([{ daily: projects[name] ?? [] }, { daily: days }]).daily;
   }
-  return { projects };
+  const sourceErrors = responses.flatMap(response => response.sourceErrors ?? []);
+  return { projects, ...(sourceErrors.length ? { sourceErrors } : {}) };
 }
 
-export function mergeDailyResponses(responses: Pick<DailyResponse, 'daily'>[]): DailyResponse {
+export function mergeDailyResponses(responses: Pick<DailyResponse, 'daily' | 'sourceErrors'>[]): DailyResponse {
   const days = new Map<string, DailyEntry>();
   for (const response of responses) for (const entry of response.daily) {
     let day = days.get(entry.date);
@@ -23,6 +24,7 @@ export function mergeDailyResponses(responses: Pick<DailyResponse, 'daily'>[]): 
       days.set(entry.date, day);
     }
     for (const key of ['inputTokens', 'outputTokens', 'cacheCreationTokens', 'cacheReadTokens', 'totalTokens', 'totalCost', 'estimatedTokens'] as const) day[key] += entry[key] ?? 0;
+    if (entry.costAvailable === false) day.costAvailable = false;
     day.modelsUsed = [...new Set([...day.modelsUsed, ...entry.modelsUsed.map(normalizePricingModel)])];
     for (const source of entry.modelBreakdowns) {
       const name = normalizePricingModel(source.modelName);
@@ -30,6 +32,7 @@ export function mergeDailyResponses(responses: Pick<DailyResponse, 'daily'>[]): 
       const totalTokens = modelBreakdownTokens(source, modelTokenMode(entry));
       if (!target) day.modelBreakdowns.push({ ...source, modelName: name, totalTokens });
       else {
+        if (source.costAvailable === false) target.costAvailable = false;
         target.totalTokens = (target.totalTokens ?? 0) + totalTokens;
         for (const key of ['inputTokens', 'outputTokens', 'cacheCreationTokens', 'cacheReadTokens', 'cost', 'estimatedTokens'] as const) target[key] += source[key] ?? 0;
       }
@@ -37,8 +40,13 @@ export function mergeDailyResponses(responses: Pick<DailyResponse, 'daily'>[]): 
   }
   const daily = [...days.values()].sort((a, b) => a.date.localeCompare(b.date));
   const totals: Totals = { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, totalTokens: 0, totalCost: 0, estimatedTokens: 0 };
-  for (const day of daily) for (const key of Object.keys(totals) as (keyof Totals)[]) totals[key] += day[key];
-  return { daily, totals };
+  for (const day of daily) {
+    for (const key of ['inputTokens', 'outputTokens', 'cacheCreationTokens', 'cacheReadTokens', 'totalTokens', 'totalCost', 'estimatedTokens'] as const) totals[key] += day[key];
+    if (day.costAvailable === false) totals.costAvailable = false;
+  }
+  const sourceErrors = responses.flatMap(response => response.sourceErrors ?? []);
+  if (sourceErrors.length) totals.costAvailable = false;
+  return { daily, totals, ...(sourceErrors.length ? { sourceErrors } : {}) };
 }
 
 export function mergeAnalytics(responses: AnalyticsResponse[]): AnalyticsResponse {
@@ -66,5 +74,5 @@ export function mergeAnalytics(responses: AnalyticsResponse[]): AnalyticsRespons
   const added = codeChangeTrend.reduce((sum, day) => sum + day.linesAdded, 0);
   const deleted = codeChangeTrend.reduce((sum, day) => sum + day.linesDeleted, 0);
   const activeDaysWithEdits = codeChangeTrend.filter(day => day.linesAdded + day.linesDeleted > 0).length;
-  return { codeChangeTrend, toolUsageDistribution: [...tools].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count), toolCallTrend: [...calls.values()].sort((a, b) => a.date.localeCompare(b.date)), productivityKPIs: { totalEdits, totalFilesModified, activeDaysWithEdits, avgLinesPerEdit: totalEdits ? (added + deleted) / totalEdits : 0, filesModifiedPerDay: activeDaysWithEdits ? totalFilesModified / activeDaysWithEdits : 0, addDeleteRatio: deleted ? added / deleted : 0 } };
+  return { ...(responses.some(response => response.sourceErrors?.length) ? { sourceErrors: responses.flatMap(response => response.sourceErrors ?? []) } : {}), codeChangeTrend, toolUsageDistribution: [...tools].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count), toolCallTrend: [...calls.values()].sort((a, b) => a.date.localeCompare(b.date)), productivityKPIs: { totalEdits, totalFilesModified, activeDaysWithEdits, avgLinesPerEdit: totalEdits ? (added + deleted) / totalEdits : 0, filesModifiedPerDay: activeDaysWithEdits ? totalFilesModified / activeDaysWithEdits : 0, addDeleteRatio: deleted ? added / deleted : 0 } };
 }

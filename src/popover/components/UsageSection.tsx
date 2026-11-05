@@ -49,7 +49,7 @@ export function UsageSection({ summary, models }: UsageSectionProps) {
     1,
   );
   const typeTotal = summary
-    ? Math.max(summary.inputTokens + summary.outputTokens + summary.cacheReadTokens, 1)
+    ? Math.max(summary.inputTokens + summary.outputTokens + summary.cacheReadTokens + (summary.cacheWriteTokens ?? 0), 1)
     : 1;
 
   return (
@@ -102,6 +102,7 @@ export function UsageSection({ summary, models }: UsageSectionProps) {
             value={formatTokens(summary.cacheReadTokens)}
             pct={summary.cacheReadTokens / typeTotal}
           />
+          {(summary.cacheWriteTokens ?? 0) > 0 && <Bar color="var(--cached-color)" label="Cache write" value={formatTokens(summary.cacheWriteTokens ?? 0)} pct={(summary.cacheWriteTokens ?? 0) / typeTotal} />}
         </div>
       ) : (
         <div className="empty">No usage yet.</div>

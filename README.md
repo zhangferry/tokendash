@@ -25,7 +25,7 @@
 AI coding tools make it easy to consume millions of tokens without a clear picture of where they went. TokenDash turns local session data into an at-a-glance view of today's activity and a deeper history of your usage.
 
 - **Glanceable by design** — see today's tokens, estimated cost, cache rate, model mix, and quota status without leaving the menu bar or system tray.
-- **One view across tools** — bring Claude Code, Codex, OpenClaw, and OpenCode usage into the same product.
+- **One view across tools** — bring Claude Code, Codex, OpenClaw, OpenCode, Pi, and DeepSeek Harness usage into the same product.
 - **Local-first** — usage history is parsed directly from files already stored on your machine.
 - **Useful beyond totals** — understand hourly activity, model and project distribution, cache efficiency, code changes, and tool calls.
 - **No companion analytics service** — the dashboard runs on your computer and does not require an account.
@@ -62,7 +62,7 @@ A native tray app for Ubuntu 22.04 or later (amd64) ships as a `.deb` and an App
 
 3. Launch **TokenDash**. It starts the same local dashboard automatically and shows today's token total in the system tray.
 
-The tray uses the AppIndicator API, so GNOME needs the **ubuntu-appindicators** extension (preinstalled on Ubuntu). Because AppIndicator does not deliver icon-click events, open the popover panel from the tray menu (right-click the icon, then **打开面板**). The app bundles the dashboard server but not Node.js: install Node.js 20.10 or later (system package, nvm, fnm, or asdf) so the tray can run it. The app skips incompatible system runtimes when looking for Node.js. With Node.js 20, also install the `sqlite3` command (`sudo apt install sqlite3`) to read OpenCode data; recent Node.js 22 and Node.js 24 use their built-in SQLite support.
+The tray uses the AppIndicator API, so GNOME needs the **ubuntu-appindicators** extension (preinstalled on Ubuntu). Because AppIndicator does not deliver icon-click events, open the popover panel from the tray menu (right-click the icon, then **Open Panel**). The app bundles the dashboard server but not Node.js: install Node.js 20.10 or later (system package, nvm, fnm, or asdf) so the tray can run it. The app skips incompatible system runtimes when looking for Node.js. With Node.js 20, also install the `sqlite3` command (`sudo apt install sqlite3`) to read OpenCode data; recent Node.js 22 and Node.js 24 use their built-in SQLite support.
 
 The popover panel mirrors the macOS menu bar app: today's tokens, cost, and cache rate; an hourly activity chart with 1D/3H/15M ranges; model and token-type usage; the seven-day trend; and coding-plan quota status. The panel is borderless and frameless — drag it by its header to move it, and it stays open until you dismiss it from the tray menu or press Escape. Panel settings (launch at login, background refresh interval, appearance, low-quota alerts, and API credentials) live under the panel's **Settings** entry and are shared with the tray process.
 
@@ -125,8 +125,28 @@ Open the full dashboard when you want to investigate a spike or understand longe
 | OpenAI Codex | `~/.codex/sessions/` | Yes | — |
 | OpenClaw | `~/.openclaw/sessions/` | Yes | Yes |
 | OpenCode | `~/.local/share/opencode/opencode.db` | Yes | — |
+| Pi | `~/.pi/agent/sessions/` | Yes | Yes |
+| DeepSeek Harness | `~/.dsh/sessions/` (or `$DSH_HOME/sessions/`) | Yes | Tools and supported edits |
 
 TokenDash only shows tools it detects on the current machine.
+
+DeepSeek Harness supports V4 raw JSONL and concatenated Zstandard logs, including
+model/project/time filters, session search and details, reasoning previews, and
+paired tool calls/results. Older or future log formats report an explicit error;
+TokenDash never migrates or repairs the source files. A recent Node runtime with
+built-in Zstandard support reads compressed logs directly. On Node 20 (or another
+runtime without it), install the `zstd` command on PATH; uncompressed `.jsonl`
+logs do not need it.
+
+Usage comes from recorded provider settlements: cached input is counted once,
+reasoning is included in output, retries are counted separately, and inherited
+fork history is excluded. Auxiliary requests that do not persist usage (such as
+some title-generation calls) are not included. Costs use TokenDash's existing
+model reference prices, not Harness account charges; unavailable model prices
+and failed sources are marked as incomplete instead of appearing free. All
+Agents and desktop totals retain successful sources when another source fails;
+if every source fails, the previous display is retained with an error.
+
 
 ### Coding-Plan Quotas
 

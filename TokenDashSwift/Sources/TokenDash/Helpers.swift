@@ -74,12 +74,14 @@ func shortModelName(_ id: String) -> String {
 
 func todayString() -> String {
     let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
     f.dateFormat = "yyyy-MM-dd"
     return f.string(from: Date())
 }
 
 func todayLabel() -> String {
     let f = DateFormatter()
+    f.locale = Locale(identifier: "en_US_POSIX")
     f.dateFormat = "MMM d, HH:mm"
     return f.string(from: Date())
 }

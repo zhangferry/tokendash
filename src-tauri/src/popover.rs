@@ -50,7 +50,7 @@ pub fn toggle(app: &AppHandle) {
     let _ = app.run_on_main_thread(move || {
         let Some(window) = handle.get_webview_window(POPOVER_LABEL) else {
             if let Err(error) = create(&handle) {
-                eprintln!("[tokendash] 无法创建面板窗口：{error}");
+                eprintln!("[tokendash] Failed to create popover window: {error}");
             }
             return;
         };
@@ -81,7 +81,7 @@ pub fn hide(app: &AppHandle) {
 /// the background otherwise.
 fn emit_visibility(app: &AppHandle, visible: bool) {
     if let Err(error) = app.emit_to(POPOVER_LABEL, "popover-visibility", visible) {
-        eprintln!("[tokendash] 无法通知面板可见性：{error}");
+        eprintln!("[tokendash] Failed to notify popover visibility: {error}");
     }
 }
 
@@ -101,17 +101,17 @@ fn create(app: &AppHandle) -> Result<(), String> {
         .always_on_top(true)
         .visible(false)
         .build()
-        .map_err(|error| format!("无法创建面板窗口：{error}"))?;
+        .map_err(|error| format!("Failed to create popover window: {error}"))?;
 
     // No focus-loss dismissal: the panel stays open until toggled from the tray,
     // matching the macOS behaviour where the NSPanel sets hidesOnDeactivate=false.
     place(app, &window);
     window
         .show()
-        .map_err(|error| format!("无法显示面板窗口：{error}"))?;
+        .map_err(|error| format!("Failed to show popover window: {error}"))?;
     window
         .set_focus()
-        .map_err(|error| format!("无法聚焦面板窗口：{error}"))?;
+        .map_err(|error| format!("Failed to focus popover window: {error}"))?;
     emit_visibility(app, true);
     Ok(())
 }
@@ -194,7 +194,7 @@ fn resize_from_top(window: &tauri::WebviewWindow, height: f64) {
         POPOVER_WIDTH,
         height,
     ))) {
-        eprintln!("[tokendash] 无法调整面板高度：{error}");
+        eprintln!("[tokendash] Failed to resize popover: {error}");
         return;
     }
     let _ = window.set_position(Position::Physical(current));
@@ -203,7 +203,7 @@ fn resize_from_top(window: &tauri::WebviewWindow, height: f64) {
 /// Tells the open panel to reload its details now (the tray's manual refresh).
 pub fn request_refresh(app: &AppHandle) {
     if let Err(error) = app.emit_to(POPOVER_LABEL, "popover-refresh", ()) {
-        eprintln!("[tokendash] 无法通知面板刷新：{error}");
+        eprintln!("[tokendash] Failed to request popover refresh: {error}");
     }
 }
 
@@ -224,7 +224,7 @@ pub fn reload_if_port_changed(app: &AppHandle) {
         .unwrap_or(false);
     if !same_origin {
         if let Err(error) = window.navigate(url) {
-            eprintln!("[tokendash] 无法切换面板地址：{error}");
+            eprintln!("[tokendash] Failed to change popover URL: {error}");
         }
     }
 }

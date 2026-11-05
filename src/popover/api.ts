@@ -10,7 +10,9 @@ async function getJson<T>(path: string, params?: Record<string, string>): Promis
   const query = new URLSearchParams(params ?? {}).toString();
   const response = await fetch(`${BASE}${path}${query ? `?${query}` : ''}`);
   if (!response.ok) {
-    throw new Error(`${response.status} ${response.statusText}`);
+    let detail = `${response.status} ${response.statusText}`;
+    try { const body = await response.json(); detail = body.hint || body.error || detail; } catch { /* Non-JSON proxy error. */ }
+    throw new Error(detail);
   }
   return (await response.json()) as T;
 }

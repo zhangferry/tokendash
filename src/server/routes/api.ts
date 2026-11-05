@@ -107,6 +107,7 @@ function getAgents(_req: Request, res: Response): void {
     if (agents.openclaw) available.push('openclaw');
     if (agents.opencode) available.push('opencode');
     if (agents.pi) available.push('pi');
+    if (agents.deepseek) available.push('deepseek');
     res.json({ available, default: available[0] || null });
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Unknown error';
@@ -128,7 +129,7 @@ export function registerApiRoutes(router: Router, appInfo: AppInfo): void {
   router.put('/settings/billing', (req, res) => {
     const rate = req.body?.exchangeRate;
     if (typeof rate !== 'number' || !Number.isFinite(rate) || rate <= 0) {
-      res.status(400).json({ error: '汇率必须是大于零的有限数值' });
+      res.status(400).json({ error: 'Exchange rate must be a finite number greater than zero.' });
       return;
     }
     try {
@@ -136,7 +137,7 @@ export function registerApiRoutes(router: Router, appInfo: AppInfo): void {
       cache.clear();
       res.json(buildSettingsResponse());
     } catch (failure) {
-      res.status(500).json({ error: failure instanceof Error ? failure.message : '汇率保存失败' });
+      res.status(500).json({ error: failure instanceof Error ? failure.message : 'Failed to save the exchange rate.' });
     }
   });
   router.get('/app-info', getAppInfo(appInfo));

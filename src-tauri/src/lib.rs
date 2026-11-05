@@ -65,7 +65,7 @@ pub fn run() {
             app_version,
         ])
         .build(tauri::generate_context!())
-        .expect("无法初始化 TokenDash 桌面端")
+        .expect("Failed to initialize TokenDash desktop")
         .run(|app, event| {
             if let tauri::RunEvent::Exit = event {
                 daemon::stop(app);
@@ -79,12 +79,12 @@ fn start_supervisor(app: AppHandle) {
         loop {
             match daemon::ensure_started(&app).await {
                 Ok(port) => {
-                    eprintln!("[tokendash] 本地服务已就绪：127.0.0.1:{port}");
+                    eprintln!("[tokendash] Local server ready: 127.0.0.1:{port}");
                     break;
                 }
                 Err(message) => {
                     daemon::record_startup_error(&message);
-                    eprintln!("[tokendash] 本地服务未就绪：{message}");
+                    eprintln!("[tokendash] Local server not ready: {message}");
                     tray::update_usage(&app, None);
                     tokio::time::sleep(START_RETRY_INTERVAL).await;
                 }
@@ -105,7 +105,10 @@ fn spawn_badge_loop(app: AppHandle) {
             match app.state::<DaemonState>().port() {
                 Some(port) => match usage::fetch_today(port).await {
                     Ok(totals) => tray::update_usage(&app, Some(totals)),
-                    Err(error) => eprintln!("[tokendash] 无法读取今日用量：{error}"),
+                    Err(error) => {
+                        eprintln!("[tokendash] Failed to read today's usage: {error}");
+                        tray::show_usage_error(&app);
+                    }
                 },
                 None => tray::update_usage(&app, None),
             }
@@ -139,9 +142,9 @@ fn spawn_health_loop(app: AppHandle) {
             if daemon::is_alive(&app) || daemon::is_alive_via_probe(&app).await {
                 continue;
             }
-            eprintln!("[tokendash] 本地服务已退出，尝试重启");
+            eprintln!("[tokendash] Local server exited; restarting");
             if let Err(error) = daemon::ensure_started(&app).await {
-                eprintln!("[tokendash] 本地服务重启失败：{error}");
+                eprintln!("[tokendash] Failed to restart local server: {error}");
             }
             popover::reload_if_port_changed(&app);
         }
@@ -225,7 +228,7 @@ fn get_daemon_port(app: AppHandle) -> Option<u16> {
 async fn open_dashboard(app: AppHandle) -> Result<(), String> {
     let port = daemon::ensure_started(&app).await?;
     open::that(format!("http://127.0.0.1:{port}/"))
-        .map_err(|error| format!("无法打开浏览器：{error}"))
+        .map_err(|error| format!("Failed to open browser: {error}"))
 }
 
 #[tauri::command]
@@ -233,9 +236,9 @@ fn open_external(url: String) -> Result<(), String> {
     // Only web links ever reach this command; anything else could hand a local
     // file or a custom handler to the desktop.
     if !(url.starts_with("https://") || url.starts_with("http://")) {
-        return Err(format!("拒绝打开非 HTTP 链接：{url}"));
+        return Err(format!("Refusing to open a non-HTTP link: {url}"));
     }
-    open::that(&url).map_err(|error| format!("无法打开链接：{error}"))
+    open::that(&url).map_err(|error| format!("Failed to open link: {error}"))
 }
 
 #[tauri::command]
@@ -255,7 +258,7 @@ fn notify(title: String, body: String) {
         .args(["-a", "TokenDash", &title, &body])
         .status()
     {
-        eprintln!("[tokendash] 无法发送桌面通知：{error}");
+        eprintln!("[tokendash] Failed to send desktop notification: {error}");
     }
     #[cfg(windows)]
     std::thread::spawn(move || {

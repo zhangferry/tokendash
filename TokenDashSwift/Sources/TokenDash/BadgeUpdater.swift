@@ -284,26 +284,37 @@ import AppKit
         guard let api = apiClient else { return }
         do {
             let agentsResp = try await api.getAgents()
-            let agents = agentsResp.available.isEmpty ? ["claude"] : agentsResp.available
+            let agents = agentsResp.available
             self.activeAgents = agents
 
             let today = todayString()
             var totalTokens = 0
             var totalCost = 0.0
+            var costAvailable = true
+            var status = UsageFetchStatus()
             for agent in agents {
-                if let d = try? await api.getDaily(agent: agent, refresh: true) {
+                do {
+                    let d = try await api.getDaily(agent: agent, refresh: true)
+                    status.succeeded()
+                    for failure in d.sourceErrors ?? [] { status.failed(failure.agent) }
                     if let entry = d.daily.first(where: { $0.date == today }) {
                         totalTokens += entry.totalTokens
                         totalCost += entry.totalCost
+                        costAvailable = costAvailable && entry.costAvailable != false
                     }
+                } catch {
+                    status.failed(agent)
                 }
             }
+            try status.requireSuccess(sourceCount: agents.count)
+            costAvailable = costAvailable && status.failedSources.isEmpty
 
             let tokenStr = formatTokens(totalTokens)
             self.state.badgeImage = Self.renderBadgeImage(title: tokenStr)
-            self.state.tooltipText = String(
-                format: "TokenDash - %@ tokens today ($%.2f)", tokenStr, totalCost)
-            self.state.errorMessage = nil
+            let costLabel = costAvailable ? formatCost(totalCost) : "partial estimate"
+            self.state.tooltipText = "TokenDash - \(tokenStr) tokens today (\(costLabel))"
+                + (status.warning.map { " | \($0)" } ?? "")
+            self.state.errorMessage = status.warning
         } catch {
             NSLog("[TokenDash] badge update error: \(error.localizedDescription)")
             self.state.errorMessage = error.localizedDescription
@@ -344,41 +355,60 @@ import AppKit
         }
         do {
             let agentsResp = try await api.getAgents()
-            let agents = agentsResp.available.isEmpty ? ["claude"] : agentsResp.available
+            let agents = agentsResp.available
             self.activeAgents = agents
 
             var dailyResults: [DailyResponse] = []
             var blockResults: [BlocksResponse] = []
             var projectResults: [ProjectsResponse] = []
+            var status = UsageFetchStatus()
 
             for agent in agents {
                 // A forced refresh uses fresh daemon data; launch and cached
                 // detail paths can reuse the daemon's existing results.
-                if let d = try? await api.getDaily(agent: agent, refresh: forceRefresh) { dailyResults.append(d) }
+                do {
+                    let d = try await api.getDaily(agent: agent, refresh: forceRefresh)
+                    dailyResults.append(d)
+                    status.succeeded()
+                    for failure in d.sourceErrors ?? [] { status.failed(failure.agent) }
+                } catch { status.failed(agent) }
                 // One 5-minute base serves every chart range (PRD v1.9.1).
-                if let b = try? await api.getBlocks(agent: agent, refresh: forceRefresh, granularity: .fiveMin) { blockResults.append(b) }
-                if let p = try? await api.getProjects(agent: agent, refresh: forceRefresh) { projectResults.append(p) }
+                do {
+                    let b = try await api.getBlocks(agent: agent, refresh: forceRefresh, granularity: .fiveMin)
+                    blockResults.append(b)
+                    for failure in b.sourceErrors ?? [] { status.failed(failure.agent) }
+                } catch { status.failed(agent) }
+                do {
+                    let p = try await api.getProjects(agent: agent, refresh: forceRefresh)
+                    projectResults.append(p)
+                    for failure in p.sourceErrors ?? [] { status.failed(failure.agent) }
+                } catch { status.failed(agent) }
             }
+            try status.requireSuccess(sourceCount: agents.count)
 
             let today = todayString()
-            var totalTokens = 0, totalInput = 0, totalOutput = 0, totalCacheRead = 0
+            var totalTokens = 0, totalInput = 0, totalOutput = 0, totalCacheRead = 0, totalCacheWrite = 0
             var totalCost = 0.0
+            var costAvailable = status.failedSources.isEmpty
             for data in dailyResults {
                 guard let entry = data.daily.first(where: { $0.date == today }) else { continue }
                 totalTokens += entry.totalTokens
                 totalInput += entry.inputTokens
                 totalOutput += entry.outputTokens
                 totalCacheRead += entry.cacheReadTokens
+                totalCacheWrite += entry.cacheCreationTokens
                 totalCost += entry.totalCost
+                costAvailable = costAvailable && entry.costAvailable != false
             }
-            let denom = Double(totalInput + totalCacheRead)
+            let denom = Double(totalInput + totalCacheRead + totalCacheWrite)
             let cacheRate = denom > 0 ? Double(totalCacheRead) / denom * 100 : 0
             let tokenStr = formatTokens(totalTokens)
             let badgeImage = Self.renderBadgeImage(title: tokenStr)
             let summary = TodaySummary(
                 tokens: totalTokens, cost: totalCost,
                 inputTokens: totalInput, outputTokens: totalOutput,
-                cacheReadTokens: totalCacheRead, cacheRate: cacheRate)
+                cacheReadTokens: totalCacheRead, cacheRate: cacheRate, costAvailable: costAvailable,
+                cacheWriteTokens: totalCacheWrite)
             if pulseEnabled, dailyResults.count == agents.count {
                 self.recordPulseObservation(
                     totalTokens: totalTokens, inputTokens: totalInput, outputTokens: totalOutput,
@@ -399,18 +429,18 @@ import AppKit
                 ? state.hourlyData : computedBuckets
             let projectRows = (computedProjects.isEmpty && !state.projects.isEmpty)
                 ? state.projects : computedProjects
-            let modelRows = computeModels(daily: dailyResults, today: today)
-            let trendPoints = computeTrend(daily: dailyResults)
+            let modelRows = computeModels(daily: dailyResults, today: today, complete: status.failedSources.isEmpty)
+            let trendPoints = computeTrend(daily: dailyResults, complete: status.failedSources.isEmpty)
 
             // Detail state (cache-served, instant) — painted BEFORE quota so the
             // popover isn't blocked on upstream quota calls (which can take 1-2s).
             self.state.badgeImage = badgeImage
-            self.state.tooltipText = String(
-                format: "TokenDash - %@ tokens today ($%.2f) | cache: %.1f%%",
-                tokenStr, totalCost, cacheRate)
+            let costLabel = costAvailable ? formatCost(totalCost) : "partial estimate"
+            self.state.tooltipText = "TokenDash - \(tokenStr) tokens today (\(costLabel)) | cache: \(formatPercent(cacheRate))"
+                + (status.warning.map { " | \($0)" } ?? "")
             self.state.todaySummary = summary
             self.state.cacheRate = cacheRate
-            self.state.errorMessage = nil
+            self.state.errorMessage = status.warning
             if !granularityMatched {
                 NSLog("[TokenDash] blocks granularity mismatch — fell back to Today view")
             }
@@ -587,36 +617,39 @@ import AppKit
     }
 
     /// Aggregate today's per-model usage across all agents (uses modelBreakdowns
-    /// that the summary loop discards). Token count = input + output + cacheRead.
-    private func computeModels(daily: [DailyResponse], today: String) -> [ModelRow] {
-        var totals: [String: (tokens: Int, cost: Double)] = [:]
+    /// that the summary loop discards), including cache reads and cache writes.
+    private func computeModels(daily: [DailyResponse], today: String, complete: Bool) -> [ModelRow] {
+        var totals: [String: (tokens: Int, cost: Double, costAvailable: Bool)] = [:]
         for data in daily {
             guard let entry = data.daily.first(where: { $0.date == today }) else { continue }
             for b in entry.modelBreakdowns ?? [] {
                 let name = shortModelName(b.modelName)
-                var t = totals[name] ?? (0, 0)
-                t.tokens += b.inputTokens + b.outputTokens + b.cacheReadTokens
+                var t = totals[name] ?? (0, 0, complete)
+                t.tokens += b.inputTokens + b.outputTokens + b.cacheReadTokens + b.cacheCreationTokens
                 t.cost += b.cost
+                t.costAvailable = t.costAvailable && b.costAvailable != false
                 totals[name] = t
             }
         }
         return totals.map { name, t in
-            ModelRow(name: name, tokens: t.tokens, cost: t.cost)
+            ModelRow(name: name, tokens: t.tokens, cost: t.cost, costAvailable: t.costAvailable)
         }.sorted { $0.tokens > $1.tokens }.prefix(5).map { $0 }
     }
 
     /// Last 7 days (oldest → newest) aggregated cost + tokens across all agents.
-    private func computeTrend(daily: [DailyResponse]) -> [TrendPoint] {
-        var byDate: [String: (tokens: Int, cost: Double)] = [:]
+    private func computeTrend(daily: [DailyResponse], complete: Bool) -> [TrendPoint] {
+        var byDate: [String: (tokens: Int, cost: Double, costAvailable: Bool)] = [:]
         for data in daily {
             for entry in data.daily {
-                var t = byDate[entry.date] ?? (0, 0)
+                var t = byDate[entry.date] ?? (0, 0, complete)
                 t.tokens += entry.totalTokens
                 t.cost += entry.totalCost
+                t.costAvailable = t.costAvailable && entry.costAvailable != false
                 byDate[entry.date] = t
             }
         }
         let fmt = DateFormatter()
+        fmt.locale = Locale(identifier: "en_US_POSIX")
         fmt.dateFormat = "yyyy-MM-dd"
         let cal = Calendar.current
         let todayStart = cal.startOfDay(for: Date())
@@ -625,8 +658,8 @@ import AppKit
                 return TrendPoint(date: "", tokens: 0, cost: 0)
             }
             let key = fmt.string(from: d)
-            let t = byDate[key] ?? (0, 0)
-            return TrendPoint(date: key, tokens: t.tokens, cost: t.cost)
+            let t = byDate[key] ?? (0, 0, complete)
+            return TrendPoint(date: key, tokens: t.tokens, cost: t.cost, costAvailable: t.costAvailable)
         }
     }
 

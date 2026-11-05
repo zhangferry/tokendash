@@ -4,18 +4,20 @@ import { validateDaily } from '../../shared/schemas.js';
 import { getDailyResponse as getClaudeDailyResponse } from '../claudeJsonlParser.js';
 import { getCodexDailyResponse } from '../codexResponseService.js';
 import { getDailyResponse as getOpenClawDailyResponse } from '../openclawParser.js';
+import { getDailyResponse as getDeepseekDailyResponse } from '../deepseekParser.js';
 
 export async function getSession(req: Request, res: Response): Promise<void> {
   const agent = req.query.agent as string || 'claude';
   const cacheKey = `session:${agent}`;
   try {
-    const cached = cache.get(cacheKey);
+    const force = req.query.refresh === '1' || req.query.refresh === 'true';
+    const cached = force ? undefined : cache.get(cacheKey);
     if (cached) {
       res.json(cached);
       return;
     }
 
-    const stale = cache.getStale(cacheKey);
+    const stale = force ? undefined : cache.getStale(cacheKey);
     if (stale) {
       res.json(stale);
       return;
@@ -25,6 +27,8 @@ export async function getSession(req: Request, res: Response): Promise<void> {
     let data;
     if (agent === 'codex') {
       data = validateDaily(await getCodexDailyResponse());
+    } else if (agent === 'deepseek') {
+      data = validateDaily(getDeepseekDailyResponse());
     } else if (agent === 'openclaw') {
       data = validateDaily(getOpenClawDailyResponse());
     } else {

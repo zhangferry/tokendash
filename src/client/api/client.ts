@@ -10,6 +10,15 @@ export interface AgentsResponse {
 }
 
 
+async function responseError(response: Response, label: string): Promise<Error> {
+  let detail = `${response.status} ${response.statusText}`;
+  try {
+    const body = await response.json();
+    detail = body.hint || body.error || detail;
+  } catch { /* A proxy may return a non-JSON error response. */ }
+  return new Error(`${label}: ${detail}`);
+}
+
 export async function fetchSettings(): Promise<AppSettingsResponse> {
   const res = await fetch(`${BASE}/settings`);
   if (!res.ok) {
@@ -51,14 +60,30 @@ function qs(agent: string, extra?: Record<string, string>): string {
   return parts.length > 0 ? '?' + parts.join('&') : '';
 }
 
+/** Settle a complete source independently so one unavailable agent cannot erase healthy data. */
+async function collectSources<T>(sources: string[], fetchSource: (source: string) => Promise<T>) {
+  const settled = await Promise.allSettled(sources.map(fetchSource));
+  const values: T[] = [];
+  const sourceErrors: Array<{ agent: string; message: string }> = [];
+  for (const [index, result] of settled.entries()) {
+    if (result.status === 'fulfilled') values.push(result.value);
+    else sourceErrors.push({ agent: sources[index], message: result.reason instanceof Error ? result.reason.message : String(result.reason) });
+  }
+  if (sources.length > 0 && values.length === 0) {
+    throw new Error(sourceErrors.map(error => `${error.agent}: ${error.message}`).join('; '));
+  }
+  return { values, sourceErrors };
+}
+
 export async function fetchDaily(agent = 'claude', refresh = false): Promise<DailyResponse> {
   if (agent === 'all') {
     const { available } = await fetchAgents();
-    return mergeDailyResponses(await Promise.all(available.map(source => fetchDaily(source, refresh))));
+    const { values, sourceErrors } = await collectSources(available, source => fetchDaily(source, refresh));
+    return mergeDailyResponses([...values, { daily: [], sourceErrors }]);
   }
   const res = await fetch(`${BASE}/daily${qs(agent, refresh ? { refresh: '1' } : undefined)}`);
   if (!res.ok) {
-    throw new Error(`Failed to fetch daily data: ${res.status} ${res.statusText}`);
+    throw await responseError(res, 'Failed to fetch daily data');
   }
   return res.json();
 }
@@ -82,11 +107,12 @@ export async function fetchSession(agent = 'claude'): Promise<SessionResponse> {
 export async function fetchProjects(agent = 'claude', refresh = false): Promise<ProjectsResponse> {
   if (agent === 'all') {
     const { available } = await fetchAgents();
-    return mergeProjects(await Promise.all(available.map(source => fetchProjects(source, refresh))));
+    const { values, sourceErrors } = await collectSources(available, source => fetchProjects(source, refresh));
+    return mergeProjects([...values, { projects: {}, sourceErrors }]);
   }
   const res = await fetch(`${BASE}/projects${qs(agent, refresh ? { refresh: '1' } : undefined)}`);
   if (!res.ok) {
-    throw new Error(`Failed to fetch projects data: ${res.status} ${res.statusText}`);
+    throw await responseError(res, 'Failed to fetch projects data');
   }
   return res.json();
 }
@@ -94,16 +120,17 @@ export async function fetchProjects(agent = 'claude', refresh = false): Promise<
 export async function fetchBlocks(agent = 'claude', project = '', refresh = false): Promise<BlocksResponse> {
   if (agent === 'all') {
     const sources = (await fetchAgents()).available;
-    const responses = await Promise.all(sources.map(async source => {
+    const { values, sourceErrors } = await collectSources(sources, async source => {
       const projects = project ? Object.keys((await fetchProjects(source, refresh)).projects).filter(name => projectName(name) === project) : [''];
       const responses = await Promise.all(projects.map(name => fetchBlocks(source, name, refresh)));
-      return responses.flatMap((response, index) => response.blocks.map(block => ({ ...block, id: source + ':' + index + ':' + block.id })));
-    }));
-    return { blocks: responses.flat().sort((a, b) => a.startTime.localeCompare(b.startTime)) };
+      return { blocks: responses.flatMap((response, index) => response.blocks.map(block => ({ ...block, id: source + ':' + index + ':' + block.id }))), sourceErrors: responses.flatMap(response => response.sourceErrors ?? []) };
+    });
+    const errors = [...sourceErrors, ...values.flatMap(response => response.sourceErrors)];
+    return { blocks: values.flatMap(response => response.blocks).sort((a, b) => a.startTime.localeCompare(b.startTime)), ...(errors.length ? { sourceErrors: errors } : {}) };
   }
   const res = await fetch(`${BASE}/blocks${qs(agent, { ...(project ? { project } : {}), ...(refresh ? { refresh: '1' } : {}) })}`);
   if (!res.ok) {
-    throw new Error(`Failed to fetch blocks data: ${res.status} ${res.statusText}`);
+    throw await responseError(res, 'Failed to fetch blocks data');
   }
   return res.json();
 }
@@ -111,15 +138,16 @@ export async function fetchBlocks(agent = 'claude', project = '', refresh = fals
 export async function fetchAnalytics(agent = 'claude', project = '', refresh = false): Promise<AnalyticsResponse> {
   if (agent === 'all') {
     const sources = (await fetchAgents()).available;
-    const responses = await Promise.all(sources.filter(source => source !== 'codex').map(async source => {
+    const { values, sourceErrors } = await collectSources(sources.filter(source => source !== 'codex'), async source => {
       const projects = project ? Object.keys((await fetchProjects(source, refresh)).projects).filter(name => projectName(name) === project) : [''];
       return Promise.all(projects.map(name => fetchAnalytics(source, name, refresh)));
-    }));
-    return mergeAnalytics(responses.flat());
+    });
+    const merged = mergeAnalytics(values.flat());
+    return { ...merged, ...(sourceErrors.length ? { sourceErrors: [...(merged.sourceErrors ?? []), ...sourceErrors] } : {}) };
   }
   const res = await fetch(`${BASE}/analytics${qs(agent, { ...(project ? { project } : {}), ...(refresh ? { refresh: '1' } : {}) })}`);
   if (!res.ok) {
-    throw new Error(`Failed to fetch analytics: ${res.status} ${res.statusText}`);
+    throw await responseError(res, 'Failed to fetch analytics');
   }
   return res.json();
 }
@@ -167,8 +195,8 @@ export async function fetchSessionDetail(agent: string, id: string, includeConte
 
 export async function updateBillingExchangeRate(exchangeRate: number): Promise<AppSettingsResponse> {
   const response = await fetch(BASE + '/settings/billing', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ exchangeRate }) });
-  if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('当前后端未加载汇率设置接口，请启动当前版本的 TokenDash 服务');
+  if (!response.headers.get('content-type')?.includes('application/json')) throw new Error('The exchange-rate endpoint is unavailable. Start the current version of the TokenDash server.');
   const data = await response.json();
-  if (!response.ok) throw new Error(data.error || '汇率保存失败');
+  if (!response.ok) throw new Error(data.error || 'Failed to save the exchange rate');
   return data;
 }

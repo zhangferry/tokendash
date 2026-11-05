@@ -69,11 +69,12 @@ pub fn load() -> DesktopSettings {
 
 pub fn save(settings: &DesktopSettings) -> Result<DesktopSettings, String> {
     let normalized = settings.clone().normalized();
-    paths::ensure_data_dir().map_err(|error| format!("无法创建数据目录：{error}"))?;
+    paths::ensure_data_dir()
+        .map_err(|error| format!("Failed to create data directory: {error}"))?;
     let serialized = serde_json::to_string_pretty(&normalized)
-        .map_err(|error| format!("无法序列化设置：{error}"))?;
+        .map_err(|error| format!("Failed to serialize settings: {error}"))?;
     fs::write(paths::settings_path(), format!("{serialized}\n"))
-        .map_err(|error| format!("无法写入设置文件：{error}"))?;
+        .map_err(|error| format!("Failed to write settings: {error}"))?;
     Ok(normalized)
 }
 
@@ -107,7 +108,9 @@ pub fn launch_exec() -> String {
 #[cfg(any(not(windows), test))]
 fn quote_desktop_exec(executable: &str) -> Result<String, String> {
     if executable.contains(['=', '\0']) {
-        return Err("自启程序路径不能包含等号或 NUL 字符".to_string());
+        return Err(
+            "The launch-at-login path cannot contain an equals sign or NUL character".to_string(),
+        );
     }
     let mut quoted = String::from("\"");
     for character in executable.chars() {
@@ -134,7 +137,8 @@ pub fn apply_autostart(enabled: bool) -> Result<(), String> {
     if enabled {
         let executable = quote_desktop_exec(&launch_exec())?;
         if let Some(parent) = path.parent() {
-            fs::create_dir_all(parent).map_err(|error| format!("无法创建自启目录：{error}"))?;
+            fs::create_dir_all(parent)
+                .map_err(|error| format!("Failed to create launch-at-login directory: {error}"))?;
         }
         let entry = format!(
             "[Desktop Entry]\n\
@@ -146,13 +150,14 @@ pub fn apply_autostart(enabled: bool) -> Result<(), String> {
              X-GNOME-Autostart-enabled=true\n",
             executable
         );
-        fs::write(&path, entry).map_err(|error| format!("无法写入自启文件：{error}"))?;
+        fs::write(&path, entry)
+            .map_err(|error| format!("Failed to write launch-at-login file: {error}"))?;
         return Ok(());
     }
     match fs::remove_file(&path) {
         Ok(()) => Ok(()),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(error) => Err(format!("无法删除自启文件：{error}")),
+        Err(error) => Err(format!("Failed to remove launch-at-login file: {error}")),
     }
 }
 
@@ -166,7 +171,9 @@ pub fn is_autostart_enabled() -> bool {
 #[cfg(any(windows, test))]
 fn windows_run_value(executable: &str) -> Result<String, String> {
     if executable.contains(['"', '\0', '\r', '\n']) || executable.encode_utf16().count() + 2 > 260 {
-        return Err("Windows 自启路径无效或超过 260 字符".to_string());
+        return Err(
+            "The Windows launch-at-login path is invalid or exceeds 260 characters".to_string(),
+        );
     }
     Ok(format!("\"{executable}\""))
 }
@@ -197,9 +204,9 @@ pub fn apply_autostart(enabled: bool) -> Result<(), String> {
     }
     let result = command
         .output()
-        .map_err(|error| format!("无法更新 Windows 自启设置：{error}"))?;
+        .map_err(|error| format!("Failed to update Windows launch-at-login settings: {error}"))?;
     if !result.status.success() {
-        return Err("无法更新 Windows 自启设置".to_string());
+        return Err("Failed to update Windows launch-at-login settings".to_string());
     }
     Ok(())
 }

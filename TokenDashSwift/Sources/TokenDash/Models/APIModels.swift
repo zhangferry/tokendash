@@ -23,6 +23,7 @@ struct DailyEntry: Codable {
     let totalCost: Double
     let modelsUsed: [String]?
     let modelBreakdowns: [ModelBreakdown]?
+    var costAvailable: Bool? = nil
 }
 
 struct ModelBreakdown: Codable {
@@ -32,23 +33,33 @@ struct ModelBreakdown: Codable {
     let cacheCreationTokens: Int
     let cacheReadTokens: Int
     let cost: Double
+    var costAvailable: Bool? = nil
 }
 
 struct DailyResponse: Codable {
     let daily: [DailyEntry]
+    var sourceErrors: [SourceError]? = nil
+}
+
+struct SourceError: Codable {
+    let agent: String
+    let message: String
 }
 
 struct BlockEntry: Codable {
     let startTime: String
     let totalTokens: Int
+    var costAvailable: Bool? = nil
 }
 
 struct BlocksResponse: Codable {
     let blocks: [BlockEntry]
+    var sourceErrors: [SourceError]? = nil
 }
 
 struct ProjectsResponse: Codable {
     let projects: [String: [DailyEntry]]
+    var sourceErrors: [SourceError]? = nil
 }
 
 
@@ -126,6 +137,7 @@ struct ModelRow: Identifiable {
     let name: String
     let tokens: Int
     let cost: Double
+    var costAvailable: Bool = true
     var id: String { name }
 }
 
@@ -134,6 +146,7 @@ struct TrendPoint: Identifiable {
     let date: String   // "yyyy-MM-dd"
     let tokens: Int
     let cost: Double
+    var costAvailable: Bool = true
     var id: String { date }
 }
 
@@ -146,6 +159,8 @@ struct TodaySummary {
     let outputTokens: Int
     let cacheReadTokens: Int
     let cacheRate: Double
+    var costAvailable: Bool = true
+    var cacheWriteTokens: Int = 0
 }
 
 struct TimeBucket: Identifiable {

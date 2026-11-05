@@ -38,22 +38,23 @@ pub type CredentialFile = std::collections::BTreeMap<String, ProviderCredential>
 fn read_all() -> Result<CredentialFile, String> {
     match fs::read_to_string(paths::credentials_path()) {
         Ok(raw) => serde_json::from_str::<CredentialFile>(&raw)
-            .map_err(|error| format!("凭据文件格式错误：{error}")),
+            .map_err(|error| format!("Invalid credentials file: {error}")),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(CredentialFile::new()),
-        Err(error) => Err(format!("无法读取凭据文件：{error}")),
+        Err(error) => Err(format!("Failed to read credentials file: {error}")),
     }
 }
 
 fn write_all(credentials: &CredentialFile) -> Result<(), String> {
-    paths::ensure_data_dir().map_err(|error| format!("无法创建数据目录：{error}"))?;
+    paths::ensure_data_dir()
+        .map_err(|error| format!("Failed to create data directory: {error}"))?;
     let path = paths::credentials_path();
     let serialized = serde_json::to_string_pretty(credentials)
-        .map_err(|error| format!("无法序列化凭据：{error}"))?;
+        .map_err(|error| format!("Failed to serialize credentials: {error}"))?;
     fs::write(&path, format!("{serialized}\n"))
-        .map_err(|error| format!("无法写入凭据：{error}"))?;
+        .map_err(|error| format!("Failed to write credentials: {error}"))?;
     #[cfg(unix)]
     fs::set_permissions(&path, fs::Permissions::from_mode(0o600))
-        .map_err(|error| format!("无法设置凭据文件权限：{error}"))?;
+        .map_err(|error| format!("Failed to set credentials file permissions: {error}"))?;
     Ok(())
 }
 
@@ -64,10 +65,10 @@ pub fn save_credential(
     base_url: Option<String>,
 ) -> Result<(), String> {
     if !EDITABLE_PROVIDERS.contains(&provider) {
-        return Err(format!("不支持的服务商：{provider}"));
+        return Err(format!("Unsupported provider: {provider}"));
     }
     if api_key.trim().is_empty() {
-        return Err("API Key 不能为空".to_string());
+        return Err("API key cannot be empty".to_string());
     }
     let mut credentials = read_all()?;
     credentials.insert(
@@ -124,13 +125,13 @@ mod tests {
     #[test]
     fn blank_key_is_rejected() {
         let error = save_credential("glm", "   ", None).expect_err("blank key must fail");
-        assert!(error.contains("不能为空"));
+        assert!(error.contains("cannot be empty"));
     }
 
     #[test]
     fn unknown_provider_is_rejected() {
         let error = save_credential("nope", "key", None).expect_err("unknown provider must fail");
-        assert!(error.contains("不支持"));
+        assert!(error.contains("Unsupported"));
     }
 
     #[test]

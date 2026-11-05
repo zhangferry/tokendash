@@ -148,18 +148,22 @@ struct TrendSection: View {
 /// "2026-06-13" → "Fri" (short weekday).
 func weekdayShort(_ yyyy_mm_dd: String) -> String {
     let parse = DateFormatter()
+    parse.locale = Locale(identifier: "en_US_POSIX")
     parse.dateFormat = "yyyy-MM-dd"
     guard let d = parse.date(from: yyyy_mm_dd) else { return "" }
     let out = DateFormatter()
+    out.locale = Locale(identifier: "en_US_POSIX")
     out.dateFormat = "EEE"
     return out.string(from: d)
 }
 
 func shortDate(_ yyyy_mm_dd: String) -> String {
     let parse = DateFormatter()
+    parse.locale = Locale(identifier: "en_US_POSIX")
     parse.dateFormat = "yyyy-MM-dd"
     guard let date = parse.date(from: yyyy_mm_dd) else { return yyyy_mm_dd }
     let output = DateFormatter()
+    output.locale = Locale(identifier: "en_US_POSIX")
     output.dateFormat = "MMM d"
     return output.string(from: date)
 }

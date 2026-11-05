@@ -53,10 +53,10 @@ pub fn format_cost(cost: f64) -> String {
 pub fn summary_label(tokens: Option<u64>, cost: Option<f64>) -> String {
     match (tokens, cost) {
         (Some(tokens), Some(cost)) => {
-            format!("今日 {} · {}", format_tokens(tokens), format_cost(cost))
+            format!("Today {} · {}", format_tokens(tokens), format_cost(cost))
         }
-        (Some(tokens), None) => format!("今日 {}", format_tokens(tokens)),
-        _ => "今日 --".to_string(),
+        (Some(tokens), None) => format!("Today {}", format_tokens(tokens)),
+        _ => "Today --".to_string(),
     }
 }
 
@@ -418,12 +418,12 @@ mod tests {
 
     #[test]
     fn summary_label_covers_missing_data() {
-        assert_eq!(summary_label(None, None), "今日 --");
+        assert_eq!(summary_label(None, None), "Today --");
         assert_eq!(
             summary_label(Some(1_200_000), Some(3.45)),
-            "今日 1.2M · $3.45"
+            "Today 1.2M · $3.45"
         );
-        assert_eq!(summary_label(Some(500), None), "今日 500");
+        assert_eq!(summary_label(Some(500), None), "Today 500");
     }
 
     #[test]

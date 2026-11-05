@@ -19,6 +19,7 @@ export interface PopoverData {
   loading: boolean;
   refreshing: boolean;
   error: string | null;
+  warning: string | null;
   summary: TodaySummary | null;
   models: ModelRow[];
   trend: TrendPoint[];
@@ -35,12 +36,14 @@ interface Derived {
   buckets: TimeBucket[];
 }
 
-function derive(runs: DailyResponse[], blocks: BlocksResponse[], now: Date): Derived {
+export function derivePopoverData(runs: DailyResponse[], blocks: BlocksResponse[], now: Date, incomplete = false): Derived {
   const today = todayString(now);
   let tokens = 0;
   let input = 0;
   let output = 0;
   let cacheRead = 0;
+  let cacheWrite = 0;
+  let costAvailable = !incomplete;
   let cost = 0;
   let sawToday = false;
 
@@ -52,44 +55,50 @@ function derive(runs: DailyResponse[], blocks: BlocksResponse[], now: Date): Der
     input += entry.inputTokens;
     output += entry.outputTokens;
     cacheRead += entry.cacheReadTokens;
+    cacheWrite += entry.cacheCreationTokens;
+    costAvailable &&= entry.costAvailable !== false;
     cost += entry.totalCost;
   }
 
-  const cacheDenominator = input + cacheRead;
+  const cacheDenominator = input + cacheRead + cacheWrite;
   const summary: TodaySummary | null = sawToday
     ? {
         tokens,
         cost,
+        costAvailable,
         inputTokens: input,
         outputTokens: output,
         cacheReadTokens: cacheRead,
+        cacheWriteTokens: cacheWrite,
         cacheRate: cacheDenominator > 0 ? (cacheRead / cacheDenominator) * 100 : 0,
       }
     : null;
 
-  const modelTotals = new Map<string, { tokens: number; cost: number }>();
+  const modelTotals = new Map<string, { tokens: number; cost: number; costAvailable: boolean }>();
   for (const run of runs) {
     const entry = run.daily.find((candidate) => candidate.date === today);
     if (!entry) continue;
     for (const breakdown of entry.modelBreakdowns ?? []) {
       const name = shortModelName(breakdown.modelName);
-      const totals = modelTotals.get(name) ?? { tokens: 0, cost: 0 };
-      totals.tokens += breakdown.inputTokens + breakdown.outputTokens + breakdown.cacheReadTokens;
+      const totals = modelTotals.get(name) ?? { tokens: 0, cost: 0, costAvailable: !incomplete };
+      totals.tokens += breakdown.totalTokens ?? breakdown.inputTokens + breakdown.outputTokens + breakdown.cacheReadTokens + breakdown.cacheCreationTokens;
+      totals.costAvailable &&= breakdown.costAvailable !== false;
       totals.cost += breakdown.cost;
       modelTotals.set(name, totals);
     }
   }
   const models: ModelRow[] = [...modelTotals.entries()]
-    .map(([name, totals]) => ({ name, tokens: totals.tokens, cost: totals.cost }))
+    .map(([name, totals]) => ({ name, tokens: totals.tokens, cost: totals.cost, costAvailable: totals.costAvailable }))
     .sort((left, right) => right.tokens - left.tokens)
     .slice(0, 5);
 
-  const trendTotals = new Map<string, { tokens: number; cost: number }>();
+  const trendTotals = new Map<string, { tokens: number; cost: number; costAvailable: boolean }>();
   for (const run of runs) {
     for (const entry of run.daily) {
-      const totals = trendTotals.get(entry.date) ?? { tokens: 0, cost: 0 };
+      const totals = trendTotals.get(entry.date) ?? { tokens: 0, cost: 0, costAvailable: !incomplete };
       totals.tokens += entry.totalTokens;
       totals.cost += entry.totalCost;
+      totals.costAvailable &&= entry.costAvailable !== false;
       trendTotals.set(entry.date, totals);
     }
   }
@@ -98,11 +107,31 @@ function derive(runs: DailyResponse[], blocks: BlocksResponse[], now: Date): Der
   for (let offset = 6; offset >= 0; offset -= 1) {
     const day = new Date(start.getTime() - offset * 24 * 3600_000);
     const key = todayString(day);
-    const totals = trendTotals.get(key) ?? { tokens: 0, cost: 0 };
-    trend.push({ date: key, tokens: totals.tokens, cost: totals.cost });
+    const totals = trendTotals.get(key) ?? { tokens: 0, cost: 0, costAvailable: !incomplete };
+    trend.push({ date: key, tokens: totals.tokens, cost: totals.cost, costAvailable: totals.costAvailable });
   }
 
   return { summary, models, trend, buckets: computeBuckets(blocks, now).buckets };
+}
+
+/** Keep each source internally consistent and retain failures for a visible partial-data notice. */
+export async function loadPopoverUsage(sources: string[], refresh: boolean) {
+  const results = await Promise.allSettled(sources.map(async source => {
+    const [daily, blocks] = await Promise.all([getDaily(source, refresh), getBlocks(source, '5m', refresh)]);
+    return { daily, blocks };
+  }));
+  const daily: DailyResponse[] = [];
+  const blocks: BlocksResponse[] = [];
+  const sourceErrors: Array<{ agent: string; message: string }> = [];
+  results.forEach((result, index) => {
+    if (result.status === 'fulfilled') {
+      daily.push(result.value.daily);
+      blocks.push(result.value.blocks);
+      sourceErrors.push(...(result.value.daily.sourceErrors ?? []), ...(result.value.blocks.sourceErrors ?? []));
+    } else sourceErrors.push({ agent: sources[index], message: result.reason instanceof Error ? result.reason.message : String(result.reason) });
+  });
+  if (sources.length > 0 && daily.length === 0) throw new Error(sourceErrors.map(error => `${error.agent}: ${error.message}`).join('; '));
+  return { daily, blocks, sourceErrors };
 }
 
 /** Fires one desktop notification per provider window that first crosses the threshold. */
@@ -137,6 +166,7 @@ export function usePopoverData(settings: DesktopSettings, range: HourlyRange, vi
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [warning, setWarning] = useState<string | null>(null);
   const [summary, setSummary] = useState<TodaySummary | null>(null);
   const [models, setModels] = useState<ModelRow[]>([]);
   const [trend, setTrend] = useState<TrendPoint[]>([]);
@@ -162,13 +192,9 @@ export function usePopoverData(settings: DesktopSettings, range: HourlyRange, vi
       if (agents.length > 0) agentsRef.current = agents;
       const sources = agents.length > 0 ? agents : ['claude'];
 
-      const [runs, blockRuns] = await Promise.all([
-        Promise.all(sources.map((source) => getDaily(source, forceRefresh).catch(() => null))),
-        Promise.all(sources.map((source) => getBlocks(source, '5m', forceRefresh).catch(() => null))),
-      ]);
-      const daily = runs.filter((run): run is DailyResponse => run !== null);
-      const blocks = blockRuns.filter((run): run is BlocksResponse => run !== null);
-      const derived = derive(daily, blocks, new Date());
+      const { daily, blocks, sourceErrors } = await loadPopoverUsage(sources, forceRefresh);
+      const derived = derivePopoverData(daily, blocks, new Date(), sourceErrors.length > 0);
+      setWarning(sourceErrors.length ? `Partial data: ${[...new Set(sourceErrors.map(error => error.agent))].join(', ')} unavailable` : null);
 
       // Stale-while-revalidate: a warm-up response without today's data must not
       // blank the chart the user is looking at.
@@ -210,6 +236,7 @@ export function usePopoverData(settings: DesktopSettings, range: HourlyRange, vi
       sources.map((source) => getBlocks(source, '1m', false).catch(() => null)),
     );
     const present = responses.filter((response): response is BlocksResponse => response !== null);
+    if (present.length !== sources.length) setWarning(`Realtime data incomplete: ${sources.filter((_, index) => responses[index] === null).join(', ')} unavailable`);
     if (present.length === 0) return;
     const aggregation = aggregate(present, now, 1, realtimeWindow(now));
     if (!aggregation.granularityMatched) return;
@@ -251,6 +278,7 @@ export function usePopoverData(settings: DesktopSettings, range: HourlyRange, vi
     loading,
     refreshing,
     error,
+    warning,
     summary,
     models,
     trend,

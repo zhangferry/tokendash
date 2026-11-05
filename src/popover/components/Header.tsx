@@ -31,7 +31,7 @@ export function Header({ summary, cacheRate, refreshing, onRefresh }: HeaderProp
         </div>
       </div>
       <div className="header-right">
-        <div className="cost mono-num">{summary ? formatCost(summary.cost) : '—'}</div>
+        <div className="cost mono-num">{summary ? formatCost(summary.cost) + (summary.costAvailable === false ? ' · partial estimate' : '') : '—'}</div>
         <div className="cache-badge mono-num">
           <ClockIcon />
           cache {formatPercent(cacheRate)}

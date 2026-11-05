@@ -30,26 +30,26 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
         false,
         None::<&str>,
     )
-    .map_err(|error| format!("无法创建托盘菜单：{error}"))?;
-    let toggle = MenuItem::with_id(app, "toggle", "打开面板", true, None::<&str>)
-        .map_err(|error| format!("无法创建托盘菜单：{error}"))?;
-    let dashboard = MenuItem::with_id(app, "dashboard", "打开仪表盘", true, None::<&str>)
-        .map_err(|error| format!("无法创建托盘菜单：{error}"))?;
-    let refresh = MenuItem::with_id(app, "refresh", "立即刷新", true, None::<&str>)
-        .map_err(|error| format!("无法创建托盘菜单：{error}"))?;
+    .map_err(|error| format!("Failed to create tray menu: {error}"))?;
+    let toggle = MenuItem::with_id(app, "toggle", "Open Panel", true, None::<&str>)
+        .map_err(|error| format!("Failed to create tray menu: {error}"))?;
+    let dashboard = MenuItem::with_id(app, "dashboard", "Open Dashboard", true, None::<&str>)
+        .map_err(|error| format!("Failed to create tray menu: {error}"))?;
+    let refresh = MenuItem::with_id(app, "refresh", "Refresh Now", true, None::<&str>)
+        .map_err(|error| format!("Failed to create tray menu: {error}"))?;
     let autostart = CheckMenuItem::with_id(
         app,
         "autostart",
-        "开机自启",
+        "Launch at Login",
         true,
         settings::is_autostart_enabled(),
         None::<&str>,
     )
-    .map_err(|error| format!("无法创建托盘菜单：{error}"))?;
-    let separator =
-        PredefinedMenuItem::separator(app).map_err(|error| format!("无法创建托盘菜单：{error}"))?;
-    let quit = MenuItem::with_id(app, "quit", "退出 TokenDash", true, None::<&str>)
-        .map_err(|error| format!("无法创建托盘菜单：{error}"))?;
+    .map_err(|error| format!("Failed to create tray menu: {error}"))?;
+    let separator = PredefinedMenuItem::separator(app)
+        .map_err(|error| format!("Failed to create tray menu: {error}"))?;
+    let quit = MenuItem::with_id(app, "quit", "Quit TokenDash", true, None::<&str>)
+        .map_err(|error| format!("Failed to create tray menu: {error}"))?;
 
     let menu = Menu::with_items(
         app,
@@ -57,7 +57,7 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
             &summary, &toggle, &dashboard, &refresh, &autostart, &separator, &quit,
         ],
     )
-    .map_err(|error| format!("无法创建托盘菜单：{error}"))?;
+    .map_err(|error| format!("Failed to create tray menu: {error}"))?;
 
     app.manage(TrayHandles {
         summary: summary.clone(),
@@ -86,40 +86,69 @@ pub fn install(app: &AppHandle) -> Result<(), String> {
     }
     builder
         .build(app)
-        .map_err(|error| format!("无法创建托盘图标：{error}"))?;
+        .map_err(|error| format!("Failed to create tray icon: {error}"))?;
     Ok(())
 }
 
 /// Replaces the tray bitmap and the summary line in one step so the two never
 /// disagree about what today's usage is.
 pub fn update_usage(app: &AppHandle, totals: Option<TodayTotals>) {
+    let partial = totals
+        .as_ref()
+        .map(|value| {
+            if !value.failed_sources.is_empty() {
+                format!(
+                    " · Some sources unavailable: {}",
+                    value.failed_sources.join(", ")
+                )
+            } else if !value.cost_available {
+                " · Partial cost estimate".to_string()
+            } else {
+                String::new()
+            }
+        })
+        .unwrap_or_default();
     let (tokens, cost) = match totals {
-        Some(totals) => (Some(totals.tokens), Some(totals.cost)),
+        Some(totals) => (
+            Some(totals.tokens),
+            totals.cost_available.then_some(totals.cost),
+        ),
         None => (None, None),
     };
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         if let Some(image) = badge::render_badge(tokens) {
             let icon = tauri::image::Image::new_owned(image.rgba, image.width, image.height);
             if let Err(error) = tray.set_icon(Some(icon)) {
-                eprintln!("[tokendash] 无法更新托盘图标：{error}");
+                eprintln!("[tokendash] Failed to update tray icon: {error}");
             }
         }
     }
-    let label = badge::summary_label(tokens, cost);
+    let label = format!("{}{partial}", badge::summary_label(tokens, cost));
     if let Some(tray) = app.tray_by_id(TRAY_ID) {
         let _ = tray.set_tooltip(Some(format!("TokenDash · {label}")));
     }
     if let Some(handles) = app.try_state::<TrayHandles>() {
         if let Err(error) = handles.summary.set_text(label) {
-            eprintln!("[tokendash] 无法更新托盘摘要：{error}");
+            eprintln!("[tokendash] Failed to update tray summary: {error}");
         }
+    }
+}
+
+/// Retains the last badge bitmap while making a failed refresh visible.
+pub fn show_usage_error(app: &AppHandle) {
+    let label = "Usage refresh failed · Keeping previous data";
+    if let Some(tray) = app.tray_by_id(TRAY_ID) {
+        let _ = tray.set_tooltip(Some(format!("TokenDash · {label}")));
+    }
+    if let Some(handles) = app.try_state::<TrayHandles>() {
+        let _ = handles.summary.set_text(label);
     }
 }
 
 pub fn sync_autostart(app: &AppHandle, enabled: bool) {
     if let Some(handles) = app.try_state::<TrayHandles>() {
         if let Err(error) = handles.autostart.set_checked(enabled) {
-            eprintln!("[tokendash] 无法更新自启状态：{error}");
+            eprintln!("[tokendash] Failed to update launch-at-login state: {error}");
         }
     }
 }
@@ -131,7 +160,7 @@ fn toggle_autostart(app: &AppHandle) {
         .and_then(|saved| settings::apply_autostart(saved.launch_at_login).map(|()| saved))
     {
         Ok(saved) => sync_autostart(app, saved.launch_at_login),
-        Err(error) => eprintln!("[tokendash] 无法切换开机自启：{error}"),
+        Err(error) => eprintln!("[tokendash] Failed to toggle launch at login: {error}"),
     }
 }
 
@@ -145,7 +174,10 @@ fn refresh_now(app: &AppHandle) {
         };
         match crate::usage::fetch_today(port).await {
             Ok(totals) => update_usage(&handle, Some(totals)),
-            Err(error) => eprintln!("[tokendash] 无法读取今日用量：{error}"),
+            Err(error) => {
+                eprintln!("[tokendash] Failed to read today's usage: {error}");
+                show_usage_error(&handle);
+            }
         }
         let _ = crate::usage::warm_detail(port).await;
         popover::request_refresh(&handle);
@@ -159,10 +191,10 @@ fn open_dashboard(app: &AppHandle) {
         match result {
             Ok(port) => {
                 if let Err(error) = open::that(format!("http://127.0.0.1:{port}/")) {
-                    eprintln!("[tokendash] 无法打开仪表盘：{error}");
+                    eprintln!("[tokendash] Failed to open dashboard: {error}");
                 }
             }
-            Err(error) => eprintln!("[tokendash] 仪表盘不可用：{error}"),
+            Err(error) => eprintln!("[tokendash] Dashboard unavailable: {error}"),
         }
     });
 }

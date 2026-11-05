@@ -56,6 +56,7 @@ function makeDailyEntry(date: string, models: string[], seed: number): DailyEntr
     cacheReadTokens: totalCacheRead,
     totalTokens: totalInput + totalOutput + totalCacheRead,
     totalCost: 0,
+    ...(models.every(name => name.startsWith('deepseek')) ? { costAvailable: true } : {}),
     modelsUsed: models,
     modelBreakdowns: models.map(name => ({
       modelName: name,
@@ -64,6 +65,7 @@ function makeDailyEntry(date: string, models: string[], seed: number): DailyEntr
       cacheCreationTokens: 0,
       cacheReadTokens: perModel(totalCacheRead),
       cost: 0,
+      ...(name.startsWith('deepseek') ? { costAvailable: true } : {}),
       estimatedTokens: 0,
     })),
     estimatedTokens: 0,
@@ -144,6 +146,11 @@ const AGENT_CONFIGS: Record<string, AgentConfig> = {
     projects: [
       { path: '/Users/test/openclaw-project', weight: 2 },
     ],
+    hasAnalytics: true,
+  },
+  deepseek: {
+    models: ['deepseek-flash', 'deepseek-v4-pro'],
+    projects: [{ path: '/Users/test/harness-project', weight: 3 }, { path: '/Users/test/harness-library', weight: 2 }],
     hasAnalytics: true,
   },
   pi: {
@@ -299,6 +306,7 @@ export function generateSessionAnalyticsResponse(agent: string): SessionAnalytic
   const sessions = Array.from({ length: 28 }, (_, index) => sessionFor(agent, index));
   const supportsEvents = agent !== 'codex' && agent !== 'opencode' && agent !== 'pi';
   const infersSkills = agent === 'codex';
+  const supportsSkills = (supportsEvents && agent !== 'deepseek') || infersSkills;
   const llmCallTrend = Array.from({ length: 8 }, (_, index) => {
     const date = fmtDate(daysAgo(7 - index));
     const first = 14 + index * 2;
@@ -310,16 +318,16 @@ export function generateSessionAnalyticsResponse(agent: string): SessionAnalytic
     summary: {
       sessionCount: sessions.length,
       llmCallCount: sessions.reduce((sum, session) => sum + session.llmCallCount, 0),
-      ...(supportsEvents ? { toolCallCount: sessions.reduce((sum, session) => sum + (session.toolCallCount || 0), 0), skillCallCount: 18, avgUserTurnCount, longSessionRate: 22.7, toolSuccessRate: 96.8 } : infersSkills ? { toolCallCount: 94, skillCallCount: 7 } : {}),
+      ...(supportsEvents ? { toolCallCount: sessions.reduce((sum, session) => sum + (session.toolCallCount || 0), 0), ...(supportsSkills ? { skillCallCount: 18 } : {}), avgUserTurnCount, longSessionRate: 22.7, toolSuccessRate: 96.8 } : infersSkills ? { toolCallCount: 94, skillCallCount: 7 } : {}),
       avgDurationMs: durations.reduce((sum, value) => sum + value, 0) / durations.length,
       medianDurationMs: durations.sort((a, b) => a - b)[Math.floor(durations.length / 2)],
     },
     llmCallTrend,
-    ...(supportsEvents ? { skillDistribution: [{ name: 'frontend-design', count: 12 }, { name: 'implement', count: 6 }], toolDistribution: [{ name: 'Read', count: 42 }, { name: 'Edit', count: 31 }, { name: 'Bash', count: 19 }], userTurnDistribution: [{ bucket: '1–2', sessionCount: 4, percentage: 14.3 }, { bucket: '3–5', sessionCount: 8, percentage: 28.6 }, { bucket: '6–8', sessionCount: 10, percentage: 35.7 }, { bucket: '9–12', sessionCount: 6, percentage: 21.4 }] } : infersSkills ? { skillDistribution: [{ name: 'implement', count: 4 }, { name: 'diagnosing-bugs', count: 3 }], toolDistribution: [{ name: 'exec', count: 52 }, { name: 'apply_patch', count: 42 }] } : {}),
+    ...(supportsEvents ? { ...(supportsSkills ? { skillDistribution: [{ name: 'frontend-design', count: 12 }, { name: 'implement', count: 6 }] } : {}), toolDistribution: [{ name: 'Read', count: 42 }, { name: 'Edit', count: 31 }, { name: 'Bash', count: 19 }], userTurnDistribution: [{ bucket: '1–2', sessionCount: 4, percentage: 14.3 }, { bucket: '3–5', sessionCount: 8, percentage: 28.6 }, { bucket: '6–8', sessionCount: 10, percentage: 35.7 }, { bucket: '9–12', sessionCount: 6, percentage: 21.4 }] } : infersSkills ? { skillDistribution: [{ name: 'implement', count: 4 }, { name: 'diagnosing-bugs', count: 3 }], toolDistribution: [{ name: 'exec', count: 52 }, { name: 'apply_patch', count: 42 }] } : {}),
     durationTurnTrend: llmCallTrend.map((entry, index) => ({ date: entry.date, avgDurationMs: (16 + index * 2) * 60_000, ...(supportsEvents ? { avgUserTurnCount: 4 + index / 3 } : {}) })),
     sessions,
     pagination: {},
-    capabilities: { userTurns: supportsEvents, skills: supportsEvents || infersSkills, ...(infersSkills ? { skillSemantics: 'inferred' as const } : supportsEvents ? { skillSemantics: 'explicit' as const } : {}), tools: supportsEvents || infersSkills, toolResults: supportsEvents, contentPreview: false },
+    capabilities: { userTurns: supportsEvents, skills: supportsSkills, ...(infersSkills ? { skillSemantics: 'inferred' as const } : supportsSkills ? { skillSemantics: 'explicit' as const } : {}), tools: supportsEvents || infersSkills, toolResults: supportsEvents, contentPreview: false },
   };
 }
 
@@ -366,6 +374,7 @@ export interface FixtureOverrides {
   emptyAgents?: boolean;
   noBlocks?: boolean;
   staleProjectsForAgent?: string;
+  failedAgent?: string;
 }
 
 export async function mockApiRoutes(
@@ -407,6 +416,10 @@ export async function mockApiRoutes(
     const url = new URL(route.request().url());
     const path = url.pathname.replace('/api/', '');
     const agent = url.searchParams.get('agent') || 'claude';
+    if (overrides.failedAgent === agent && path !== 'agents' && path !== 'settings') {
+      await route.fulfill({ status: 502, json: { error: 'Fixture source unavailable', hint: 'DeepSeek log could not be decoded' } });
+      return;
+    }
 
     switch (path) {
       case 'agents':

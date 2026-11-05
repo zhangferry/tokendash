@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { decodeDeepseekZstd, getDeepseekSessionsDir, readDeepseekSessionLog, scanDeepseekSessions, scanDeepseekZstdFrames } from '../../server/deepseekSessionLog.js';
+import { decodeDeepseekZstd, getDeepseekSessionsDir, readDeepseekSessionLog, scanDeepseekSessions, scanDeepseekZstdFrames, zstdSearchDirs } from '../../server/deepseekSessionLog.js';
 import { deepseekHeader, deepseekJsonl, deepseekMessage, deepseekZstdFrames, hasSystemZstd, hasZstdEncoder } from '../fixtures/deepseek.js';
 
 let root: string;
@@ -74,9 +74,21 @@ describe('DeepSeek Harness physical logs', () => {
     expect(decodeDeepseekZstd(frames).toString()).toBe(raw);
   });
 
+  it('searches standard install locations outside a Finder-launched PATH', () => {
+    const dirs = zstdSearchDirs('/usr/bin:/bin:/usr/sbin:/sbin');
+    expect(dirs).toEqual(expect.arrayContaining(['/usr/bin', '/opt/homebrew/bin', '/usr/local/bin']));
+    expect(new Set(dirs).size).toBe(dirs.length);
+  });
+
+  it.skipIf(!hasZstdEncoder || !hasSystemZstd)('system decoder finds zstd outside the inherited PATH', () => {
+    const frames = deepseekZstdFrames([deepseekHeader, deepseekMessage(1)]);
+    const raw = deepseekJsonl([deepseekHeader, deepseekMessage(1)]);
+    vi.stubEnv('PATH', '/usr/bin:/bin:/usr/sbin:/sbin');
+    expect(decodeDeepseekZstd(frames, 'system', zstdSearchDirs()).toString()).toBe(raw);
+  });
+
   it.skipIf(!hasZstdEncoder)('reports actionable missing-decoder instructions', () => {
     const frames = deepseekZstdFrames([deepseekHeader]);
-    vi.stubEnv('PATH', root);
-    expect(() => decodeDeepseekZstd(frames, 'system')).toThrow('Install zstd or use Node 24');
+    expect(() => decodeDeepseekZstd(frames, 'system', [root])).toThrow('Install zstd or use Node 24');
   });
 });

@@ -1,6 +1,6 @@
 import { readFileSync, readdirSync, accessSync, constants } from 'node:fs';
 import { homedir } from 'node:os';
-import { basename, join, resolve } from 'node:path';
+import { basename, delimiter, join, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 import * as zlib from 'node:zlib';
 
@@ -34,6 +34,25 @@ export interface DeepseekSessionLog {
 const LOG_NAME = /^session(?:\.v(\d+))?\.jsonl(\.zstd)?$/;
 const ZSTD_MAGIC = 0xfd2fb528;
 const MAX_DECODED_BYTES = 512 * 1024 * 1024;
+
+/**
+ * Directories appended to the inherited PATH when looking for the optional
+ * `zstd` fallback. A daemon started from Finder/LaunchServices only receives
+ * `/usr/bin:/bin:/usr/sbin:/sbin`, so Homebrew/MacPorts installs are otherwise
+ * invisible even though the user has `zstd` installed.
+ */
+const ZSTD_FALLBACK_DIRS = [
+  '/opt/homebrew/bin',
+  '/usr/local/bin',
+  '/opt/local/bin',
+  '/usr/bin',
+  '/bin',
+];
+
+export function zstdSearchDirs(pathValue = process.env.PATH ?? ''): string[] {
+  const inherited = pathValue.split(delimiter).filter(Boolean);
+  return [...new Set([...inherited, ...ZSTD_FALLBACK_DIRS])];
+}
 
 export function getDeepseekSessionsDir(): string {
   let home = process.env.DSH_HOME?.trim();
@@ -136,8 +155,15 @@ export function scanDeepseekZstdFrames(buffer: Buffer): { frames: { start: numbe
   return { frames, completeBytes };
 }
 
-/** Optional decoder selection is injectable for portability regression tests. */
-export function decodeDeepseekZstd(buffer: Buffer, decoder: 'auto' | 'system' = 'auto'): Buffer {
+/**
+ * Optional decoder selection and search directories are injectable for
+ * portability regression tests.
+ */
+export function decodeDeepseekZstd(
+  buffer: Buffer,
+  decoder: 'auto' | 'system' = 'auto',
+  searchDirs: string[] = zstdSearchDirs(),
+): Buffer {
   const { frames, completeBytes } = scanDeepseekZstdFrames(buffer);
   if (!frames.length) throw new Error('DeepSeek Harness compressed log has no complete header frame yet');
   const native = (zlib as unknown as { zstdDecompressSync?: (input: Buffer, options?: { maxOutputLength: number }) => Buffer }).zstdDecompressSync;
@@ -153,14 +179,17 @@ export function decodeDeepseekZstd(buffer: Buffer, decoder: 'auto' | 'system' = 
     }
     return Buffer.concat(chunks, bytes);
   }
-  const result = spawnSync('zstd', ['-d', '-q', '-c'], {
-    input: buffer.subarray(0, completeBytes), maxBuffer: MAX_DECODED_BYTES, timeout: 30_000,
-  });
-  if ((result.error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') {
-    throw new Error('Reading compressed DeepSeek Harness logs requires Node with Zstandard support or the zstd command on PATH. Install zstd or use Node 24.');
+  const executableName = process.platform === 'win32' ? 'zstd.exe' : 'zstd';
+  const executables = [...new Set(searchDirs.map(dir => join(dir, executableName)))];
+  for (const executable of executables) {
+    const result = spawnSync(executable, ['-d', '-q', '-c'], {
+      input: buffer.subarray(0, completeBytes), maxBuffer: MAX_DECODED_BYTES, timeout: 30_000,
+    });
+    if ((result.error as NodeJS.ErrnoException | undefined)?.code === 'ENOENT') continue;
+    if (result.error || result.status !== 0) throw new Error('Cannot decode DeepSeek Harness Zstandard log (corrupt frame, timeout, or output exceeds 512 MiB)', { cause: result.error });
+    return result.stdout;
   }
-  if (result.error || result.status !== 0) throw new Error('Cannot decode DeepSeek Harness Zstandard log (corrupt frame, timeout, or output exceeds 512 MiB)', { cause: result.error });
-  return result.stdout;
+  throw new Error('Reading compressed DeepSeek Harness logs requires Node with Zstandard support or a zstd executable (checked PATH, /opt/homebrew/bin and /usr/local/bin). Install zstd or use Node 24.');
 }
 
 function record(value: unknown): value is Record<string, unknown> {

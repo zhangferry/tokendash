@@ -104,6 +104,62 @@ final class DaemonManagerLifecycleTests: XCTestCase {
         XCTAssertTrue(available)
     }
 
+    func testNodeSelectionPrefersNativeZstdThenNewestRuntime() {
+        let system = NodeRuntimeProbe(
+            url: URL(fileURLWithPath: "/usr/local/bin/node"),
+            version: NodeRuntimeVersion(major: 20, minor: 11, patch: 1),
+            hasNativeZstd: false
+        )
+        let nvm = NodeRuntimeProbe(
+            url: URL(fileURLWithPath: "/Users/me/.nvm/versions/node/v24.13.0/bin/node"),
+            version: NodeRuntimeVersion(major: 24, minor: 13, patch: 0),
+            hasNativeZstd: true
+        )
+        let homebrew = NodeRuntimeProbe(
+            url: URL(fileURLWithPath: "/opt/homebrew/bin/node"),
+            version: NodeRuntimeVersion(major: 23, minor: 9, patch: 0),
+            hasNativeZstd: true
+        )
+
+        XCTAssertEqual(DaemonManager.selectNode([system, homebrew, nvm])?.path, nvm.url.path)
+    }
+
+    func testNodeSelectionUsesNewestRuntimeWhenNoneHasZstd() {
+        let old = NodeRuntimeProbe(
+            url: URL(fileURLWithPath: "/usr/bin/node"),
+            version: NodeRuntimeVersion(major: 20, minor: 11, patch: 1),
+            hasNativeZstd: false
+        )
+        let newer = NodeRuntimeProbe(
+            url: URL(fileURLWithPath: "/usr/local/bin/node"),
+            version: NodeRuntimeVersion(major: 22, minor: 14, patch: 1),
+            hasNativeZstd: false
+        )
+
+        XCTAssertEqual(DaemonManager.selectNode([old, newer])?.path, newer.url.path)
+        XCTAssertNil(DaemonManager.selectNode([]))
+    }
+
+    func testNodeVersionParsingAndZstdCapabilityBoundary() {
+        XCTAssertEqual(NodeRuntimeVersion(raw: "v24.13.0"), NodeRuntimeVersion(major: 24, minor: 13, patch: 0))
+        XCTAssertEqual(NodeRuntimeVersion(raw: "20.11.1"), NodeRuntimeVersion(major: 20, minor: 11, patch: 1))
+        XCTAssertNil(NodeRuntimeVersion(raw: "current"))
+        XCTAssertFalse(NodeRuntimeVersion(raw: "22.14.9")!.hasNativeZstd)
+        XCTAssertTrue(NodeRuntimeVersion(raw: "22.15.0")!.hasNativeZstd)
+        XCTAssertFalse(NodeRuntimeVersion(raw: "23.7.0")!.hasNativeZstd)
+        XCTAssertTrue(NodeRuntimeVersion(raw: "23.8.0")!.hasNativeZstd)
+    }
+
+    func testDaemonEnvironmentAddsHomebrewToMinimalGuiPath() {
+        let environment = DaemonManager.daemonEnvironment([
+            "PATH": "/usr/bin:/bin",
+            "HOME": "/Users/me",
+        ])
+
+        XCTAssertEqual(environment["PATH"], "/usr/bin:/bin:/opt/homebrew/bin:/usr/local/bin")
+        XCTAssertEqual(environment["HOME"], "/Users/me")
+    }
+
     private func temporaryDataDir() -> URL {
         let url = FileManager.default.temporaryDirectory
             .appendingPathComponent("tokendash-daemon-tests")

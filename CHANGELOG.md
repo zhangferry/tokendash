@@ -1,5 +1,8 @@
 # Changelog
 
+### v1.11.1
+- **Restore DeepSeek Harness data in the menu bar app** — the Finder-launched daemon now finds Homebrew's `zstd` even though it inherits a minimal `PATH`, and the desktop app prefers a Node.js runtime with native Zstandard support instead of a stale system Node. This removes the false “Partial usage: deepseek unavailable” warning and restores live daily, project, and activity refreshes.
+
 ### v1.11.0
 - **Consistent English interface** — unify dashboard, session analytics, settings, desktop menus, and user-facing diagnostics in English.
 - **DeepSeek Harness support** — read V4 JSONL and multi-frame Zstandard sessions for token, model, project and time statistics, searchable session details, reasoning and tool analysis; account for replacement samples, retries and inherited fork history without duplicate usage.

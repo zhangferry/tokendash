@@ -21,6 +21,50 @@ enum DaemonProbe: Equatable {
     case unavailableOrForeign
 }
 
+/// Parsed Node.js runtime version, ordered so the daemon picks the newest
+/// supported interpreter instead of whichever `node` happens to be first on a
+/// minimal GUI PATH.
+struct NodeRuntimeVersion: Comparable, CustomStringConvertible {
+    let major: Int
+    let minor: Int
+    let patch: Int
+
+    /// Node.js ships `zlib.zstdDecompressSync` from 22.15 / 23.8 onward.
+    var hasNativeZstd: Bool {
+        major >= 24 || (major == 23 && minor >= 8) || (major == 22 && minor >= 15)
+    }
+
+    var description: String { "\(major).\(minor).\(patch)" }
+
+    init(major: Int, minor: Int, patch: Int = 0) {
+        self.major = major
+        self.minor = minor
+        self.patch = patch
+    }
+
+    init?(raw: String) {
+        let stripped = raw.hasPrefix("v") ? String(raw.dropFirst()) : raw
+        let parts = stripped.split(separator: ".")
+        guard parts.count >= 2,
+              let major = Int(parts[0]),
+              let minor = Int(parts[1]) else { return nil }
+        self.init(major: major, minor: minor, patch: parts.count > 2 ? Int(parts[2]) ?? 0 : 0)
+    }
+
+    static func < (lhs: NodeRuntimeVersion, rhs: NodeRuntimeVersion) -> Bool {
+        (lhs.major, lhs.minor, lhs.patch) < (rhs.major, rhs.minor, rhs.patch)
+    }
+}
+
+/// One probed interpreter. A GUI launch only inherits
+/// `/usr/bin:/bin:/usr/sbin:/sbin`, so `/usr/local/bin/node` can shadow a newer
+/// nvm/Homebrew install that supports compressed DeepSeek Harness logs.
+struct NodeRuntimeProbe {
+    let url: URL
+    let version: NodeRuntimeVersion
+    let hasNativeZstd: Bool
+}
+
 /// Manages the Node.js daemon process lifecycle.
 @Observable class DaemonManager {
     private var process: (any DaemonProcess)?
@@ -111,7 +155,7 @@ enum DaemonProbe: Equatable {
         let proc = processFactory()
         proc.executableURL = nodeURL
         proc.arguments = [daemonScript, "--port", "3456"]
-        proc.environment = ProcessInfo.processInfo.environment
+        proc.environment = Self.daemonEnvironment()
         proc.standardOutput = FileHandle.nullDevice
         proc.standardError = FileHandle.nullDevice
         try proc.run()
@@ -161,40 +205,147 @@ enum DaemonProbe: Equatable {
     // MARK: - Discovery
 
     private static func findNode() throws -> URL {
-        // Try common paths + nvm + volta + fnm
+        let probes = nodeCandidateURLs().compactMap(probeNode)
+        if let selected = selectNode(probes) { return selected }
+        throw DaemonError.nodeNotFound
+    }
+
+    /// Prefer a runtime with native Zstandard support, then the newest version.
+    /// Compressed DeepSeek Harness logs need one of the two; every other agent
+    /// and uncompressed Harness logs work on any supported Node.
+    static func selectNode(_ probes: [NodeRuntimeProbe]) -> URL? {
+        probes.max { lhs, rhs in
+            if lhs.hasNativeZstd != rhs.hasNativeZstd { return !lhs.hasNativeZstd }
+            return lhs.version < rhs.version
+        }?.url
+    }
+
+    /// Candidate interpreters in preference order: version managers newest
+    /// first, then fixed paths, the inherited PATH, and finally a login shell.
+    private static func nodeCandidateURLs() -> [URL] {
         let home = NSHomeDirectory()
-        let candidates = [
+        var paths = versionedManagerNodes(home: home)
+        paths += [
             "/opt/homebrew/bin/node",
             "/usr/local/bin/node",
             "/usr/bin/node",
-            "\(home)/.nvm/versions/node/v24.13.0/bin/node",
             "\(home)/.volta/bin/node",
             "\(home)/.local/share/fnm/node-versions/current/installation/bin/node",
+            "\(home)/.asdf/shims/node",
+            "\(home)/bin/node",
+            "/snap/bin/node",
         ]
-        for path in candidates {
-            if FileManager.default.isExecutableFile(atPath: path) {
-                return URL(fileURLWithPath: path)
-            }
+        if let pathValue = ProcessInfo.processInfo.environment["PATH"] {
+            paths += pathValue.split(separator: ":").map { "\($0)/node" }
+        }
+        // Only pay for a login shell when version managers and PATH found
+        // nothing; sourcing a user's shell config should not gate every launch.
+        let hasDirectCandidate = paths.contains {
+            FileManager.default.isExecutableFile(atPath: ($0 as NSString).standardizingPath)
+        }
+        if !hasDirectCandidate, let shellNode = whichNodeViaLoginShell() {
+            paths.append(shellNode)
         }
 
-        // Try `which node` via shell (resolves nvm/volta/etc)
+        let fileManager = FileManager.default
+        var seen = Set<String>()
+        return paths.compactMap { path in
+            let standardized = (path as NSString).standardizingPath
+            guard fileManager.isExecutableFile(atPath: standardized) else { return nil }
+            let url = URL(fileURLWithPath: standardized)
+            let identity = url.resolvingSymlinksInPath().path
+            guard seen.insert(identity).inserted else { return nil }
+            return url
+        }
+    }
+
+    /// Installed nvm/fnm/asdf runtimes, newest first. A Finder launch cannot
+    /// rely on the user's shell to initialize these version managers.
+    private static func versionedManagerNodes(home: String) -> [String] {
+        let bases = [
+            "\(home)/.nvm/versions/node",
+            "\(home)/.local/share/fnm/node-versions",
+            "\(home)/.asdf/installs/nodejs",
+        ]
+        var found: [(version: NodeRuntimeVersion, path: String)] = []
+        for base in bases {
+            guard let entries = try? FileManager.default.contentsOfDirectory(atPath: base) else { continue }
+            for entry in entries {
+                guard let version = NodeRuntimeVersion(raw: entry) else { continue }
+                for suffix in ["/bin/node", "/installation/bin/node"] {
+                    let path = base + "/" + entry + suffix
+                    if FileManager.default.isExecutableFile(atPath: path) {
+                        found.append((version, path))
+                        break
+                    }
+                }
+            }
+        }
+        return found.sorted { $0.version > $1.version }.map(\.path)
+    }
+
+    private static func whichNodeViaLoginShell() -> String? {
         let proc = Process()
         let pipe = Pipe()
         proc.executableURL = URL(fileURLWithPath: "/bin/zsh")
         proc.arguments = ["-l", "-c", "which node"]
         proc.standardOutput = pipe
         proc.standardError = FileHandle.nullDevice
-        try? proc.run()
+        do { try proc.run() } catch { return nil }
         proc.waitUntilExit()
-        if proc.terminationStatus == 0 {
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            let path = String(data: data, encoding: .utf8)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-            if !path.isEmpty && FileManager.default.isExecutableFile(atPath: path) {
-                return URL(fileURLWithPath: path)
-            }
+        guard proc.terminationStatus == 0 else { return nil }
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(decoding: data, as: UTF8.self)
+        return output.split(whereSeparator: \.isNewline)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .last { !$0.isEmpty }
+    }
+
+    /// Reports the runtime version and whether it can decode Zstandard frames.
+    /// Probing the capability directly is more reliable than guessing from the
+    /// version string, and a hung/broken binary must not block launch.
+    private static func probeNode(_ url: URL) -> NodeRuntimeProbe? {
+        let proc = Process()
+        proc.executableURL = url
+        proc.arguments = [
+            "-p",
+            "process.versions.node + ' ' + (typeof require('zlib').zstdDecompressSync === 'function' ? '1' : '0')",
+        ]
+        let pipe = Pipe()
+        proc.standardOutput = pipe
+        proc.standardError = FileHandle.nullDevice
+        do { try proc.run() } catch { return nil }
+
+        let deadline = Date().addingTimeInterval(3)
+        while proc.isRunning && Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.01)
+        }
+        if proc.isRunning {
+            proc.terminate()
+            return nil
         }
 
-        throw DaemonError.nodeNotFound
+        let data = pipe.fileHandleForReading.readDataToEndOfFile()
+        let output = String(decoding: data, as: UTF8.self)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        let fields = output.split(separator: " ")
+        guard fields.count == 2,
+              let version = NodeRuntimeVersion(raw: String(fields[0])),
+              let zstdFlag = Int(fields[1]) else { return nil }
+        return NodeRuntimeProbe(url: url, version: version, hasNativeZstd: zstdFlag == 1)
+    }
+
+    /// Finder/LaunchServices daemons inherit `/usr/bin:/bin:/usr/sbin:/sbin`,
+    /// which hides Homebrew and locally installed tools such as zstd.
+    static func daemonEnvironment(_ base: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
+        var environment = base
+        let fallbackDirs = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin"]
+        var dirs = (environment["PATH"] ?? "").split(separator: ":").map(String.init)
+        for dir in fallbackDirs where !dirs.contains(dir) {
+            dirs.append(dir)
+        }
+        environment["PATH"] = dirs.joined(separator: ":")
+        return environment
     }
 
     private static func findDaemonScript() throws -> String {

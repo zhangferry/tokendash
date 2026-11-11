@@ -1,5 +1,10 @@
 # Changelog
 
+### v1.11.2
+- **Bare model id pricing fix** — custom provider route pools write bare model ids like `gpt6.1-sol`, `gpt5.6-sol`, `deepseek-flash`, `ark-deepseek-v4.1-flash-1017` and `gpt-6.1-sol-codex` into session logs; pricing lookup now tries ordered candidate keys (hyphen insertion, channel-suffix and variant-number/vendor-prefix stripping, and an explicit alias table), so these ids resolve to their real price entries across every agent source.
+- **Provider-independent aliases** — the `deepseek-flash` → `deepseek-v4.1-flash` alias now applies to any provider instead of only official DeepSeek routes, matching the model-name-based pricing semantics.
+- **Fallback billing** — models without a known price are billed at the public `gpt-6.1-sol` rate (including long-context tiers) so costs never go missing, while `costAvailable` still flags fallback estimates as partial.
+- **Codex cost completeness** — Codex daily entries and totals now emit `costAvailable`, and unknown Codex models use the same fallback instead of silently accumulating $0.
 ### v1.11.1
 - **Restore DeepSeek Harness data in the menu bar app** — the Finder-launched daemon now finds Homebrew's `zstd` even though it inherits a minimal `PATH`, and the desktop app prefers a Node.js runtime with native Zstandard support instead of a stale system Node. This removes the false “Partial usage: deepseek unavailable” warning and restores live daily, project, and activity refreshes.
 

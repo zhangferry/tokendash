@@ -162,7 +162,8 @@ describe('DeepSeek V4 session indexing', () => {
     expect(detail.session.costAvailable).toBe(false);
     expect(detail.events.find(row => row.type === 'llm_call')?.usage?.costAvailable).toBe(false);
     const result = schemas.validateSessionAnalytics(analytics.getSessionAnalytics('all', { range: 'today' }));
-    expect(result.summary).toMatchObject({ totalTokens: 8, totalCost: 0, costAvailable: false });
+    expect(result.summary).toMatchObject({ totalTokens: 8, costAvailable: false });
+    expect(result.summary.totalCost).toBeGreaterThan(0); // 兜底价目估算
     expect(result.sessions[0].costAvailable).toBe(false);
   });
 

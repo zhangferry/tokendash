@@ -1,5 +1,5 @@
 import './appSettings.js';
-import { getPricing, normalizePricingModel, modelCost } from '../shared/modelPricing.js';
+import { FALLBACK_PRICING_MODEL, getPricing, normalizePricingModel, modelCostWithFallback } from '../shared/modelPricing.js';
 
 export const CODEX_LONG_CONTEXT_THRESHOLD = 272_000;
 
@@ -38,7 +38,7 @@ export function isLongContextCodexRequest(inputTokens: number, model?: string): 
  */
 export function calculateCost(tokens: TokenCounts, models: Set<string>): number {
   const model = normalizeCodexModelName([...models][0] ?? '');
-  if (tokens.timestamp) return modelCost(model, Math.max(0, tokens.inputTokens - tokens.cachedInputTokens), tokens.outputTokens, tokens.cachedInputTokens, 0, tokens.timestamp) ?? 0;
+  if (tokens.timestamp) return modelCostWithFallback(model, Math.max(0, tokens.inputTokens - tokens.cachedInputTokens), tokens.outputTokens, tokens.cachedInputTokens, 0, tokens.timestamp);
   const pricing = getModelPricing(model);
 
   const longInput = Math.min(tokens.longContextInputTokens ?? 0, tokens.inputTokens);
@@ -67,7 +67,8 @@ export function calculateCost(tokens: TokenCounts, models: Set<string>): number 
 }
 
 export function getModelPricing(model: string) {
-  const pricing = getPricing(normalizePricingModel(model));
+  // 未知模型按兜底价目估算，避免静默按 $0 累加。
+  const pricing = getPricing(normalizePricingModel(model)) ?? getPricing(FALLBACK_PRICING_MODEL);
   return {
     inputPer1M: pricing?.input ?? 0,
     cachedInputPer1M: pricing?.cacheRead ?? 0,

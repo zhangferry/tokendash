@@ -78,16 +78,50 @@ export function normalizePricingModel(model: string): string {
   return name === 'gpt-5.6' ? 'gpt-5.6-sol' : name;
 }
 
+// 显示名 -> 价目名 的别名，跨供应商生效（价格表本身按模型名匹配，与 provider 无关）。
+const MODEL_ALIASES: Record<string, string> = {
+  'deepseek-flash': 'deepseek-v4.1-flash',
+};
+
+/**
+ * 生成查价候选键，按序尝试、任一命中即用。覆盖：
+ * - 补横线：gpt6.1-sol -> gpt-6.1-sol
+ * - 去渠道尾缀：gpt-6.1-sol-codex -> gpt-6.1-sol
+ * - 去变体号 + 厂商前缀：ark-deepseek-v4.1-flash-1017 -> deepseek-v4.1-flash
+ * - 显式别名表：deepseek-flash -> deepseek-v4.1-flash
+ * 候选键只是"额外尝试"，原样键始终排在最前，不会改变已知模型的命中。
+ */
+export function pricingKeyCandidates(model: string): string[] {
+  const base = normalizePricingModel(model);
+  const out = [base];
+  const add = (value: string | undefined) => {
+    if (value && !out.includes(value)) out.push(value);
+  };
+  add(base.replace(/^(gpt|claude|gemini)(?=\d)/, '$1-'));
+  add(base.replace(/-(codex|cli|max)$/, ''));
+  const noVariant = base.replace(/-\d{3,4}$/, '');
+  add(noVariant);
+  add(noVariant.replace(/^(ark|aiden)-/, ''));
+  if (MODEL_ALIASES[base] !== undefined) add(MODEL_ALIASES[base]);
+  return out;
+}
+
 export function getPricing(model: string, contextTokens = 0, timestamp?: string | number): ModelPricing | undefined {
-  const name = normalizePricingModel(model);
-  const native = (amax.prices as Record<string, ModelPricing>)[name];
   const toUSD = (price: ModelPricing): ModelPricing => ({
     ...price, input: price.input / exchangeRate, output: price.output / exchangeRate,
     ...(price.cacheRead === undefined ? {} : { cacheRead: price.cacheRead / exchangeRate }),
     ...(price.cacheWrite === undefined ? {} : { cacheWrite: price.cacheWrite / exchangeRate }),
     ...(price.long ? { long: toUSD(price.long) } : {}),
   });
-  const pricing = PRICES[name] ?? (native ? toUSD(native) : undefined);
+  const lookup = (name: string): ModelPricing | undefined => {
+    const native = (amax.prices as Record<string, ModelPricing>)[name];
+    return PRICES[name] ?? (native ? toUSD(native) : undefined);
+  };
+  let pricing: ModelPricing | undefined;
+  for (const key of pricingKeyCandidates(model)) {
+    pricing = lookup(key);
+    if (pricing) break;
+  }
   if (!pricing) return undefined;
   if (pricing.long && contextTokens > pricing.threshold!) return pricing.long;
   if (pricing.peak && timestamp !== undefined) {
@@ -103,4 +137,22 @@ export function modelCost(model: string, input: number, output: number, cacheRea
   const pricing = getPricing(model, input + cacheRead + cacheWrite, timestamp);
   if (!pricing || (cacheRead > 0 && pricing.cacheRead === undefined) || (cacheWrite > 0 && pricing.cacheWrite === undefined) || (pricing.peak && timestamp === undefined)) return undefined;
   return (input * pricing.input + output * pricing.output + cacheRead * (pricing.cacheRead ?? 0) + cacheWrite * (pricing.cacheWrite ?? 0)) / 1_000_000;
+}
+
+// 兜底价目：无法识别的模型按 gpt-6.1-sol 的公开价目估算，保证计费不缺失。
+export const FALLBACK_PRICING_MODEL = 'gpt-6.1-sol';
+
+/**
+ * 与 modelCost 相同，但模型查不到价格时按兜底价目计价，永不返回 undefined。
+ * 兜底估算仍属于估计值，调用方可用 isModelPriced() 区分真实价目与兜底。
+ */
+export function modelCostWithFallback(model: string, input: number, output: number, cacheRead: number, cacheWrite = 0, timestamp?: string | number): number {
+  return modelCost(model, input, output, cacheRead, cacheWrite, timestamp)
+    ?? modelCost(FALLBACK_PRICING_MODEL, input, output, cacheRead, cacheWrite, timestamp)
+    ?? 0;
+}
+
+/** 模型是否有真实价目（不含兜底）。 */
+export function isModelPriced(model: string): boolean {
+  return getPricing(model) !== undefined;
 }

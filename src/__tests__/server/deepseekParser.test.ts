@@ -70,17 +70,17 @@ describe('DeepSeek Harness token accounting', () => {
     expect(getDailyResponse().totals.totalTokens).toBe(652);
   });
 
-  it('tracks route switches and limits the flash pricing alias to official providers', () => {
+  it('tracks route switches and applies the flash pricing alias regardless of provider', () => {
     const path = write([
       deepseekMessage(1, deepseekUsage(100, 20, 200)),
       deepseekMessage(2, deepseekUsage(100, 20, 200), { provider: 'third-party' }),
       deepseekMessage(3, deepseekUsage(100, 20, 200), { model: 'deepseek-v4-pro' }),
     ]);
     const events = parseDeepseekSession(path)!.tokenEvents;
-    expect(events.map(event => event.costAvailable)).toEqual([true, false, true]);
+    expect(events.map(event => event.costAvailable)).toEqual([true, true, true]);
     expect(events[0].cost).toBeGreaterThan(0);
-    expect(events[1].cost).toBe(0);
-    expect(getDailyResponse().totals.costAvailable).toBe(false);
+    expect(events[1].cost).toBeGreaterThan(0);
+    expect(getDailyResponse().totals.costAvailable).toBe(true);
   });
 
   it('does not invent token events without provider usage or accept malformed numeric counters', () => {

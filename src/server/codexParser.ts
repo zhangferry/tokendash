@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { z } from 'zod';
 import type { DailyEntry, DailyResponse, ProjectsResponse, BlockEntry, BlocksResponse, ModelBreakdown } from '../shared/types.js';
 import { calculateCost, isLongContextCodexRequest, normalizeCodexModelName } from './codexPricing.js';
+import { isModelPriced } from '../shared/modelPricing.js';
 import { type BlockGranularity } from './claudeJsonlParser.js';
 import { buildUsageFileIndex } from './usageFileIndex.js';
 import { getCodexSessionDirs, isCodexSessionDirAccessible } from './codexDataSources.js';
@@ -639,6 +640,8 @@ function accToEntry(date: string, acc: TokenAccumulator, modelAccs: Map<string, 
   const modelNames = [...modelAccs.keys()];
   const modelBreakdowns = buildModelBreakdowns(modelAccs);
   const totalCost = modelBreakdowns.reduce((sum, model) => sum + model.cost, 0);
+  // 该日全部模型都有真实价目时才标记完整；走兜底估算时标记 partial estimate。
+  const costAvailable = modelNames.length === 0 || modelNames.every(name => isModelPriced(name));
   return {
     date,
     inputTokens: display.inputTokens,
@@ -650,6 +653,7 @@ function accToEntry(date: string, acc: TokenAccumulator, modelAccs: Map<string, 
     modelsUsed: modelNames,
     modelBreakdowns,
     estimatedTokens: 0,
+    costAvailable,
   };
 }
 
@@ -754,6 +758,7 @@ function buildDailyResponseFromSummaries(summaries: CodexFileAggregate[]): Daily
       totalTokens: totalsAcc.totalTokens,
       totalCost,
       estimatedTokens: 0,
+      costAvailable: [...totalModels.keys()].every(name => isModelPriced(name)),
     },
   };
 }
@@ -897,6 +902,7 @@ function buildDailyResponse(sessions: ParsedSession[], options?: Partial<Aggrega
       totalTokens: totalsAcc.totalTokens,
       totalCost,
       estimatedTokens: 0,
+      costAvailable: [...totalModels.keys()].every(name => isModelPriced(name)),
     },
   };
 }

@@ -2,7 +2,7 @@ import './appSettings.js';
 import { statSync } from 'node:fs';
 import type { BlockGranularity } from './claudeJsonlParser.js';
 import type { DailyEntry, DailyResponse, ProjectsResponse, BlocksResponse, ModelBreakdown } from '../shared/types.js';
-import { modelCost } from '../shared/modelPricing.js';
+import { modelCost, modelCostWithFallback } from '../shared/modelPricing.js';
 import { buildUsageFileIndex } from './usageFileIndex.js';
 import { readDeepseekSessionLog, scanDeepseekSessions, getDeepseekSessionsDir, type DeepseekSessionLog, type DeepseekEvent } from './deepseekSessionLog.js';
 
@@ -117,10 +117,11 @@ export function reduceDeepseekTokenEvents(log: DeepseekSessionLog): UnpricedToke
   return result;
 }
 
-export function deepseekModelCost(provider: string, model: string, buckets: TokenBuckets, timestamp: string): number | undefined {
-  const official = provider === 'deepseek-account' || provider === 'deepseek-official';
-  const pricingModel = official && model === 'deepseek-flash' ? 'deepseek-v4.1-flash' : model;
-  return modelCost(pricingModel, buckets.inputTokens, buckets.outputTokens, buckets.cacheReadTokens, buckets.cacheWriteTokens, timestamp);
+export function deepseekModelCost(provider: string, model: string, buckets: TokenBuckets, timestamp: string): number {
+  // deepseek-flash 等显示名别名在 shared/modelPricing.ts 的候选键里统一处理，与 provider 无关；
+  // 未知模型按 FALLBACK_PRICING_MODEL 兜底计价，避免金额缺失。
+  void provider;
+  return modelCostWithFallback(model, buckets.inputTokens, buckets.outputTokens, buckets.cacheReadTokens, buckets.cacheWriteTokens, timestamp);
 }
 
 function unpricedSession(path: string): UnpricedSession {
@@ -138,7 +139,9 @@ function priceSession(session: UnpricedSession): DeepseekSession {
     ...session,
     tokenEvents: session.tokenEvents.map(event => {
       const cost = deepseekModelCost(event.provider, event.model, event, event.timestamp);
-      return { ...event, cost: cost ?? 0, costAvailable: cost !== undefined };
+      // 兜底计价下 cost 恒有值；costAvailable 标记是否使用真实价目（未走兜底、且价目字段完整）。
+      const exact = modelCost(event.model, event.inputTokens, event.outputTokens, event.cacheReadTokens, event.cacheWriteTokens, event.timestamp);
+      return { ...event, cost, costAvailable: exact !== undefined };
     }),
   };
 }

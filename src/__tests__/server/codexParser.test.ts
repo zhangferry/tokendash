@@ -169,6 +169,57 @@ describe('scanCodexSessions', () => {
     expect(scanCodexSessions()).toEqual([sessionFile]);
   });
 
+  it('scans only nested Codex transcript directories from a Mozi sessions root', () => {
+    const primaryHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-primary-'));
+    const moziHome = mkdtempSync(join(tmpdir(), 'tokendash-mozi-'));
+    const moziSessionsRoot = join(moziHome, 'sessions');
+    tempDirs.push(primaryHome, moziHome);
+    process.env.CODEX_HOME = primaryHome;
+    updateCodexCustomDataPaths([moziSessionsRoot]);
+
+    const liveDir = join(
+      moziSessionsRoot,
+      'session-a',
+      'agent-plugin-homes',
+      'codex',
+      'sessions',
+      '2026',
+      '11',
+      '25',
+    );
+    const archivedDir = join(
+      moziSessionsRoot,
+      'session-b',
+      'agent-plugin-homes',
+      'codex',
+      'archived_sessions',
+    );
+    const pluginFixtureDir = join(
+      moziSessionsRoot,
+      'session-a',
+      'agent-plugin-homes',
+      'codex',
+      '.tmp',
+      'plugin-fixtures',
+    );
+    const messageCenterDir = join(moziSessionsRoot, 'session-a', 'message-center');
+    mkdirSync(liveDir, { recursive: true });
+    mkdirSync(archivedDir, { recursive: true });
+    mkdirSync(pluginFixtureDir, { recursive: true });
+    mkdirSync(messageCenterDir, { recursive: true });
+
+    const liveSession = join(liveDir, 'rollout-live.jsonl');
+    const archivedSession = join(archivedDir, 'rollout-archived.jsonl');
+    writeFileSync(liveSession, '');
+    writeFileSync(archivedSession, '');
+    writeFileSync(join(moziSessionsRoot, 'session-a', 'interactions.jsonl'), '');
+    writeFileSync(join(messageCenterDir, 'team-events.jsonl'), '');
+    writeFileSync(join(pluginFixtureDir, 'transcript.jsonl'), '');
+
+    expect(scanCodexSessions()).toEqual([archivedSession, liveSession].sort());
+    expect(isSessionsDirAccessible()).toBe(true);
+  });
+
   it('keeps archived Codex sessions in the usage source set', () => {
     const codexHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-home-'));
     tempDirs.push(codexHome);

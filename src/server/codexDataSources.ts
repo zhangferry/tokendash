@@ -1,4 +1,4 @@
-import { accessSync, constants, existsSync, realpathSync } from 'node:fs';
+import { accessSync, constants, existsSync, readdirSync, realpathSync } from 'node:fs';
 import { basename, delimiter, join } from 'node:path';
 import { homedir } from 'node:os';
 import { normalizeLocalDataPath, readAppSettings } from './appSettings.js';
@@ -63,18 +63,45 @@ export function getCustomCodexDataPaths(): string[] {
   return readAppSettings().codex.customDataPaths;
 }
 
+/** Return readable Codex transcript directories nested under managed session homes. */
+function discoverManagedCodexSessionDirs(root: string): string[] {
+  let entries;
+  try {
+    entries = readdirSync(root, { withFileTypes: true });
+  } catch {
+    return [];
+  }
+
+  const result: string[] = [];
+  for (const entry of entries) {
+    if (!entry.isDirectory() && !entry.isSymbolicLink()) continue;
+    const codexHome = join(root, entry.name, 'agent-plugin-homes', 'codex');
+    for (const leaf of ['sessions', 'archived_sessions']) {
+      const transcriptDir = join(codexHome, leaf);
+      try {
+        accessSync(transcriptDir, constants.R_OK);
+        result.push(transcriptDir);
+      } catch {
+        // A managed session may not have started Codex or created archives yet.
+      }
+    }
+  }
+  return uniquePaths(result);
+}
+
 /** Expand a configured home or transcript folder into concrete JSONL roots. */
 export function codexSessionDirsForDataPath(path: string): string[] {
   const leaf = basename(path);
-  if (leaf === 'sessions' || leaf === 'archived_sessions') {
-    return [path];
-  }
-  return [join(path, 'sessions'), join(path, 'archived_sessions')];
+  const conventionalDirs = leaf === 'sessions' || leaf === 'archived_sessions'
+    ? [path]
+    : [join(path, 'sessions'), join(path, 'archived_sessions')];
+  const managedDirs = conventionalDirs.flatMap(discoverManagedCodexSessionDirs);
+  return managedDirs.length > 0 ? uniquePaths(managedDirs) : conventionalDirs;
 }
 
-/** Check whether at least one transcript folder for a configured path is readable. */
-function isDataPathReadable(path: string): boolean {
-  return codexSessionDirsForDataPath(path).some(dir => {
+/** Check whether at least one resolved transcript folder is readable. */
+function isDataPathReadable(sessionDirs: string[]): boolean {
+  return sessionDirs.some(dir => {
     try {
       accessSync(dir, constants.R_OK);
       return true;
@@ -98,10 +125,11 @@ export function getCodexDataPathStatuses(): CodexDataPathStatus[] {
     const key = canonicalPathKey(entry.path);
     if (seen.has(key)) continue;
     seen.add(key);
+    const sessionDirs = codexSessionDirsForDataPath(entry.path);
     statuses.push({
       ...entry,
-      readable: isDataPathReadable(entry.path),
-      sessionDirs: codexSessionDirsForDataPath(entry.path),
+      readable: isDataPathReadable(sessionDirs),
+      sessionDirs,
     });
   }
   return statuses;

@@ -128,6 +128,14 @@ function sumDaily(entries: DailyEntry[]): Totals {
   }), { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, totalTokens: 0, totalCost: 0 });
 }
 
+function sessionMetaLine(id: string): string {
+  return JSON.stringify({
+    timestamp: '2026-11-25T10:00:00.000Z',
+    type: 'session_meta',
+    payload: { id: `00000000-0000-4000-8000-00000000000${id.length}`, cwd: '/tmp', originator: 'codex_cli_rs' },
+  });
+}
+
 describe('scanCodexSessions', () => {
   it('includes settings-configured Codex-compatible homes without hardcoded non-official defaults', () => {
     const primaryHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-primary-'));
@@ -167,6 +175,36 @@ describe('scanCodexSessions', () => {
     writeFileSync(sessionFile, '');
 
     expect(scanCodexSessions()).toEqual([sessionFile]);
+  });
+
+  it('scans only nested Codex transcript directories from a managed session root', () => {
+    const primaryHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-primary-'));
+    const managerHome = mkdtempSync(join(tmpdir(), 'tokendash-manager-'));
+    const managerSessionsRoot = join(managerHome, 'sessions');
+    tempDirs.push(primaryHome, managerHome);
+    process.env.CODEX_HOME = primaryHome;
+    updateCodexCustomDataPaths([managerSessionsRoot]);
+
+    // Each managed session keeps its Codex home somewhere else; the layout is not fixed.
+    const liveDir = join(managerSessionsRoot, 'session-a', 'agent-plugin-homes', 'codex', 'sessions', '2026', '11', '25');
+    const archivedDir = join(managerSessionsRoot, 'session-b', 'tools', 'codex', 'archived_sessions');
+    const messageCenterDir = join(managerSessionsRoot, 'session-a', 'message-center');
+    const fixtureDir = join(managerSessionsRoot, 'session-a', 'agent-plugin-homes', 'codex', '.tmp', 'plugin-fixtures');
+    mkdirSync(liveDir, { recursive: true });
+    mkdirSync(archivedDir, { recursive: true });
+    mkdirSync(messageCenterDir, { recursive: true });
+    mkdirSync(fixtureDir, { recursive: true });
+
+    const liveSession = join(liveDir, 'rollout-live.jsonl');
+    const archivedSession = join(archivedDir, 'rollout-archived.jsonl');
+    writeFileSync(liveSession, sessionMetaLine('live'));
+    writeFileSync(archivedSession, sessionMetaLine('archived'));
+    writeFileSync(join(managerSessionsRoot, 'session-a', 'interactions.jsonl'), JSON.stringify({ type: 'event', payload: { kind: 'interaction' } }));
+    writeFileSync(join(messageCenterDir, 'team-events.jsonl'), JSON.stringify({ type: 'event', payload: { kind: 'team' } }));
+    writeFileSync(join(fixtureDir, 'transcript.jsonl'), sessionMetaLine('fixture'));
+
+    expect(scanCodexSessions()).toEqual([archivedSession, liveSession].sort());
+    expect(isSessionsDirAccessible()).toBe(true);
   });
 
   it('keeps archived Codex sessions in the usage source set', () => {

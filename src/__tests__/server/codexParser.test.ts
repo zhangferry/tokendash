@@ -128,6 +128,14 @@ function sumDaily(entries: DailyEntry[]): Totals {
   }), { inputTokens: 0, outputTokens: 0, cacheCreationTokens: 0, cacheReadTokens: 0, totalTokens: 0, totalCost: 0 });
 }
 
+function sessionMetaLine(id: string): string {
+  return JSON.stringify({
+    timestamp: '2026-11-25T10:00:00.000Z',
+    type: 'session_meta',
+    payload: { id: `00000000-0000-4000-8000-00000000000${id.length}`, cwd: '/tmp', originator: 'codex_cli_rs' },
+  });
+}
+
 describe('scanCodexSessions', () => {
   it('includes settings-configured Codex-compatible homes without hardcoded non-official defaults', () => {
     const primaryHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-primary-'));
@@ -169,52 +177,31 @@ describe('scanCodexSessions', () => {
     expect(scanCodexSessions()).toEqual([sessionFile]);
   });
 
-  it('scans only nested Codex transcript directories from a Mozi sessions root', () => {
+  it('scans only nested Codex transcript directories from a managed session root', () => {
     const primaryHome = mkdtempSync(join(tmpdir(), 'tokendash-codex-primary-'));
-    const moziHome = mkdtempSync(join(tmpdir(), 'tokendash-mozi-'));
-    const moziSessionsRoot = join(moziHome, 'sessions');
-    tempDirs.push(primaryHome, moziHome);
+    const managerHome = mkdtempSync(join(tmpdir(), 'tokendash-manager-'));
+    const managerSessionsRoot = join(managerHome, 'sessions');
+    tempDirs.push(primaryHome, managerHome);
     process.env.CODEX_HOME = primaryHome;
-    updateCodexCustomDataPaths([moziSessionsRoot]);
+    updateCodexCustomDataPaths([managerSessionsRoot]);
 
-    const liveDir = join(
-      moziSessionsRoot,
-      'session-a',
-      'agent-plugin-homes',
-      'codex',
-      'sessions',
-      '2026',
-      '11',
-      '25',
-    );
-    const archivedDir = join(
-      moziSessionsRoot,
-      'session-b',
-      'agent-plugin-homes',
-      'codex',
-      'archived_sessions',
-    );
-    const pluginFixtureDir = join(
-      moziSessionsRoot,
-      'session-a',
-      'agent-plugin-homes',
-      'codex',
-      '.tmp',
-      'plugin-fixtures',
-    );
-    const messageCenterDir = join(moziSessionsRoot, 'session-a', 'message-center');
+    // Each managed session keeps its Codex home somewhere else; the layout is not fixed.
+    const liveDir = join(managerSessionsRoot, 'session-a', 'agent-plugin-homes', 'codex', 'sessions', '2026', '11', '25');
+    const archivedDir = join(managerSessionsRoot, 'session-b', 'tools', 'codex', 'archived_sessions');
+    const messageCenterDir = join(managerSessionsRoot, 'session-a', 'message-center');
+    const fixtureDir = join(managerSessionsRoot, 'session-a', 'agent-plugin-homes', 'codex', '.tmp', 'plugin-fixtures');
     mkdirSync(liveDir, { recursive: true });
     mkdirSync(archivedDir, { recursive: true });
-    mkdirSync(pluginFixtureDir, { recursive: true });
     mkdirSync(messageCenterDir, { recursive: true });
+    mkdirSync(fixtureDir, { recursive: true });
 
     const liveSession = join(liveDir, 'rollout-live.jsonl');
     const archivedSession = join(archivedDir, 'rollout-archived.jsonl');
-    writeFileSync(liveSession, '');
-    writeFileSync(archivedSession, '');
-    writeFileSync(join(moziSessionsRoot, 'session-a', 'interactions.jsonl'), '');
-    writeFileSync(join(messageCenterDir, 'team-events.jsonl'), '');
-    writeFileSync(join(pluginFixtureDir, 'transcript.jsonl'), '');
+    writeFileSync(liveSession, sessionMetaLine('live'));
+    writeFileSync(archivedSession, sessionMetaLine('archived'));
+    writeFileSync(join(managerSessionsRoot, 'session-a', 'interactions.jsonl'), JSON.stringify({ type: 'event', payload: { kind: 'interaction' } }));
+    writeFileSync(join(messageCenterDir, 'team-events.jsonl'), JSON.stringify({ type: 'event', payload: { kind: 'team' } }));
+    writeFileSync(join(fixtureDir, 'transcript.jsonl'), sessionMetaLine('fixture'));
 
     expect(scanCodexSessions()).toEqual([archivedSession, liveSession].sort());
     expect(isSessionsDirAccessible()).toBe(true);
